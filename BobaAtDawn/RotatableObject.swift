@@ -222,11 +222,26 @@ class RotatableObject: SKSpriteNode {
     }
     
     var canBeCarried: Bool {
-        // Tables and stations cannot be carried (too heavy)
-        if name?.contains("table") == true {
+        print("📦 Checking canBeCarried for \(objectType):")
+        print("📦   - name: \(name ?? "none")")
+        print("📦   - objectType: \(objectType)")
+        
+        // Stations cannot be carried (too heavy)
+        if objectType == .station {
+            print("📦   - Blocked: objectType is .station")
             return false
         }
-        return objectType != .station
+        
+        // Only specific table objects cannot be carried (check for exact table pattern)
+        if name == "table" || name?.hasPrefix("table_") == true {
+            print("📦   - Blocked: this is an actual table object")
+            return false
+        }
+        
+        // Drinks, completed drinks, and small furniture CAN be carried
+        let canCarry = objectType == .drink || objectType == .completedDrink || objectType == .furniture
+        print("📦   - Result: \(canCarry) (drink:\(objectType == .drink), completedDrink:\(objectType == .completedDrink), furniture:\(objectType == .furniture))")
+        return canCarry
     }
     
     var canBeArranged: Bool {

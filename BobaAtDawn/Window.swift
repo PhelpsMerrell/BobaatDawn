@@ -22,12 +22,12 @@ class Window: SKSpriteNode {
     ]
     
     // MARK: - Current State
-    private var currentPhase: TimePhase = .dawn
+    private var currentPhase: TimePhase = .day
     private var targetColor: SKColor
     
     // MARK: - Initialization
     init() {
-        self.targetColor = phaseColors[.dawn] ?? SKColor.white
+        self.targetColor = phaseColors[.day] ?? SKColor.white // Start with day color
         
         super.init(texture: nil, color: targetColor, size: windowSize)
         
@@ -51,7 +51,7 @@ class Window: SKSpriteNode {
         border.name = "window_border"
         addChild(border)
         
-        print("🪟 Window created at dawn phase")
+        print("🪟 Window created at day phase (time starts flowing)")
     }
     
     private func setupTimeCallbacks() {

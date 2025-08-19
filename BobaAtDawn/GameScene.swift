@@ -9,7 +9,7 @@ import SpriteKit
 import GameplayKit
 
 // MARK: - Main Game Scene
-class GameScene: SKScene, UIGestureRecognizerDelegate {
+class GameScene: SKScene {
     
     // MARK: - Camera System
     private var gameCamera: SKCameraNode!
@@ -25,7 +25,8 @@ class GameScene: SKScene, UIGestureRecognizerDelegate {
     
     // MARK: - Game Objects
     private var character: Character!
-    private var brewingStation: BobaBrewingStation!
+    private var ingredientStations: [IngredientStation] = []
+    private var drinkCreator: DrinkCreator!
     private var rotatableObjects: [RotatableObject] = []
     private var tables: [RotatableObject] = []
     
@@ -39,12 +40,11 @@ class GameScene: SKScene, UIGestureRecognizerDelegate {
     // MARK: - World Areas
     private var shopFloor: SKSpriteNode!
     
-    // MARK: - Touch Handling
+    // MARK: - Touch Handling (Pure Long Press System)
     private var longPressTimer: Timer?
     private var longPressTarget: SKNode?
     private let longPressDuration: TimeInterval = 0.8
     private var isHandlingPinch = false
-    private var isHandlingSwipe = false
     
     // MARK: - Scene Setup
     override func didMove(to view: SKView) {
@@ -52,10 +52,10 @@ class GameScene: SKScene, UIGestureRecognizerDelegate {
         setupWorld()
         setupTables()
         setupCharacter()
-        setupBrewingStation()
+        setupIngredientStations()
         setupRotatableObjects()
-        setupTimeSystem() // Setup day/night cycle
-        setupPathfinding() // Setup pathfinding after all objects are created
+        setupTimeSystem()
+        setupPathfinding()
         setupGestures()
     }
     
@@ -109,7 +109,6 @@ class GameScene: SKScene, UIGestureRecognizerDelegate {
         ]
         
         for position in tablePositions {
-            // Create table as movable furniture (arrange-mode only)
             let table = RotatableObject(type: .furniture, color: SKColor(red: 0.4, green: 0.2, blue: 0.1, alpha: 1.0), shape: "table")
             table.position = position
             table.zPosition = 1
@@ -123,7 +122,7 @@ class GameScene: SKScene, UIGestureRecognizerDelegate {
             
             addChild(table)
             rotatableObjects.append(table)
-            tables.append(table) // Keep tables array for pathfinding reference
+            tables.append(table)
         }
     }
     
@@ -136,40 +135,31 @@ class GameScene: SKScene, UIGestureRecognizerDelegate {
         gameCamera.setScale(cameraScale)
     }
     
-    private func setupPathfinding() {
-        refreshPathfinding()
-    }
-    
-    private func refreshPathfinding() {
-        // Collect all obstacles (tables + large objects)
-        var allObstacles = tables
+    private func setupIngredientStations() {
+        // 5 simple ingredient stations in a row
+        let stationTypes: [IngredientStation.StationType] = [.ice, .boba, .foam, .tea, .lid]
+        let startX: CGFloat = -300
+        let spacing: CGFloat = 120
         
-        // Add brewing station as obstacle
-        allObstacles.append(brewingStation)
-        
-        // Add any large rotatable objects as obstacles
-        for object in rotatableObjects {
-            if object.canBeArranged {
-                allObstacles.append(object)
-            }
+        for (index, type) in stationTypes.enumerated() {
+            let station = IngredientStation(type: type)
+            station.position = CGPoint(x: startX + CGFloat(index) * spacing, y: 200)
+            station.zPosition = 5
+            addChild(station)
+            ingredientStations.append(station)
         }
         
-        // Setup pathfinding with all obstacles
-        let worldBounds = CGRect(x: -worldWidth/2, y: -worldHeight/2, width: worldWidth, height: worldHeight)
-        character.setupPathfinding(with: allObstacles, worldBounds: worldBounds)
-    }
-    
-    private func setupBrewingStation() {
-        brewingStation = BobaBrewingStation()
-        brewingStation.position = CGPoint(x: -300, y: 200)
-        brewingStation.zPosition = 5
-        // Station is always powered now - no power system
-        brewingStation.setPowered(true)
-        addChild(brewingStation)
+        // Central drink creator display
+        drinkCreator = DrinkCreator()
+        drinkCreator.position = CGPoint(x: 0, y: 100)
+        drinkCreator.zPosition = 6
+        addChild(drinkCreator)
+        
+        // Initial update
+        drinkCreator.updateDrink(from: ingredientStations)
     }
     
     private func setupRotatableObjects() {
-        // Create various rotatable objects for testing
         let objectConfigs = [
             (position: CGPoint(x: 400, y: 200), type: ObjectType.furniture, color: SKColor.red, shape: "arrow"),
             (position: CGPoint(x: -500, y: -100), type: ObjectType.furniture, color: SKColor.blue, shape: "L"),
@@ -199,25 +189,40 @@ class GameScene: SKScene, UIGestureRecognizerDelegate {
         timeWindow.zPosition = 10
         addChild(timeWindow)
         
-        print("🌅 Time system initialized - game starts in dawn, use time breaker to activate cycle")
+        print("🌅 Time system: Game starts in Day, flows until Dawn completion trips breaker")
+    }
+    
+    private func setupPathfinding() {
+        refreshPathfinding()
+    }
+    
+    private func refreshPathfinding() {
+        // Collect all obstacles
+        var allObstacles = tables
+        allObstacles.append(contentsOf: ingredientStations.map { $0 as RotatableObject })
+        
+        for object in rotatableObjects {
+            if object.canBeArranged {
+                allObstacles.append(object)
+            }
+        }
+        
+        let worldBounds = CGRect(x: -worldWidth/2, y: -worldHeight/2, width: worldWidth, height: worldHeight)
+        character.setupPathfinding(with: allObstacles, worldBounds: worldBounds)
     }
     
     private func setupGestures() {
         guard let view = view else { return }
         
+        // Clean gesture system - only essential gestures
         let pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
         let rotationGesture = UIRotationGestureRecognizer(target: self, action: #selector(handleRotation(_:)))
         let twoFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleTwoFingerTap(_:)))
         twoFingerTap.numberOfTouchesRequired = 2
         
-        // Add swipe gesture for pickup/drop
-        let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
-        panGesture.delegate = self
-        
         view.addGestureRecognizer(pinchGesture)
         view.addGestureRecognizer(rotationGesture)
         view.addGestureRecognizer(twoFingerTap)
-        view.addGestureRecognizer(panGesture)
     }
     
     // MARK: - Gesture Handlers
@@ -256,38 +261,14 @@ class GameScene: SKScene, UIGestureRecognizerDelegate {
         gameCamera.run(zoomAction)
     }
     
-    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
-        guard !isHandlingPinch else { return }
-        
-        switch gesture.state {
-        case .began:
-            isHandlingSwipe = true
-            
-        case .ended:
-            if isHandlingSwipe {
-                let velocity = gesture.velocity(in: view)
-                let location = gesture.location(in: view)
-                let sceneLocation = convertPoint(fromView: location)
-                handleSwipeGesture(at: sceneLocation, velocity: velocity)
-            }
-            isHandlingSwipe = false
-            
-        case .cancelled, .failed:
-            isHandlingSwipe = false
-            
-        default:
-            break
-        }
-    }
-    
-    // MARK: - Touch Handling
+    // MARK: - Touch Handling (Pure Long Press System)
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard !isHandlingPinch && !isHandlingSwipe else { return }
+        guard !isHandlingPinch else { return }
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
         let touchedNode = atPoint(location)
         
-        // Check for long press interactions (brewing, power, etc.)
+        // Check for long press interactions first
         if let interactable = findInteractableNode(touchedNode) {
             startLongPress(for: interactable, at: location)
         } else {
@@ -310,6 +291,15 @@ class GameScene: SKScene, UIGestureRecognizerDelegate {
         longPressTimer = Timer.scheduledTimer(withTimeInterval: longPressDuration, repeats: false) { [weak self] _ in
             self?.handleLongPress(on: node, at: location)
         }
+        
+        // Visual feedback for long press start
+        if let rotatable = node as? RotatableObject {
+            let pulseAction = SKAction.sequence([
+                SKAction.scale(to: 1.05, duration: 0.1),
+                SKAction.scale(to: 1.0, duration: 0.1)
+            ])
+            rotatable.run(pulseAction)
+        }
     }
     
     private func cancelLongPress() {
@@ -318,93 +308,54 @@ class GameScene: SKScene, UIGestureRecognizerDelegate {
         longPressTarget = nil
     }
     
-    // MARK: - Swipe System (Pickup/Drop)
-    private func handleSwipeGesture(at location: CGPoint, velocity: CGPoint) {
-        let swipeThreshold: CGFloat = 100 // Minimum velocity for swipe detection
-        let proximityDistance: CGFloat = 100 // "Next to character" distance
-        
-        guard sqrt(velocity.x * velocity.x + velocity.y * velocity.y) > swipeThreshold else {
-            return // Not a strong enough swipe
-        }
-        
-        // Calculate swipe direction relative to character
-        let characterPos = character.position
-        let swipeDirection = CGPoint(x: velocity.x, y: velocity.y)
-        let directionToCharacter = CGPoint(x: characterPos.x - location.x, y: characterPos.y - location.y)
-        
-        // Dot product to determine if swipe is toward or away from character
-        let dotProduct = swipeDirection.x * directionToCharacter.x + swipeDirection.y * directionToCharacter.y
-        
-        if character.isCarrying {
-            // Character is carrying something - swipe to drop
-            if dotProduct < 0 { // Swipe away from character
-                handleSwipeDrop(at: location, velocity: swipeDirection)
-            }
-        } else {
-            // Character not carrying - check for pickup
-            if dotProduct > 0 { // Swipe toward character
-                handleSwipePickup(at: location, proximityDistance: proximityDistance)
-            }
-        }
-    }
-    
-    private func handleSwipePickup(at location: CGPoint, proximityDistance: CGFloat) {
-        // Find nearby objects that can be picked up
-        let nearbyObjects = findNearbyPickupableObjects(near: character.position, within: proximityDistance)
-        
-        if let closestObject = nearbyObjects.first {
-            // Animate object flying to character
-            let flyAction = SKAction.move(to: character.position, duration: 0.3)
-            flyAction.timingMode = .easeOut
-            
-            closestObject.run(flyAction) { [weak self] in
-                self?.character.pickupItem(closestObject)
-            }
-        }
-    }
-    
-    private func handleSwipeDrop(at location: CGPoint, velocity: CGPoint) {
-        guard let carriedItem = character.carriedItem else { return }
-        
-        // Calculate drop position (not too far from character)
-        let characterPos = character.position
-        let maxDropDistance: CGFloat = 80
-        
-        let normalizedVelocity = normalizeVector(velocity)
-        let dropPosition = CGPoint(
-            x: characterPos.x + normalizedVelocity.x * maxDropDistance,
-            y: characterPos.y + normalizedVelocity.y * maxDropDistance
-        )
-        
-        // Drop the item at the calculated position
-        character.dropItem()
-        
-        // Animate to drop position
-        let dropAction = SKAction.move(to: dropPosition, duration: 0.3)
-        dropAction.timingMode = .easeOut
-        carriedItem.run(dropAction)
-    }
-    
     private func handleLongPress(on node: SKNode, at location: CGPoint) {
+        print("🔍 Long press on: \(node.name ?? "unnamed") - \(type(of: node))")
+        
+        // 1. Drop carried item if long pressing it
         if node == character.carriedItem {
             character.dropItem()
+            print("📦 Dropped carried item")
+            
+        // 2. Power breaker (only works when tripped)
         } else if node == timeBreaker {
-            // Toggle time system
+            print("⏰ Attempting to toggle time breaker")
             timeBreaker.toggle()
-        } else if let brewingArea = node as? BrewingArea {
-            brewingStation.handleInteraction(brewingArea.areaType, at: location)
-        } else if node.name == "interactable_drink" {
-            // Handle completed drink pickup from brewing station
-            if let completedDrink = brewingStation.takeCompletedDrink() {
-                character.pickupItem(completedDrink)
-            }
-        } else if brewingStation.hasCompletedDrink() && 
-                  (node == brewingStation || node.parent == brewingStation) {
+            
+        // 3. Ingredient station interactions
+        } else if let station = node as? IngredientStation {
+            print("🧋 Interacting with \(station.stationType) station")
+            station.interact()
+            drinkCreator.updateDrink(from: ingredientStations)
+            print("🧋 Updated drink display")
+            
+        // 4. Pick up completed drink
+        } else if node.name == "completed_drink_pickup" {
+            print("🧋 Attempting to pick up completed drink")
             if character.carriedItem == nil {
-                if let completedDrink = brewingStation.takeCompletedDrink() {
+                if let completedDrink = drinkCreator.createCompletedDrink(from: ingredientStations) {
                     character.pickupItem(completedDrink)
+                    drinkCreator.resetStations(ingredientStations)
+                    print("🧋 Picked up completed drink and reset stations")
                 }
+            } else {
+                print("❌ Already carrying something")
             }
+            
+        // 5. Pick up small objects (drinks, small furniture)
+        } else if let rotatable = node as? RotatableObject {
+            print("📦 Found rotatable object: \(rotatable.objectType), canBeCarried: \(rotatable.canBeCarried)")
+            if rotatable.canBeCarried {
+                if character.carriedItem == nil {
+                    character.pickupItem(rotatable)
+                    print("📦 Picked up \(rotatable.objectType)")
+                } else {
+                    print("❌ Already carrying something")
+                }
+            } else {
+                print("❌ Cannot carry this object type")
+            }
+        } else {
+            print("🤷‍♂️ No action for this node")
         }
         
         longPressTimer = nil
@@ -413,82 +364,56 @@ class GameScene: SKScene, UIGestureRecognizerDelegate {
     
     // MARK: - Helper Methods
     private func findInteractableNode(_ node: SKNode) -> SKNode? {
-        // Check for time breaker
-        if node == timeBreaker {
-            return timeBreaker
-        }
+        print("🔎 Checking node: \(node.name ?? "unnamed") - \(type(of: node))")
         
-        // Check for brewing areas
-        if let brewingArea = node as? BrewingArea {
-            return brewingArea
-        }
-        
-        // Check for completed drink in brewing station
-        if node.name?.contains("interactable") == true {
-            return node
-        }
-        
-        // Check brewing station with completed drink
-        if brewingStation.hasCompletedDrink() && 
-           (node == brewingStation || node.parent == brewingStation) {
-            return node
-        }
-        
-        // Check for carried item
-        if node == character.carriedItem {
-            return character.carriedItem
-        }
-        
-        // Search through node hierarchy
+        // Start with the touched node and search up the hierarchy
         var current: SKNode? = node
-        while current != nil {
-            if current is BrewingArea {
+        var depth = 0
+        
+        while current != nil && depth < 5 {
+            print("🔎 Level \(depth): \(current?.name ?? "unnamed") - \(type(of: current!))")
+            
+            // 1. Check for power breaker
+            if current == timeBreaker {
+                print("✅ Found power breaker")
+                return timeBreaker
+            }
+            
+            // 2. Check for ingredient stations
+            if let station = current as? IngredientStation {
+                print("✅ Found ingredient station: \(station.stationType)")
+                return station
+            }
+            
+            // 3. Check for completed drink pickup
+            if current?.name == "completed_drink_pickup" {
+                print("✅ Found completed drink ready for pickup")
                 return current
             }
-            current = current?.parent
-        }
-        
-        return nil
-    }
-    
-    private func findNearbyPickupableObjects(near position: CGPoint, within distance: CGFloat) -> [RotatableObject] {
-        var nearbyObjects: [RotatableObject] = []
-        
-        // Check all rotatable objects
-        for object in rotatableObjects {
-            if object.canBeCarried {
-                let objectDistance = sqrt(pow(object.position.x - position.x, 2) + pow(object.position.y - position.y, 2))
-                if objectDistance <= distance {
-                    nearbyObjects.append(object)
+            
+            // 4. Check for carried item (to drop)
+            if current == character.carriedItem {
+                print("✅ Found carried item")
+                return character.carriedItem
+            }
+            
+            // 5. Check for pickupable objects
+            if let rotatable = current as? RotatableObject {
+                print("🔎 Found rotatable: \(rotatable.objectType), canBeCarried: \(rotatable.canBeCarried)")
+                if rotatable.canBeCarried {
+                    print("✅ Object can be carried")
+                    return rotatable
+                } else {
+                    print("🔎 Object cannot be carried, checking parents...")
                 }
             }
+            
+            current = current?.parent
+            depth += 1
         }
         
-        // Sort by distance (closest first)
-        nearbyObjects.sort { obj1, obj2 in
-            let dist1 = sqrt(pow(obj1.position.x - position.x, 2) + pow(obj1.position.y - position.y, 2))
-            let dist2 = sqrt(pow(obj2.position.x - position.x, 2) + pow(obj2.position.y - position.y, 2))
-            return dist1 < dist2
-        }
-        
-        return nearbyObjects
-    }
-    
-    private func normalizeVector(_ vector: CGPoint) -> CGPoint {
-        let magnitude = sqrt(vector.x * vector.x + vector.y * vector.y)
-        guard magnitude > 0 else { return CGPoint(x: 0, y: 0) }
-        return CGPoint(x: vector.x / magnitude, y: vector.y / magnitude)
-    }
-    
-    private func findRotatableObject(at location: CGPoint) -> RotatableObject? {
-        let touchedNode = atPoint(location)
-        return touchedNode as? RotatableObject
-    }
-    
-    // MARK: - Gesture Delegate
-    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        // Allow pan gesture to work alongside pinch and rotation
-        return true
+        print("❌ No interactable found after checking \(depth) levels")
+        return nil
     }
     
     // MARK: - Camera Update
@@ -523,7 +448,6 @@ class GameScene: SKScene, UIGestureRecognizerDelegate {
     override func update(_ currentTime: TimeInterval) {
         updateCamera()
         character.update()
-        brewingStation?.update()
         
         // Update time system
         TimeManager.shared.update()

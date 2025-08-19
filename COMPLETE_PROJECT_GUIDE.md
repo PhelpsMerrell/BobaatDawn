@@ -2,22 +2,30 @@
 
 > **For New Claude Sessions**: This project is a cozy Apple-native boba shop game built in Swift/SpriteKit. The player runs a small boba shop surrounded by looping woods, focusing on ritual, atmosphere, and discovery. **Current focus: Clean, minimalist interactions with context-aware tapping system.**
 
-## 🧋 **Boba Creation Workflow**
+## 🧋 **Simple Boba Creation System**
 
-### **Step-by-Step Drink Making:**
-1. **Walk to Brewing Station**: Large brown rectangle at (-300, 200)
-2. **Select Tea**: Tap left tea area to cycle through tea types (regular → light → no ice)
-3. **Add Toppings**: Tap right areas to toggle tapioca and foam
-4. **Add Lid**: Tap bottom lid area to complete the drink
-5. **Pickup Drink**: When complete, drink shakes - tap anywhere on brewing station to pick up
-6. **Auto-Reset**: Station automatically resets, new drink can be started immediately
+### **5 Ingredient Stations:**
+1. **Ice Station** (cyan) - Long press cycles: Ice → Lite Ice → No Ice → (repeat)
+2. **Boba Station** (black) - Long press toggles: Boba ↔ No Boba  
+3. **Foam Station** (cream) - Long press toggles: Foam ↔ No Foam
+4. **Tea Station** (brown) - Long press toggles: Tea ↔ No Tea
+5. **Lid Station** (gray) - Long press toggles: Lid ↔ No Lid
+
+### **Drink Creation Workflow:**
+1. **Long press stations** to add/remove ingredients
+2. **Central display** shows current recipe as you build it
+3. **Complete drink** = Tea + Lid (minimum required) → drink shakes
+4. **Long press shaking drink** → pick up finished boba
+5. **Carry and place** bobas anywhere in the shop
+6. **Stations auto-reset** → ready to make another different boba
 
 ### **Visual Feedback:**
-- **Tea Types**: Different colored liquids (dark brown, light brown, amber)
-- **Toppings**: Black tapioca pearls at bottom, cream foam on top
-- **Completion**: Drink shakes when ready, indicating it's pickupable
-- **Recipe-Accurate Drinks**: Carried bobas show actual tea color and toppings created
-- **Carry State**: Completed drinks float above character and are non-rotatable
+- **Station Alpha**: Active ingredients = bright (1.0), inactive = dim (0.3)
+- **Ice Levels**: Full ice = bright, lite ice = medium, no ice = dim
+- **Recipe Display**: Shows actual tea color, boba dots, foam layer, lid+straw
+- **Completion**: Drink shakes when tea + lid are present
+- **Carry State**: Completed bobas float above character, not rotatable
+- **Multiple Drinks**: Make unlimited custom bobas and place around shop
 
 ---
 
@@ -43,16 +51,16 @@
 ## 🏗️ **Current Implementation Status**
 
 ### **✅ COMPLETED SYSTEMS:**
-- **Context-Aware Tap System** - Single tap for all interactions, no long press conflicts
-- **Recipe-Accurate Boba Drinks** - Drinks visually match ingredients used (tea colors, toppings)
-- **Universal Object Pickup** - All small objects pickupable via direct tapping
+- **Simple 5-Station Boba System** - Ice, Boba, Foam, Tea, Lid stations with long press interactions
+- **Recipe-Accurate Visual Display** - Central drink preview shows actual ingredients being added
+- **Multiple Boba Creation** - Make unlimited custom drinks, carry and place around shop
+- **Auto-Reset Stations** - After pickup, stations reset for next drink creation
+- **Universal Object Pickup** - All small objects pickupable via long press
 - **Character Smart Pathfinding** - GameplayKit pathfinding prevents collision teleporting
 - **Rotatable Objects** - 4-state rotation with visual feedback (furniture, tables)
-- **Multi-Drink Creation** - Create unlimited custom bobas and place around shop
 - **Movable Tables** - Tables repositionable via tap selection and two-finger rotation
-- **Brewing Station System** - Always functional, tactile drink assembly
 - **Clean Minimalist Design** - No UI elements, selection circles, or visual clutter
-- **Gesture System** - Pinch zoom, two-finger rotation, tap interactions
+- **Gesture System** - Pinch zoom, two-finger rotation, long press interactions
 
 ### **🚧 PLANNED FEATURES:**
 - NPCs with day/night personality changes
@@ -66,22 +74,22 @@
 
 ## 🎮 **Current Controls & Interactions**
 
-### **Context-Aware Single Tap System:**
-- **Tap empty space** → Move character with smart pathfinding
-- **Tap small objects** → Pick up and carry (drinks, furniture, completed bobas)
-- **Tap brewing areas** → Interact with station (tea, tapioca, foam, lid)
-- **Tap brewing station with completed drink** → Pick up finished boba (auto-resets station)
-- **Tap carried item** → Drop item at current location
-- **Tap tables** → Select for repositioning
+### **Simple Long Press System:**
+- **Long press ingredient stations** → Add/remove ingredients (ice cycles, others toggle)
+- **Long press completed shaking drink** → Pick up finished boba (auto-resets stations)
+- **Long press carried boba** → Drop boba at current location
+- **Long press small objects** → Pick up drinks, furniture, completed bobas
+- **Single tap empty space** → Move character with smart pathfinding
+- **Single tap tables** → Select for repositioning
 - **Two-finger rotate** → Rotate selected tables or carried items (if rotatable)
 - **Pinch** → Camera zoom in/out
 - **Two-finger tap** → Reset camera zoom to default
 
-### **No Modes, No UI - Pure World Interaction:**
-- **No power breaker** - brewing station always functional
+### **No UI, Pure World Interaction:**
+- **No complex brewing areas** - just simple ingredient stations
 - **No selection circles** - clean minimalist visual design
-- **No long press conflicts** - immediate responsive interactions
-- **No arrange/browse modes** - everything works contextually
+- **No mode conflicts** - long press for interactions, single tap for movement
+- **No inventory system** - carry one item at a time
 
 ---
 
@@ -89,22 +97,23 @@
 
 ```
 BobaAtDawn/
-├── GameScene.swift          // Main orchestrator, camera, context-aware gestures
+├── GameScene.swift          // Main orchestrator, camera, long press gestures
 ├── Character.swift          // Player movement, pathfinding, carrying
-├── RotatableObject.swift    // Base class for interactive objects (no UI elements)
-├── BobaBrewingStation.swift // Drink creation with recipe-accurate results
+├── RotatableObject.swift    // Base class for interactive objects
+├── IngredientStation.swift  // Simple ingredient stations (ice, boba, foam, tea, lid)
+├── DrinkCreator.swift       // Central drink display and recipe management
 └── Assets.xcassets/         // Placeholder sprites
 ```
 
 **Removed Files:**
-- `PowerBreaker.swift` - Eliminated power/mode system for clean design
+- `BobaBrewingStation.swift` - Replaced with simple ingredient station system
 
 ### **Key Classes:**
 
 #### **🎬 GameScene** (Main Orchestrator)
-- **Handles**: Camera system, world setup, context-aware gesture recognition
-- **Key Methods**: `handleContextTap()`, `setupPathfinding()`, `updateCamera()`
-- **Manages**: Single tap routing, object interactions, character movement
+- **Handles**: Camera system, world setup, long press gesture recognition
+- **Key Methods**: `handleLongPress()`, `setupIngredientStations()`, `updateCamera()`
+- **Manages**: Long press routing, object interactions, character movement
 
 #### **🧑‍💼 Character** (Player Logic)  
 - **Handles**: Smart pathfinding, collision avoidance, item carrying, movement
@@ -116,50 +125,57 @@ BobaAtDawn/
 - **Types**: `.drink` (test items), `.furniture` (moveable), `.station` (immovable), `.completedDrink` (recipe-accurate bobas)
 - **Features**: Shape indicators, no selection UI, carry/arrange permissions
 
-#### **🧋 BobaBrewingStation** (Drink Creation)
-- **Handles**: Tea brewing, topping assembly, recipe-accurate drink generation
-- **Interactions**: Single tap tea areas, topping areas, lid area
-- **Features**: Visual drink building, shake animation, auto-reset, recipe preservation
+#### **🧋 IngredientStation** (Simple Stations)
+- **Handles**: Single ingredient per station, long press interactions, visual feedback
+- **Types**: Ice (cycles), Boba/Foam/Tea/Lid (toggles)
+- **Features**: Visual state changes, ingredient tracking, reset functionality
+
+#### **🍻 DrinkCreator** (Recipe Display)
+- **Handles**: Central drink preview, recipe-accurate visual building, completion detection
+- **Features**: Real-time ingredient visualization, shaking animation, auto-reset after pickup
 
 ---
 
 ## 🔧 **Key Swift Concepts Used**
 
-### **Enums with Methods:**
+### **Simple Station Enums:**
 ```swift
+enum StationType {
+    case ice, boba, foam, tea, lid
+}
+
 enum ObjectType {
     case drink, furniture, station, completedDrink
 }
-
-enum RotationState: Int, CaseIterable {
-    case north = 0, east = 90, south = 180, west = 270
-    func next() -> RotationState { /* cycles through states */ }
-}
 ```
 
-### **Context-Aware Touch Handling:**
+### **Long Press Gesture Handling:**
 ```swift
-private func handleContextTap(at location: CGPoint, node: SKNode) {
-    // Route taps based on what was touched
-    if let rotatableObj = node as? RotatableObject {
-        if rotatableObj.canBeCarried { character.pickupItem(rotatableObj) }
-    } else if let brewingArea = node as? BrewingArea {
-        brewingStation.handleInteraction(brewingArea.areaType, at: location)
-    } else {
-        character.moveTo(location, avoiding: tables) // Default: move
+private func handleLongPress(on node: SKNode, at location: CGPoint) {
+    if let station = node as? IngredientStation {
+        station.interact()
+        drinkCreator.updateDrink(from: ingredientStations)
+    } else if node.name == "completed_drink_pickup" {
+        if let completedDrink = drinkCreator.createCompletedDrink(from: ingredientStations) {
+            character.pickupItem(completedDrink)
+            drinkCreator.resetStations(ingredientStations)
+        }
     }
 }
 ```
 
 ### **Recipe-Accurate Drink Generation:**
 ```swift
-private func createRecipeAccurateDrink(from state: DrinkState) -> RotatableObject {
-    let teaColor = getTeaColor(state.teaType) // Different colors per tea
+func createCompletedDrink(from stations: [IngredientStation]) -> RotatableObject? {
+    guard isComplete else { return nil }
+    
+    let teaColor = getTeaColor(for: iceLevel) // Different colors per ice level
     let drink = RotatableObject(type: .completedDrink, color: teaColor, shape: "drink")
     
-    // Add mini-layers for toppings
-    if state.hasTapioca { addMiniTapioca(to: drink) }
-    if state.hasFoam { addMiniFoam(to: drink) }
+    // Add visual layers for toppings
+    if hasBoba { addMiniBoba(to: drink) }
+    if hasFoam { addMiniFoam(to: drink) }
+    if hasLid { addMiniLid(to: drink) }
     return drink
 }
 ```
@@ -168,11 +184,18 @@ private func createRecipeAccurateDrink(from state: DrinkState) -> RotatableObjec
 
 ## 🎯 **How Systems Connect**
 
-### **Context-Aware Interaction Flow:**
-1. User taps anywhere → `handleContextTap(at:node:)`
-2. System identifies touched object → Routes to appropriate handler
-3. Object-specific action → Pickup, brew, move, or drop
-4. Immediate feedback → Visual response and state change
+### **Simple Long Press Interaction Flow:**
+1. User long presses station → `handleLongPress(on:at:)`
+2. Station updates its ingredient → `station.interact()`
+3. Central display updates → `drinkCreator.updateDrink()`
+4. Visual feedback → Station pulse + display changes
+
+### **Drink Completion Flow:**
+1. Tea + Lid present → `isComplete = true`
+2. Central display shakes → Visual completion indicator
+3. User long presses display → `createCompletedDrink()`
+4. Generate recipe-accurate boba → Custom visual layers
+5. Auto-reset all stations → Ready for next drink
 
 ### **Pathfinding Flow:**
 1. User taps empty space → `character.moveTo(targetPosition)`
@@ -181,37 +204,33 @@ private func createRecipeAccurateDrink(from state: DrinkState) -> RotatableObjec
 4. Finds optimal path → `graph.findPath(from:to:)`
 5. Follows waypoints → `followPath()` with smooth animation
 
-### **Recipe-Accurate Boba Creation Flow:**
-1. User taps brewing areas → `brewingStation.handleInteraction()`
-2. Station updates drink state → Tea, toppings, lid assembly
-3. Complete drink shows animation → Shaking effect
-4. User taps station → `createRecipeAccurateDrink()` generates custom drink
-5. Station resets → Ready for next creation cycle
+
 
 ---
 
 ## 🔍 **Testing Checklist**
 
-### **Context-Aware Interactions:**
-- [ ] **Single Tap Movement**: Tap empty space moves character with pathfinding
-- [ ] **Object Pickup**: Tap objects directly picks them up (no long press needed)
-- [ ] **Brewing Interactions**: Tap brewing areas cycles tea, toggles toppings, adds lid
-- [ ] **Completed Drink Pickup**: Tap shaking station picks up custom boba
-- [ ] **No Selection Circles**: No visual UI elements appear during interactions
+### **Simple Boba System:**
+- [ ] **Long Press Ice Station**: Cycles through Ice → Lite Ice → No Ice → repeat
+- [ ] **Long Press Boba/Foam/Tea/Lid Stations**: Toggle on/off with visual feedback
+- [ ] **Central Display Updates**: Shows real-time recipe as ingredients are added
+- [ ] **Completion Detection**: Drink shakes when Tea + Lid are present
+- [ ] **Drink Pickup**: Long press shaking display picks up completed boba
+- [ ] **Auto-Reset**: All stations reset to default after drink pickup
 
 ### **Object Types & Behaviors:**
-- [ ] **Tables**: Brown squares with corner dots, tap to select, two-finger rotate
-- [ ] **Small Furniture**: Colored objects (red/blue/orange), directly pickupable
-- [ ] **Test Drinks**: Green triangle, pickupable and rotatable when carried
-- [ ] **Recipe Bobas**: Show actual tea colors and toppings, non-rotatable
-- [ ] **Brewing Station**: Large brown station, immovable, always functional
+- [ ] **Tables**: Brown squares with corner dots, single tap to select, two-finger rotate
+- [ ] **Small Furniture**: Colored objects (red/blue/orange), long press to pick up
+- [ ] **Test Drinks**: Green triangle, long press to pick up, rotatable when carried
+- [ ] **Recipe Bobas**: Show actual tea colors and toppings, non-rotatable when carried
+- [ ] **Ingredient Stations**: 5 colored squares, long press to interact, visual alpha changes
 
 ### **Recipe-Accurate Boba System:**
-- [ ] **Tea Colors**: Regular (dark brown), Light (light brown), No Ice (amber)
-- [ ] **Toppings Visible**: Black tapioca dots, cream foam layers
+- [ ] **Ice Levels**: Visual brightness changes (full=bright, lite=medium, none=dim)
+- [ ] **Toppings Visible**: Black boba dots, cream foam layers in central display
 - [ ] **Lid & Straw**: Gray lid with white straw when complete
-- [ ] **Custom Combinations**: Each recipe creates unique visual result
-- [ ] **Carry Authenticity**: Carried drinks match brewing station preview
+- [ ] **Custom Combinations**: Each unique recipe creates different visual result
+- [ ] **Carry Authenticity**: Carried drinks match the recipe that was created
 
 ---
 

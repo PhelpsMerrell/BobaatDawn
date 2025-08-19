@@ -69,6 +69,7 @@ class BobaBrewingStation: RotatableObject {
         baseStation = SKSpriteNode(color: SKColor(red: 0.5, green: 0.3, blue: 0.2, alpha: 1.0), size: size)
         baseStation.name = "brewing_station"
         baseStation.zPosition = 0
+        baseStation.isUserInteractionEnabled = false // Let brewing areas handle touches
         addChild(baseStation)
         
         // Container for drink layers
@@ -112,27 +113,37 @@ class BobaBrewingStation: RotatableObject {
     }
     
     private func setupInteractionAreas() {
-        // Large interaction areas - easy to tap
+        // Large interaction areas - easy to tap with higher opacity for visibility
         
         // Tea selection area (left side)
-        teaArea = BrewingArea(type: .tea, size: CGSize(width: 120, height: 100))
-        teaArea.position = CGPoint(x: -180, y: 50)
+        teaArea = BrewingArea(type: .tea, size: CGSize(width: 150, height: 120))
+        teaArea.position = CGPoint(x: -200, y: 50)
+        teaArea.alpha = 0.8 // More visible for debugging
+        teaArea.zPosition = 20 // Even higher than base station
         addChild(teaArea)
         
         // Tapioca area (right side, top)
-        tapiocarArea = BrewingArea(type: .tapioca, size: CGSize(width: 100, height: 80))
-        tapiocarArea.position = CGPoint(x: 180, y: 80)
+        tapiocarArea = BrewingArea(type: .tapioca, size: CGSize(width: 120, height: 100))
+        tapiocarArea.position = CGPoint(x: 200, y: 80)
+        tapiocarArea.alpha = 0.8 // More visible for debugging
+        tapiocarArea.zPosition = 20 // Even higher than base station
         addChild(tapiocarArea)
         
         // Foam area (right side, middle)
-        foamArea = BrewingArea(type: .foam, size: CGSize(width: 100, height: 80))
-        foamArea.position = CGPoint(x: 180, y: 0)
+        foamArea = BrewingArea(type: .foam, size: CGSize(width: 120, height: 100))
+        foamArea.position = CGPoint(x: 200, y: -20)
+        foamArea.alpha = 0.8 // More visible for debugging
+        foamArea.zPosition = 20 // Even higher than base station
         addChild(foamArea)
         
         // Lid area (bottom)
-        lidArea = BrewingArea(type: .lid, size: CGSize(width: 120, height: 80))
-        lidArea.position = CGPoint(x: 0, y: -120)
+        lidArea = BrewingArea(type: .lid, size: CGSize(width: 150, height: 100))
+        lidArea.position = CGPoint(x: 0, y: -140)
+        lidArea.alpha = 0.8 // More visible for debugging
+        lidArea.zPosition = 20 // Even higher than base station
         addChild(lidArea)
+        
+        print("🧋 Setup \(children.count) brewing areas with alpha=0.8 and zPosition=20")
     }
     
     // MARK: - Power Management
@@ -200,7 +211,7 @@ class BobaBrewingStation: RotatableObject {
         case .light:
             drinkState.teaType = .noIce
         case .noIce:
-            drinkState.teaType = .regular
+            drinkState.teaType = .none
         }
     }
     
@@ -214,7 +225,7 @@ class BobaBrewingStation: RotatableObject {
     
     private func addLid() {
         if drinkState.teaType != .none {
-            drinkState.hasLid = true
+            drinkState.hasLid.toggle()
         }
     }
     
@@ -303,7 +314,7 @@ class BobaBrewingStation: RotatableObject {
         case .light:
             teaColor = SKColor(red: 0.8, green: 0.6, blue: 0.4, alpha: 1.0) // Light brown
         case .noIce:
-            teaColor = SKColor(red: 0.7, green: 0.4, blue: 0.2, alpha: 1.0) // Amber
+            teaColor = SKColor(red: 0.7, green: 0.4, blue: 0.2, alpha: 0.0) // Amber
         }
         
         let drink = RotatableObject(type: .completedDrink, color: teaColor, shape: "drink")
@@ -346,6 +357,66 @@ class BobaBrewingStation: RotatableObject {
     func update() {
         // Update any ongoing animations or state
     }
+    
+    // MARK: - Direct Brewing Interface
+    func handleDirectTouch(at location: CGPoint) {
+        guard isPowered else { return }
+        
+        // Convert location to local coordinates
+        let localPoint = convert(location, from: parent!)
+        print("🧋 Touch at local point: \(localPoint)")
+        
+        // Define interaction zones based on station layout
+        let teaZone = CGRect(x: -250, y: 0, width: 150, height: 120)      // Left side
+        let tapiocarZone = CGRect(x: 150, y: 50, width: 120, height: 100)  // Right top
+        let foamZone = CGRect(x: 150, y: -50, width: 120, height: 100)     // Right middle
+        let lidZone = CGRect(x: -75, y: -180, width: 150, height: 100)     // Bottom
+        
+        if teaZone.contains(localPoint) {
+            // Cycle through tea types: none -> regular -> light -> noIce -> none
+            switch drinkState.teaType {
+            case .none:
+                drinkState.teaType = .regular
+                print("🌵 Added regular tea")
+            case .regular:
+                drinkState.teaType = .light
+                print("🌵 Changed to light tea")
+            case .light:
+                drinkState.teaType = .noIce
+                print("🌵 Changed to no-ice tea")
+            case .noIce:
+                drinkState.teaType = .none
+                print("🌵 Removed tea")
+            }
+        } else if tapiocarZone.contains(localPoint) {
+            // Toggle tapioca on/off
+            drinkState.hasTapioca.toggle()
+            print("⚫ \(drinkState.hasTapioca ? "Added" : "Removed") tapioca")
+        } else if foamZone.contains(localPoint) {
+            // Toggle foam on/off
+            drinkState.hasFoam.toggle()
+            print("🍫 \(drinkState.hasFoam ? "Added" : "Removed") foam")
+        } else if lidZone.contains(localPoint) {
+            // Toggle lid on/off (only if there's tea)
+            if drinkState.teaType != .none {
+                drinkState.hasLid.toggle()
+                print("🎭 \(drinkState.hasLid ? "Added" : "Removed") lid")
+            } else {
+                print("❌ Need tea before adding lid")
+            }
+        } else {
+            print("🤷‍♂️ Touch outside brewing zones")
+        }
+        
+        updateDrinkVisuals()
+        
+        // Add interaction feedback
+        let pulseAction = SKAction.sequence([
+            SKAction.scale(to: 1.1, duration: 0.1),
+            SKAction.scale(to: 1.0, duration: 0.1)
+        ])
+        drinkContainer.run(pulseAction)
+    }
 }
 
 // MARK: - Brewing Area Helper
@@ -374,7 +445,7 @@ class BrewingArea: SKSpriteNode {
         
         super.init(texture: nil, color: color, size: size)
         self.name = "brewing_area_\(type)"
-        self.zPosition = 1
+        self.zPosition = 15 // Make sure brewing areas are on top
     }
     
     required init?(coder aDecoder: NSCoder) {

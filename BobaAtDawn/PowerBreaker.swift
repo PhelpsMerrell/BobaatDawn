@@ -10,10 +10,9 @@ import SpriteKit
 class PowerBreaker: SKSpriteNode {
     
     // MARK: - Properties
-    private(set) var isTimeActive: Bool = false {
+    private(set) var isBreakerTripped: Bool = false {
         didSet {
             updateVisuals()
-            handleTimeToggle()
         }
     }
     
@@ -26,8 +25,9 @@ class PowerBreaker: SKSpriteNode {
     init() {
         super.init(texture: nil, color: .clear, size: CGSize(width: 80, height: 120))
         
-        name = "time_breaker"
+        name = "power_breaker"
         setupVisuals()
+        setupTimeCallbacks()
         updateVisuals()
     }
     
@@ -37,7 +37,7 @@ class PowerBreaker: SKSpriteNode {
     
     private func setupVisuals() {
         // Base panel
-        basePanel = SKSpriteNode(color: SKColor(red: 0.3, green: 0.3, blue: 0.3, alpha: 1.0), 
+        basePanel = SKSpriteNode(color: SKColor(red: 0.2, green: 0.4, blue: 0.2, alpha: 1.0), 
                                 size: CGSize(width: 60, height: 100))
         basePanel.position = CGPoint(x: 0, y: 0)
         basePanel.zPosition = 0
@@ -45,12 +45,12 @@ class PowerBreaker: SKSpriteNode {
         
         // Switch handle
         switchHandle = SKSpriteNode(color: .white, size: CGSize(width: 40, height: 20))
-        switchHandle.position = CGPoint(x: 0, y: 0)
+        switchHandle.position = CGPoint(x: 0, y: 10) // Start in up position
         switchHandle.zPosition = 1
         addChild(switchHandle)
         
         // Status indicator light
-        statusLight = SKSpriteNode(color: .orange, size: CGSize(width: 15, height: 15))
+        statusLight = SKSpriteNode(color: .green, size: CGSize(width: 15, height: 15))
         statusLight.position = CGPoint(x: 0, y: 30)
         statusLight.zPosition = 1
         addChild(statusLight)
@@ -64,74 +64,92 @@ class PowerBreaker: SKSpriteNode {
         addChild(mainLabel)
         
         // Status indicator label
-        timeLabel = SKLabelNode(text: "PAUSED")
+        timeLabel = SKLabelNode(text: "FLOWING")
         timeLabel.fontSize = 8
-        timeLabel.fontColor = .orange
+        timeLabel.fontColor = .green
         timeLabel.position = CGPoint(x: 0, y: -58)
         timeLabel.zPosition = 1
         addChild(timeLabel)
     }
     
+    private func setupTimeCallbacks() {
+        // Listen for breaker trips
+        TimeManager.shared.onBreakerTripped = { [weak self] in
+            self?.tripBreaker()
+        }
+    }
+    
     private func updateVisuals() {
-        // Switch position
-        let switchY: CGFloat = isTimeActive ? 10 : -10
-        let moveAction = SKAction.moveTo(y: switchY, duration: 0.2)
-        switchHandle.run(moveAction)
+        let timeManager = TimeManager.shared
         
-        // Light color and animation
-        if isTimeActive {
-            statusLight.color = .green
-            statusLight.alpha = 1.0
-            statusLight.removeAction(forKey: "pause_pulse")
+        if isBreakerTripped {
+            // Breaker is tripped - needs player reset
+            statusLight.color = .red
+            statusLight.removeAllActions()
             
-            // Flowing green light for active time
-            let flowAction = SKAction.repeatForever(
+            // Flashing red light
+            let flashAction = SKAction.repeatForever(
                 SKAction.sequence([
-                    SKAction.fadeAlpha(to: 0.7, duration: 1.0),
+                    SKAction.fadeAlpha(to: 0.3, duration: 0.3),
+                    SKAction.fadeAlpha(to: 1.0, duration: 0.3)
+                ])
+            )
+            statusLight.run(flashAction, withKey: "flash")
+            
+            timeLabel.text = "TRIPPED"
+            timeLabel.fontColor = .red
+            
+            // Switch in down position
+            let switchY: CGFloat = -10
+            let moveAction = SKAction.moveTo(y: switchY, duration: 0.2)
+            switchHandle.run(moveAction)
+            
+        } else if timeManager.isTimeActive {
+            // Time is flowing normally
+            statusLight.color = .green
+            statusLight.removeAllActions()
+            
+            // Steady green light
+            let glowAction = SKAction.repeatForever(
+                SKAction.sequence([
+                    SKAction.fadeAlpha(to: 0.8, duration: 1.0),
                     SKAction.fadeAlpha(to: 1.0, duration: 1.0)
                 ])
             )
-            statusLight.run(flowAction, withKey: "time_flow")
+            statusLight.run(glowAction, withKey: "glow")
             
-            timeLabel.text = "ACTIVE"
+            timeLabel.text = "FLOWING"
             timeLabel.fontColor = .green
-        } else {
-            statusLight.color = .orange
-            statusLight.alpha = 0.8
-            statusLight.removeAction(forKey: "time_flow")
             
-            // Gentle pulse for paused state
-            let pulseAction = SKAction.repeatForever(
-                SKAction.sequence([
-                    SKAction.fadeAlpha(to: 0.4, duration: 2.0),
-                    SKAction.fadeAlpha(to: 0.8, duration: 2.0)
-                ])
-            )
-            statusLight.run(pulseAction, withKey: "pause_pulse")
-            
-            timeLabel.text = "PAUSED"
-            timeLabel.fontColor = .orange
+            // Switch in up position
+            let switchY: CGFloat = 10
+            let moveAction = SKAction.moveTo(y: switchY, duration: 0.2)
+            switchHandle.run(moveAction)
         }
         
-        // Base panel appearance
-        basePanel.color = isTimeActive ? 
-            SKColor(red: 0.2, green: 0.4, blue: 0.2, alpha: 1.0) : // Greenish tint when active
-            SKColor(red: 0.3, green: 0.3, blue: 0.3, alpha: 1.0)   // Neutral gray when paused
+        // Base panel color
+        basePanel.color = isBreakerTripped ? 
+            SKColor(red: 0.4, green: 0.2, blue: 0.2, alpha: 1.0) : // Reddish when tripped
+            SKColor(red: 0.2, green: 0.4, blue: 0.2, alpha: 1.0)   // Greenish when flowing
     }
     
-    private func handleTimeToggle() {
-        if isTimeActive {
-            TimeManager.shared.startTime()
-            print("⏰ Time cycle activated via power breaker")
-        } else {
-            TimeManager.shared.stopTime()
-            print("⏰ Time cycle paused via power breaker")
-        }
+    // MARK: - Time Callbacks
+    private func tripBreaker() {
+        isBreakerTripped = true
+        print("🔴 Power breaker tripped! Dawn cycle complete")
+    }
+    
+    private func resetBreaker() {
+        isBreakerTripped = false
+        TimeManager.shared.advanceFromDawn()
+        print("⚡ Power breaker reset! Advancing to next day")
     }
     
     // MARK: - Interaction
     func toggle() {
-        isTimeActive.toggle()
+        guard isBreakerTripped else { return } // Only works when tripped
+        
+        resetBreaker()
         
         // Haptic-like visual feedback
         let feedbackAction = SKAction.sequence([
@@ -140,18 +158,22 @@ class PowerBreaker: SKSpriteNode {
         ])
         run(feedbackAction)
         
-        // Extra visual feedback for time activation
-        if isTimeActive {
-            let activationGlow = SKAction.sequence([
-                SKAction.colorize(with: .green, colorBlendFactor: 0.3, duration: 0.3),
-                SKAction.colorize(withColorBlendFactor: 0.0, duration: 0.3)
-            ])
-            basePanel.run(activationGlow)
-        }
+        // Reset glow effect
+        let resetGlow = SKAction.sequence([
+            SKAction.colorize(with: .green, colorBlendFactor: 0.4, duration: 0.3),
+            SKAction.colorize(withColorBlendFactor: 0.0, duration: 0.3)
+        ])
+        basePanel.run(resetGlow)
     }
     
     // MARK: - Public Interface
-    func getTimeStatus() -> String {
-        return isTimeActive ? "Time Active" : "Time Paused"
+    func getBreakerStatus() -> String {
+        if isBreakerTripped {
+            return "Tripped - Ready to Advance"
+        } else if TimeManager.shared.isTimeActive {
+            return "Time Flowing"
+        } else {
+            return "Time Stopped"
+        }
     }
 }

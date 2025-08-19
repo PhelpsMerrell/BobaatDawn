@@ -32,9 +32,10 @@ enum TimePhase: CaseIterable {
 class TimeManager {
     
     // MARK: - State
-    private(set) var currentPhase: TimePhase = .dawn
-    private(set) var isTimeActive: Bool = false
+    private(set) var currentPhase: TimePhase = .day // Start in day, not dawn
+    private(set) var isTimeActive: Bool = true // Start flowing immediately
     private(set) var phaseProgress: Float = 0.0 // 0.0 to 1.0 through current phase
+    private(set) var isBreakerTripped: Bool = false // Dawn completed, needs player reset
     
     // MARK: - Timing
     private var phaseStartTime: TimeInterval = 0
@@ -43,25 +44,26 @@ class TimeManager {
     // MARK: - Callbacks
     var onPhaseChanged: ((TimePhase) -> Void)?
     var onProgressUpdated: ((Float) -> Void)?
+    var onBreakerTripped: (() -> Void)? // Dawn completed
     
     // MARK: - Singleton
     static let shared = TimeManager()
-    private init() {}
-    
-    // MARK: - Public Interface
-    func startTime() {
-        guard !isTimeActive else { return }
-        
-        isTimeActive = true
+    private init() {
+        // Start time immediately when created
         phaseStartTime = CFAbsoluteTimeGetCurrent()
         lastUpdateTime = phaseStartTime
-        
-        print("⏰ Time cycle activated! Current phase: \(currentPhase)")
     }
     
-    func stopTime() {
-        isTimeActive = false
-        print("⏰ Time cycle paused")
+    // MARK: - Public Interface
+    func advanceFromDawn() {
+        guard currentPhase == .dawn && isBreakerTripped else { return }
+        
+        // Reset breaker and advance to day
+        isBreakerTripped = false
+        isTimeActive = true
+        advanceToNextPhase() // Dawn → Day
+        
+        print("⏰ Breaker reset! Advancing from Dawn to Day")
     }
     
     func update() {
@@ -77,13 +79,28 @@ class TimeManager {
         
         // Check if phase should advance
         if elapsedInPhase >= phaseDuration {
-            advanceToNextPhase()
+            if currentPhase == .dawn {
+                // Dawn completed - trip breaker, stop time
+                tripBreaker()
+            } else {
+                // Normal phase transition
+                advanceToNextPhase()
+            }
         }
         
         lastUpdateTime = currentTime
     }
     
     // MARK: - Private Methods
+    private func tripBreaker() {
+        isTimeActive = false
+        isBreakerTripped = true
+        phaseProgress = 1.0
+        
+        print("🔴 Dawn cycle complete! Breaker tripped - player must advance to continue")
+        onBreakerTripped?()
+    }
+    
     private func advanceToNextPhase() {
         let previousPhase = currentPhase
         currentPhase = currentPhase.nextPhase
