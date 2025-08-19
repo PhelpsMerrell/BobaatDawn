@@ -9,7 +9,7 @@ import SpriteKit
 import GameplayKit
 
 // MARK: - Main Game Scene
-class GameScene: SKScene {
+class GameScene: SKScene, UIGestureRecognizerDelegate {
     
     // MARK: - Camera System
     private var gameCamera: SKCameraNode!
@@ -29,6 +29,10 @@ class GameScene: SKScene {
     private var rotatableObjects: [RotatableObject] = []
     private var tables: [RotatableObject] = []
     
+    // MARK: - Time System
+    private var timeBreaker: PowerBreaker!
+    private var timeWindow: Window!
+    
     // MARK: - Interaction System
     private var selectedObject: RotatableObject?
     
@@ -36,7 +40,11 @@ class GameScene: SKScene {
     private var shopFloor: SKSpriteNode!
     
     // MARK: - Touch Handling
+    private var longPressTimer: Timer?
+    private var longPressTarget: SKNode?
+    private let longPressDuration: TimeInterval = 0.8
     private var isHandlingPinch = false
+    private var isHandlingSwipe = false
     
     // MARK: - Scene Setup
     override func didMove(to view: SKView) {
@@ -46,6 +54,7 @@ class GameScene: SKScene {
         setupCharacter()
         setupBrewingStation()
         setupRotatableObjects()
+        setupTimeSystem() // Setup day/night cycle
         setupPathfinding() // Setup pathfinding after all objects are created
         setupGestures()
     }
@@ -177,6 +186,22 @@ class GameScene: SKScene {
         }
     }
     
+    private func setupTimeSystem() {
+        // Create time control breaker (upper-left)
+        timeBreaker = PowerBreaker()
+        timeBreaker.position = CGPoint(x: -worldWidth/2 + 100, y: worldHeight/2 - 100)
+        timeBreaker.zPosition = 10
+        addChild(timeBreaker)
+        
+        // Create time window (upper-right)
+        timeWindow = Window()
+        timeWindow.position = CGPoint(x: worldWidth/2 - 100, y: worldHeight/2 - 100)
+        timeWindow.zPosition = 10
+        addChild(timeWindow)
+        
+        print("🌅 Time system initialized - game starts in dawn, use time breaker to activate cycle")
+    }
+    
     private func setupGestures() {
         guard let view = view else { return }
         
@@ -185,9 +210,14 @@ class GameScene: SKScene {
         let twoFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleTwoFingerTap(_:)))
         twoFingerTap.numberOfTouchesRequired = 2
         
+        // Add swipe gesture for pickup/drop
+        let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        panGesture.delegate = self
+        
         view.addGestureRecognizer(pinchGesture)
         view.addGestureRecognizer(rotationGesture)
         view.addGestureRecognizer(twoFingerTap)
+        view.addGestureRecognizer(panGesture)
     }
     
     // MARK: - Gesture Handlers
@@ -226,80 +256,239 @@ class GameScene: SKScene {
         gameCamera.run(zoomAction)
     }
     
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        guard !isHandlingPinch else { return }
+        
+        switch gesture.state {
+        case .began:
+            isHandlingSwipe = true
+            
+        case .ended:
+            if isHandlingSwipe {
+                let velocity = gesture.velocity(in: view)
+                let location = gesture.location(in: view)
+                let sceneLocation = convertPoint(fromView: location)
+                handleSwipeGesture(at: sceneLocation, velocity: velocity)
+            }
+            isHandlingSwipe = false
+            
+        case .cancelled, .failed:
+            isHandlingSwipe = false
+            
+        default:
+            break
+        }
+    }
+    
     // MARK: - Touch Handling
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard !isHandlingPinch else { return }
+        guard !isHandlingPinch && !isHandlingSwipe else { return }
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
         let touchedNode = atPoint(location)
         
-        handleContextTap(at: location, node: touchedNode)
+        // Check for long press interactions (brewing, power, etc.)
+        if let interactable = findInteractableNode(touchedNode) {
+            startLongPress(for: interactable, at: location)
+        } else {
+            // Single tap = movement only
+            character.moveTo(location, avoiding: tables)
+        }
     }
     
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        // No longer needed - context taps are immediate
+        cancelLongPress()
     }
     
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        // No longer needed - context taps are immediate
+        cancelLongPress()
     }
     
-    private func handleContextTap(at location: CGPoint, node: SKNode) {
-        // Check what was tapped and respond contextually
+    // MARK: - Long Press System
+    private func startLongPress(for node: SKNode, at location: CGPoint) {
+        longPressTarget = node
+        longPressTimer = Timer.scheduledTimer(withTimeInterval: longPressDuration, repeats: false) { [weak self] _ in
+            self?.handleLongPress(on: node, at: location)
+        }
+    }
+    
+    private func cancelLongPress() {
+        longPressTimer?.invalidate()
+        longPressTimer = nil
+        longPressTarget = nil
+    }
+    
+    // MARK: - Swipe System (Pickup/Drop)
+    private func handleSwipeGesture(at location: CGPoint, velocity: CGPoint) {
+        let swipeThreshold: CGFloat = 100 // Minimum velocity for swipe detection
+        let proximityDistance: CGFloat = 100 // "Next to character" distance
         
-        // 1. Check for carried item drop
+        guard sqrt(velocity.x * velocity.x + velocity.y * velocity.y) > swipeThreshold else {
+            return // Not a strong enough swipe
+        }
+        
+        // Calculate swipe direction relative to character
+        let characterPos = character.position
+        let swipeDirection = CGPoint(x: velocity.x, y: velocity.y)
+        let directionToCharacter = CGPoint(x: characterPos.x - location.x, y: characterPos.y - location.y)
+        
+        // Dot product to determine if swipe is toward or away from character
+        let dotProduct = swipeDirection.x * directionToCharacter.x + swipeDirection.y * directionToCharacter.y
+        
+        if character.isCarrying {
+            // Character is carrying something - swipe to drop
+            if dotProduct < 0 { // Swipe away from character
+                handleSwipeDrop(at: location, velocity: swipeDirection)
+            }
+        } else {
+            // Character not carrying - check for pickup
+            if dotProduct > 0 { // Swipe toward character
+                handleSwipePickup(at: location, proximityDistance: proximityDistance)
+            }
+        }
+    }
+    
+    private func handleSwipePickup(at location: CGPoint, proximityDistance: CGFloat) {
+        // Find nearby objects that can be picked up
+        let nearbyObjects = findNearbyPickupableObjects(near: character.position, within: proximityDistance)
+        
+        if let closestObject = nearbyObjects.first {
+            // Animate object flying to character
+            let flyAction = SKAction.move(to: character.position, duration: 0.3)
+            flyAction.timingMode = .easeOut
+            
+            closestObject.run(flyAction) { [weak self] in
+                self?.character.pickupItem(closestObject)
+            }
+        }
+    }
+    
+    private func handleSwipeDrop(at location: CGPoint, velocity: CGPoint) {
+        guard let carriedItem = character.carriedItem else { return }
+        
+        // Calculate drop position (not too far from character)
+        let characterPos = character.position
+        let maxDropDistance: CGFloat = 80
+        
+        let normalizedVelocity = normalizeVector(velocity)
+        let dropPosition = CGPoint(
+            x: characterPos.x + normalizedVelocity.x * maxDropDistance,
+            y: characterPos.y + normalizedVelocity.y * maxDropDistance
+        )
+        
+        // Drop the item at the calculated position
+        character.dropItem()
+        
+        // Animate to drop position
+        let dropAction = SKAction.move(to: dropPosition, duration: 0.3)
+        dropAction.timingMode = .easeOut
+        carriedItem.run(dropAction)
+    }
+    
+    private func handleLongPress(on node: SKNode, at location: CGPoint) {
         if node == character.carriedItem {
             character.dropItem()
-            return
-        }
-        
-        // 2. Check for rotatable objects (pickup)
-        if let rotatableObj = node as? RotatableObject {
-            if rotatableObj.canBeCarried && character.carriedItem == nil {
-                character.pickupItem(rotatableObj)
-            } else if rotatableObj.name == "table" || rotatableObj == brewingStation {
-                // Tables and station: arrange in place (future feature)
-                // For now, do nothing with station, allow table selection
-                if rotatableObj.name == "table" {
-                    selectObjectForArrangement(rotatableObj)
-                }
-            }
-            return
-        }
-        
-        // 3. Check for brewing areas
-        if let brewingArea = node as? BrewingArea {
+        } else if node == timeBreaker {
+            // Toggle time system
+            timeBreaker.toggle()
+        } else if let brewingArea = node as? BrewingArea {
             brewingStation.handleInteraction(brewingArea.areaType, at: location)
-            return
-        }
-        
-        // 4. Check for completed drink in brewing station
-        if brewingStation.hasCompletedDrink() && 
-           (node == brewingStation || node.parent == brewingStation || node.name == "interactable_drink") {
+        } else if node.name == "interactable_drink" {
+            // Handle completed drink pickup from brewing station
+            if let completedDrink = brewingStation.takeCompletedDrink() {
+                character.pickupItem(completedDrink)
+            }
+        } else if brewingStation.hasCompletedDrink() && 
+                  (node == brewingStation || node.parent == brewingStation) {
             if character.carriedItem == nil {
                 if let completedDrink = brewingStation.takeCompletedDrink() {
                     character.pickupItem(completedDrink)
                 }
             }
-            return
         }
         
-        // 5. Default: Move character to location
-        character.moveTo(location, avoiding: tables)
-    }
-    
-    private func selectObjectForArrangement(_ object: RotatableObject) {
-        // Clear any previous selection
-        selectedObject?.forceHideSelection()
-        
-        // Select new object (only for arrangement, no visual indicators)
-        selectedObject = object
+        longPressTimer = nil
+        longPressTarget = nil
     }
     
     // MARK: - Helper Methods
+    private func findInteractableNode(_ node: SKNode) -> SKNode? {
+        // Check for time breaker
+        if node == timeBreaker {
+            return timeBreaker
+        }
+        
+        // Check for brewing areas
+        if let brewingArea = node as? BrewingArea {
+            return brewingArea
+        }
+        
+        // Check for completed drink in brewing station
+        if node.name?.contains("interactable") == true {
+            return node
+        }
+        
+        // Check brewing station with completed drink
+        if brewingStation.hasCompletedDrink() && 
+           (node == brewingStation || node.parent == brewingStation) {
+            return node
+        }
+        
+        // Check for carried item
+        if node == character.carriedItem {
+            return character.carriedItem
+        }
+        
+        // Search through node hierarchy
+        var current: SKNode? = node
+        while current != nil {
+            if current is BrewingArea {
+                return current
+            }
+            current = current?.parent
+        }
+        
+        return nil
+    }
+    
+    private func findNearbyPickupableObjects(near position: CGPoint, within distance: CGFloat) -> [RotatableObject] {
+        var nearbyObjects: [RotatableObject] = []
+        
+        // Check all rotatable objects
+        for object in rotatableObjects {
+            if object.canBeCarried {
+                let objectDistance = sqrt(pow(object.position.x - position.x, 2) + pow(object.position.y - position.y, 2))
+                if objectDistance <= distance {
+                    nearbyObjects.append(object)
+                }
+            }
+        }
+        
+        // Sort by distance (closest first)
+        nearbyObjects.sort { obj1, obj2 in
+            let dist1 = sqrt(pow(obj1.position.x - position.x, 2) + pow(obj1.position.y - position.y, 2))
+            let dist2 = sqrt(pow(obj2.position.x - position.x, 2) + pow(obj2.position.y - position.y, 2))
+            return dist1 < dist2
+        }
+        
+        return nearbyObjects
+    }
+    
+    private func normalizeVector(_ vector: CGPoint) -> CGPoint {
+        let magnitude = sqrt(vector.x * vector.x + vector.y * vector.y)
+        guard magnitude > 0 else { return CGPoint(x: 0, y: 0) }
+        return CGPoint(x: vector.x / magnitude, y: vector.y / magnitude)
+    }
+    
     private func findRotatableObject(at location: CGPoint) -> RotatableObject? {
         let touchedNode = atPoint(location)
         return touchedNode as? RotatableObject
+    }
+    
+    // MARK: - Gesture Delegate
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        // Allow pan gesture to work alongside pinch and rotation
+        return true
     }
     
     // MARK: - Camera Update
@@ -335,5 +524,8 @@ class GameScene: SKScene {
         updateCamera()
         character.update()
         brewingStation?.update()
+        
+        // Update time system
+        TimeManager.shared.update()
     }
 }

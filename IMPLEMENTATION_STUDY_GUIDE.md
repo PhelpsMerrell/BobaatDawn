@@ -3,15 +3,15 @@
 ## 🎯 **What We Just Implemented**
 
 ### **NEW FEATURES:**
-- ✅ **Power Breaker System** - Toggle station power on/off
-- ✅ **Interaction Mode System** - Browse vs Arrange modes  
-- ✅ **Character Class** - Encapsulated player logic
+- ✅ **Day/Night Cycle System** - 32-minute cycle with 4 atmospheric phases
+- ✅ **Time Control Breaker** - Activate time progression with long press
+- ✅ **Color-Changing Window** - Visual time phase indicator
+- ✅ **Character Class** - Encapsulated player logic with smart pathfinding
 - ✅ **Rotatable Objects** - 4-state rotation with visual feedback
-- ✅ **Enhanced Gesture System** - Context-sensitive interactions
-- ✅ **Completed Drink System** - Non-rotatable boba drinks
-- ✅ **Multi-Drink Creation** - Create and place multiple boba drinks
-- ✅ **Selection Indicator Control** - No yellow circles in browse mode
-- ✅ **Smart Pathfinding** - GameplayKit pathfinding prevents teleporting through obstacles
+- ✅ **Swipe Pickup/Drop System** - Forgiving proximity-based object interaction
+- ✅ **Completed Drink System** - Recipe-accurate boba drinks
+- ✅ **Multi-Drink Creation** - Create and place multiple custom bobas
+- ✅ **Context-Aware Movement** - Single tap navigation with obstacle avoidance
 
 ---
 
@@ -21,7 +21,9 @@
 ```
 GameScene (Main orchestrator)
 ├── Character (Player logic)
-├── PowerBreaker (Mode switching)
+├── PowerBreaker (Time control)
+├── Window (Time phase indicator)
+├── TimeManager (Singleton - cycle logic)
 ├── BobaBrewingStation : RotatableObject
 ├── RotatableObject (Base for movable items)
 └── Regular SKSpriteNodes (Tables, walls)
@@ -31,86 +33,95 @@ GameScene (Main orchestrator)
 - **GameScene**: Camera, world setup, gesture coordination
 - **Character**: Movement, carrying, collision avoidance  
 - **RotatableObject**: Rotation states, selection, visual shapes
-- **PowerBreaker**: Mode switching, visual feedback
-- **BobaBrewingStation**: Drink creation, power management
+- **PowerBreaker**: Time control activation, visual feedback
+- **Window**: Color-changing time phase visualization
+- **TimeManager**: 32-minute cycle logic, phase transitions
+- **BobaBrewingStation**: Drink creation, recipe management
 
 ---
 
-## 🎮 **Current Gesture Mapping**
+## 🎮 **Current Interaction System**
 
-### **BROWSE MODE (Default):**
-- **Single Tap** → Move character
-- **Long Press small items (drink/completedDrink)** → Pick up and carry
-- **Long Press large items (furniture/station)** → Enter arrange mode
-- **Long Press power breaker** → Toggle power state
-- **Long Press brewing areas** → Interact (if powered)
-- **Long Press completed drink in station** → Pick up finished boba
+### **CORE INTERACTIONS:**
+- **Single Tap** → Move character with smart pathfinding
+- **Long Press time breaker** → Activate/pause day/night cycle
+- **Long Press brewing areas** → Interact with boba station
+- **Long Press completed drink** → Pick up finished boba
+- **Swipe toward character** → Pick up nearby objects
+- **Swipe away from character** → Drop carried items
 - **Two-finger rotate while carrying rotatable items** → Rotate carried item
 - **Pinch** → Camera zoom
 - **Two-finger tap** → Reset zoom
 
-### **ARRANGE MODE (Power Off):**
-- **Tap objects** → Select for rotation
-- **Tap empty space** → Exit arrange mode
-- **Two-finger rotate on selected** → Rotate object
-- **All other gestures** → Same as browse mode
+### **🌅 DAY/NIGHT CYCLE SYSTEM:**
+
+**Time Phases (32 minutes total):**
+- **Dawn**: 4 minutes - Soft pink/orange window color
+- **Day**: 12 minutes - Bright blue/white window color  
+- **Dusk**: 4 minutes - Orange/purple window color
+- **Night**: 12 minutes - Dark blue/purple window color
+
+**Time Control:**
+- Game starts in **Dawn** and stays there indefinitely
+- **Long press time breaker** (upper-left) to activate cycle
+- Once activated, time progresses automatically through all phases
+- Window (upper-right) changes color to show current time phase
+- Smooth color transitions between phases
 
 ---
 
 ## 🔧 **Key Swift Concepts in Our Code**
 
-### **1. Enums with Associated Values:**
+### **1. Singleton Pattern:**
 ```swift
-enum ObjectType {
-    case drink        // Small, portable test items
-    case furniture    // Large, arrangeable items
-    case station      // Boba station parts
-    case completedDrink // Finished boba drinks (non-rotatable)
-}
-
-enum RotationState: Int, CaseIterable {
-    case north = 0, east = 90, south = 180, west = 270
+class TimeManager {
+    static let shared = TimeManager()
+    private init() {}
     
-    func next() -> RotationState {
-        // Cycles through all cases
+    func startTime() { /* ... */ }
+    func update() { /* ... */ }
+}
+
+// Usage
+TimeManager.shared.startTime()
+```
+
+### **2. Enum with Computed Properties:**
+```swift
+enum TimePhase: CaseIterable {
+    case dawn, day, dusk, night
+    
+    var duration: TimeInterval {
+        switch self {
+        case .dawn: return 4 * 60  // 4 minutes
+        case .day: return 12 * 60  // 12 minutes
+        case .dusk: return 4 * 60
+        case .night: return 12 * 60
+        }
+    }
+    
+    var nextPhase: TimePhase {
+        // Cycles through all phases
     }
 }
 ```
 
-### **2. Property Observers (didSet):**
+### **3. Closure Callbacks:**
 ```swift
-private var currentMode: InteractionMode = .browse {
-    didSet {
-        updateModeVisuals() // Called automatically when mode changes
-    }
+// TimeManager notifies Window of phase changes
+TimeManager.shared.onPhaseChanged = { [weak self] newPhase in
+    self?.transitionToPhase(newPhase)
 }
 ```
 
-### **3. Closures/Callbacks:**
+### **4. Color Interpolation:**
 ```swift
-// PowerBreaker calls this when toggled
-PowerBreaker { [weak self] isPowered in
-    self?.handlePowerStateChange(isPowered)
-}
-```
-
-### **4. Optional Binding Patterns:**
-```swift
-// Safe unwrapping
-guard let item = carriedItem else { return }
-
-// Multiple optionals
-if let touch = touches.first, let view = view {
-    // Both exist, safe to use
-}
-```
-
-### **5. Class Inheritance:**
-```swift
-class BobaBrewingStation: RotatableObject {
-    // Inherits rotation, selection, visual feedback
-    // Adds brewing-specific functionality
-}
+// Smooth color transitions
+let colorAction = SKAction.colorize(with: newColor, 
+                                   colorBlendFactor: 1.0, 
+                                   duration: 2.0)
+colorAction.timingMode = .easeInEaseOut
+run(colorAction)
 ```
 
 ---
@@ -121,109 +132,134 @@ class BobaBrewingStation: RotatableObject {
 **What it handles:**
 - Camera system (following, zoom, bounds)
 - World setup (walls, tables, layout)
-- Gesture recognition and routing
-- Mode management (browse/arrange)
-- Touch event coordination
+- Time system integration and setup
+- Touch routing (time breaker, brewing, movement)
+- Update loop coordination
 
 **Key Methods to Study:**
-- `setupGestures()` - How gestures are wired up
-- `handleTap()` - Mode-specific tap behavior
-- `updateCamera()` - Smooth camera following
-- `findInteractableNode()` - Touch target detection
+- `setupTimeSystem()` - Time breaker and window positioning
+- `handleLongPress()` - Time breaker interaction
+- `findInteractableNode()` - Includes time breaker detection
+- `update()` - Calls TimeManager.shared.update()
 
 ### **🧑‍💼 Character.swift** (Player Logic)
 **What it handles:**
 - Smart pathfinding using GameplayKit's GKObstacleGraph
 - Collision avoidance with smooth navigation around obstacles
 - Item carrying state management
-- Physics body setup
-- Carried item positioning during movement
-
-**New Pathfinding Features:**
-- **GKObstacleGraph**: Uses GameplayKit for professional pathfinding
-- **Obstacle detection**: Includes tables, brewing station, and large furniture
-- **Buffer zones**: Adds padding around obstacles for smooth navigation
-- **Fallback system**: Falls back to direct movement if no path found
-- **Multi-waypoint movement**: Follows paths with multiple waypoints smoothly
-
-**Key Concepts:**
-- **Encapsulation**: All player logic in one place
-- **State Management**: `isCarrying` computed property
-- **Smart Navigation**: `moveWithPathfinding()` and `followPath()` methods
-
-### **🔄 RotatableObject.swift** (Rotatable Items)
-**What it handles:**
-- 4-state rotation system (N/E/S/W)
-- Visual shape creation (arrows, L-shapes, triangles)
-- Selection highlighting
-- Object type categorization (drink/furniture/station)
+- Swipe-based pickup/drop interactions
 
 **Key Features:**
-- **Shape Factory**: Different visual indicators for rotation
-- **State Machine**: Clean rotation state transitions
-- **Visual Feedback**: Selection indicators, animations
+- **GameplayKit pathfinding**: Professional obstacle navigation
+- **Proximity-based interactions**: Forgiving swipe pickup system
+- **Carrying state management**: Visual feedback for carried items
 
-### **⚡ PowerBreaker.swift** (Mode Switching)
+### **🕒 TimeManager.swift** (Singleton - Cycle Logic)
 **What it handles:**
-- Power state visualization (green/red light)
-- Switch animation (up/down position)
-- Callback system for state changes
-- Thematic integration (turning off power = arrange mode)
+- 32-minute cycle timing (Dawn 4min → Day 12min → Dusk 4min → Night 12min)
+- Phase progression and transitions
+- Progress tracking within each phase (0.0 to 1.0)
+- Callback system for phase changes
+- Start/stop time control
+
+**Key Features:**
+- **Singleton pattern**: `TimeManager.shared`
+- **Phase callbacks**: Notify window and other systems of changes
+- **Progress updates**: Smooth transitions during long phases
+- **Pause/resume capability**: Time breaker controls activation
+
+### **🪟 Window.swift** (Time Indicator)
+**What it handles:**
+- Color-changing visual time indicator
+- Smooth color transitions between phases
+- Subtle brightness variations during phases
+- Positioned in upper-right corner
+
+**Color System:**
+- **Dawn**: Soft pink/orange gradient
+- **Day**: Bright blue/white
+- **Dusk**: Orange/purple gradient  
+- **Night**: Dark blue/purple
+
+### **⏰ PowerBreaker.swift** (Time Control - Renamed from Power System)
+**What it handles:**
+- Time activation switch (not power/modes anymore)
+- Visual feedback for time state (green=active, orange=paused)
+- Long press interaction for time control
+- Positioned in upper-left corner
+
+**Visual States:**
+- **Time Paused**: Orange light, "PAUSED" label
+- **Time Active**: Green flowing light, "ACTIVE" label
 
 ### **🧋 BobaBrewingStation.swift** (Drink Creation)
 **What it handles:**
 - Drink assembly system (tea + toppings + lid)
-- Power-dependent interactions
+- Recipe-accurate drink generation
 - Large interaction areas for mobile
 - Completed drink creation and pickup
-- New boba drink spawning after pickup
-
-**New Features:**
-- **Non-rotatable completed drinks**: Uses `.completedDrink` type
-- **Automatic station reset**: New drink can be started immediately
-- **Proper pickup integration**: Long press completed drink to pick up
+- Always-powered operation (no power dependency)
 
 ---
 
 ## 🎯 **Swift vs C# Quick Reference**
 
-### **Properties:**
+### **Singleton Pattern:**
 ```swift
-// Swift - Computed property
-var isCarrying: Bool {
-    return carriedItem != nil
+// Swift - Singleton with private init
+class TimeManager {
+    static let shared = TimeManager()
+    private init() {}
 }
 
-// C# equivalent
-public bool IsCarrying => carriedItem != null;
-```
-
-### **Initialization:**
-```swift
-// Swift - Custom initializer
-init(type: ObjectType, color: SKColor) {
-    self.objectType = type
-    super.init(texture: nil, color: color, size: defaultSize)
-    setupVisuals()
-}
-
-// C# equivalent
-public RotatableObject(ObjectType type, SKColor color) : base(null, color, defaultSize) {
-    this.objectType = type;
-    SetupVisuals();
+// C# equivalent  
+public class TimeManager {
+    public static TimeManager Instance { get; } = new TimeManager();
+    private TimeManager() {}
 }
 ```
 
-### **Event Handling:**
+### **Enum with Methods:**
+```swift
+// Swift - Enum with computed properties
+enum TimePhase: CaseIterable {
+    case dawn, day, dusk, night
+    
+    var duration: TimeInterval {
+        switch self {
+        case .dawn: return 4 * 60
+        case .day: return 12 * 60
+        // ...
+        }
+    }
+}
+
+// C# equivalent
+public enum TimePhase {
+    Dawn, Day, Dusk, Night
+}
+
+public static class TimePhaseExtensions {
+    public static TimeSpan Duration(this TimePhase phase) {
+        return phase switch {
+            TimePhase.Dawn => TimeSpan.FromMinutes(4),
+            TimePhase.Day => TimeSpan.FromMinutes(12),
+            // ...
+        };
+    }
+}
+```
+
+### **Callback Systems:**
 ```swift
 // Swift - Closure-based callbacks
-PowerBreaker { isPowered in
-    self.handlePowerChange(isPowered)
+TimeManager.shared.onPhaseChanged = { newPhase in
+    self.updateForPhase(newPhase)
 }
 
 // C# equivalent
-powerBreaker.PowerChanged += (isPowered) => {
-    this.HandlePowerChange(isPowered);
+TimeManager.Instance.PhaseChanged += (newPhase) => {
+    this.UpdateForPhase(newPhase);
 };
 ```
 
@@ -231,70 +267,84 @@ powerBreaker.PowerChanged += (isPowered) => {
 
 ## 🎮 **How the Systems Connect**
 
-### **Power System Flow:**
-1. **User long-presses breaker** → `PowerBreaker.toggle()`
-2. **Breaker calls callback** → `GameScene.handlePowerStateChange()`
-3. **GameScene updates mode** → `currentMode = .arrange` 
-4. **Mode change triggers** → `updateModeVisuals()`
-5. **Station becomes movable** → `brewingStation.setArrangeMode(true)`
+### **Time System Flow:**
+1. **User long-presses time breaker** → `PowerBreaker.toggle()`
+2. **Time breaker activates time** → `TimeManager.shared.startTime()`
+3. **TimeManager updates each frame** → `TimeManager.update()` in GameScene
+4. **Phase changes trigger callbacks** → `Window.transitionToPhase()`
+5. **Window updates color smoothly** → Color interpolation animations
+6. **Cycle continues automatically** → Dawn → Day → Dusk → Night → Dawn...
 
 ### **Object Interaction Flow:**
 1. **Touch detected** → `touchesBegan()`
-2. **Find target** → `findInteractableNode()`
-3. **Route by mode** → Browse vs Arrange logic
-4. **Execute action** → Pick up, rotate, move, or select
+2. **Find target** → `findInteractableNode()` (includes time breaker)
+3. **Route by type** → Time control, brewing, or pickup logic
+4. **Execute action** → Toggle time, brew drink, or pick up item
 
 ### **Character Movement:**
 1. **Tap location** → `character.moveTo()`
-2. **Collision check** → `getValidPosition()` 
-3. **Move character** → SKAction animation
-4. **Update carried item** → Follow character position
+2. **Pathfinding** → Navigate around obstacles
+3. **Swipe interactions** → Pickup/drop nearby objects
+4. **Camera follows** → Smooth tracking with world bounds
 
 ---
 
 ## 🔍 **What to Study Next**
 
 ### **For Understanding Swift:**
-1. **Optional binding patterns** in `findInteractableNode()`
-2. **Enum with methods** in `RotationState`
-3. **Closure capture** `[weak self]` in callbacks
-4. **Property observers** `didSet` in mode changes
+1. **Singleton pattern** in `TimeManager.shared`
+2. **Enum with computed properties** in `TimePhase`
+3. **Closure callbacks** in time system updates
+4. **Color interpolation** in Window transitions
+5. **Timer-based updates** in cycle management
 
 ### **For Understanding Architecture:**
-1. **Delegation pattern** in PowerBreaker callbacks
-2. **State machine** in RotatableObject rotation
-3. **Encapsulation** in Character class
-4. **Composition** in GameScene coordinating subsystems
+1. **Observer pattern** in time callbacks
+2. **State machine** in time phase transitions
+3. **Separation of concerns** between time logic and visuals
+4. **Centralized time management** with distributed updates
 
 ### **For Understanding Game Development:**
-1. **Touch handling pipeline** from touches to actions
-2. **Camera constraints** and smooth following
-3. **Visual feedback systems** (selection, animation)
-4. **Gesture recognition** and conflict resolution
+1. **Frame-based time updates** in game loop
+2. **Smooth visual transitions** for atmospheric changes
+3. **User-controlled pacing** with activation switches
+4. **Visual feedback systems** for time state indication
 
 ---
 
 ## ✅ **Test Plan**
 
-1. **Build and run** - Should compile cleanly
-2. **Find power breaker** - Walk to upper-left, look for gray panel
-3. **Test power toggle** - Long press breaker, watch light change
-4. **Test arrange mode** - Power off = objects can be selected and rotated
-5. **Test object pickup** - Long press any small item (green triangle, boba drinks)
-6. **Test rotation** - Carry rotatable items, two-finger rotate to see 4 states
-7. **Test brewing** - Power on, long press brewing areas, make complete drink
-8. **Test boba pickup** - Complete drink shakes, long press to pick up
-9. **Test multiple bobas** - Create, pickup, place multiple drinks around shop
-10. **Verify no yellow circles** - Browse mode should show no selection indicators
-11. **Test pathfinding** - Try clicking behind tables/obstacles, character should path around
-12. **Test navigation** - No more teleporting through collision boxes!
+### **Time System Testing:**
+1. **Build and run** - Should compile cleanly with new time components
+2. **Find time breaker** - Upper-left gray panel with "TIME" label
+3. **Test time activation** - Long press breaker, watch status change to "ACTIVE"
+4. **Observe window colors** - Upper-right window should start pink (dawn)
+5. **Watch phase transitions** - Window should smoothly change colors over time
+6. **Test time pause** - Long press breaker again to pause cycle
+7. **Verify dawn start** - Game should always start in dawn phase
 
-**Fixed Issues:**
-- ✅ **Selection indicators removed** in browse mode
-- ✅ **All objects now pickupable** (test triangle, furniture in arrange mode)
-- ✅ **Boba drinks are non-rotatable** but still carriable
-- ✅ **Multiple boba creation** - station resets after each pickup
-- ✅ **Smart pathfinding** - Character navigates around obstacles properly
-- ✅ **No more teleporting** - Uses GameplayKit's professional pathfinding
+### **Existing System Testing:**
+8. **Test object pickup** - Swipe toward character to pick up nearby items
+9. **Test object drop** - Swipe away from character to drop carried items
+10. **Test brewing** - Long press brewing areas to make drinks
+11. **Test boba pickup** - Long press completed drinks to pick up
+12. **Test movement** - Single tap for pathfinding navigation
+13. **Test camera** - Pinch zoom, two-finger tap to reset
+14. **Test rotation** - Two-finger rotation on carried rotatable items
 
-The architecture is now properly separated and extensible for your future features!
+### **Visual Polish Testing:**
+15. **Window transitions** - Should be smooth color changes, not instant
+16. **Time breaker feedback** - Visual feedback when toggling time
+17. **Light animations** - Flowing green when active, pulsing orange when paused
+18. **No UI clutter** - Clean minimalist design maintained
+
+**New Architecture:**
+- ✅ **Day/Night cycle system** - 32-minute atmospheric timing
+- ✅ **Time control integration** - Power breaker now controls time
+- ✅ **Color-changing window** - Visual time phase indicator
+- ✅ **Swipe pickup/drop** - Forgiving proximity-based interactions
+- ✅ **Single tap movement** - Clean context-aware navigation
+- ✅ **Long press brewing** - Tactile drink creation restored
+- ✅ **Smart pathfinding** - Navigate around obstacles naturally
+
+The game now has a complete atmospheric time system that enhances the cozy, ritual-focused gameplay! 🌅🧋
