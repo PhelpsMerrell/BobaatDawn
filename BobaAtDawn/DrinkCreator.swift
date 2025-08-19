@@ -67,12 +67,11 @@ class DrinkCreator: SKNode {
         // Clear existing children
         drinkDisplay.removeAllChildren()
         
-        // Base cup (always visible)
-        let cup = SKSpriteNode(color: .white, size: CGSize(width: 35, height: 55))
-        cup.alpha = 0.8
+        // Base cup (proper cup shape using SKShapeNode)
+        let cup = createCupShape()
         drinkDisplay.addChild(cup)
         
-        // Tea (if present)
+        // Tea (if present) - create tea shape that fits inside cup
         if hasTea {
             let teaColor: SKColor
             switch iceLevel {
@@ -82,8 +81,9 @@ class DrinkCreator: SKNode {
             default: teaColor = SKColor(red: 0.6, green: 0.3, blue: 0.1, alpha: 0.8)
             }
             
-            let tea = SKSpriteNode(color: teaColor, size: CGSize(width: 30, height: 45))
-            drinkDisplay.addChild(tea)
+            // Create tea shape that fits inside the cup
+            let teaShape = createTeaShape(color: teaColor)
+            drinkDisplay.addChild(teaShape)
         }
         
         // Boba (if present)
@@ -118,12 +118,13 @@ class DrinkCreator: SKNode {
         drinkDisplay.removeAction(forKey: "shake")
         
         if isComplete {
+            // Restore the shaking animation every 2-3 seconds
             let shakeAction = SKAction.repeatForever(
                 SKAction.sequence([
                     SKAction.moveBy(x: 2, y: 0, duration: 0.1),
                     SKAction.moveBy(x: -4, y: 0, duration: 0.2),
                     SKAction.moveBy(x: 2, y: 0, duration: 0.1),
-                    SKAction.wait(forDuration: 1.0)
+                    SKAction.wait(forDuration: 2.5)  // Wait 2.5 seconds between shakes
                 ])
             )
             drinkDisplay.run(shakeAction, withKey: "shake")
@@ -136,7 +137,7 @@ class DrinkCreator: SKNode {
     func createCompletedDrink(from stations: [IngredientStation]) -> RotatableObject? {
         guard isComplete else { return nil }
         
-        // Get recipe
+        // Get recipe from stations (independent snapshot)
         var iceLevel = 0
         var hasBoba = false
         var hasFoam = false
@@ -158,7 +159,7 @@ class DrinkCreator: SKNode {
             }
         }
         
-        // Create completed drink with recipe
+        // Create tea color based on recipe
         let teaColor: SKColor
         switch iceLevel {
         case 0: teaColor = SKColor(red: 0.6, green: 0.3, blue: 0.1, alpha: 1.0) // Dark
@@ -167,34 +168,160 @@ class DrinkCreator: SKNode {
         default: teaColor = SKColor(red: 0.6, green: 0.3, blue: 0.1, alpha: 1.0)
         }
         
-        let completedDrink = RotatableObject(type: .completedDrink, color: teaColor, shape: "drink")
-        completedDrink.name = "completed_boba"
+        // Create completely independent completed drink
+        let completedDrink = RotatableObject(type: .completedDrink, color: .clear, shape: "drink")
+        completedDrink.name = "completed_boba_\(Int.random(in: 1000...9999))"  // Unique name
+        completedDrink.size = CGSize(width: 30, height: 45)  // Smaller carried size
         
-        // Add visual layers (mini versions)
+        // Add cup shape (independent copy)
+        let cupShape = createCompletedDrinkCupShape()
+        cupShape.fillColor = teaColor  // Cup shows tea type
+        completedDrink.addChild(cupShape)
+        
+        // Add visual layers (completely independent from display)
         if hasBoba {
-            let boba = SKSpriteNode(color: .black, size: CGSize(width: 14, height: 4))
-            boba.position = CGPoint(x: 0, y: -12)
+            let boba = SKSpriteNode(color: .black, size: CGSize(width: 12, height: 3))
+            boba.position = CGPoint(x: 0, y: -10)
             boba.alpha = 0.8
+            boba.name = "boba_layer"
             completedDrink.addChild(boba)
         }
         
         if hasFoam {
-            let foam = SKSpriteNode(color: SKColor(red: 1.0, green: 0.9, blue: 0.7, alpha: 0.9), size: CGSize(width: 18, height: 4))
-            foam.position = CGPoint(x: 0, y: 15)
+            let foam = SKSpriteNode(color: SKColor(red: 1.0, green: 0.9, blue: 0.7, alpha: 0.9), size: CGSize(width: 15, height: 3))
+            foam.position = CGPoint(x: 0, y: 12)
+            foam.name = "foam_layer"
             completedDrink.addChild(foam)
         }
         
         if hasLid {
-            let lid = SKSpriteNode(color: .darkGray, size: CGSize(width: 20, height: 4))
-            lid.position = CGPoint(x: 0, y: 18)
+            let lid = SKSpriteNode(color: .darkGray, size: CGSize(width: 18, height: 3))
+            lid.position = CGPoint(x: 0, y: 15)
+            lid.name = "lid_layer"
             completedDrink.addChild(lid)
             
-            let straw = SKSpriteNode(color: .white, size: CGSize(width: 1, height: 12))
-            straw.position = CGPoint(x: 8, y: 15)
+            let straw = SKSpriteNode(color: .white, size: CGSize(width: 1, height: 10))
+            straw.position = CGPoint(x: 6, y: 12)
+            straw.name = "straw_layer"
             completedDrink.addChild(straw)
         }
         
+        print("🎆 Created independent completed drink: \(completedDrink.name!)")
         return completedDrink
+    }
+    
+    // MARK: - Cup Shape Creation
+    private func createCupShape() -> SKShapeNode {
+        // Create cup shape using bezier path
+        let cupPath = UIBezierPath()
+        
+        // Cup dimensions
+        let cupWidth: CGFloat = 30
+        let cupHeight: CGFloat = 50
+        let bottomWidth: CGFloat = 25
+        
+        // Start at bottom-left
+        cupPath.move(to: CGPoint(x: -bottomWidth/2, y: -cupHeight/2))
+        
+        // Bottom edge
+        cupPath.addLine(to: CGPoint(x: bottomWidth/2, y: -cupHeight/2))
+        
+        // Right edge (slightly curved outward)
+        cupPath.addQuadCurve(to: CGPoint(x: cupWidth/2, y: cupHeight/2), 
+                            controlPoint: CGPoint(x: cupWidth/2, y: 0))
+        
+        // Top edge
+        cupPath.addLine(to: CGPoint(x: -cupWidth/2, y: cupHeight/2))
+        
+        // Left edge (slightly curved outward)
+        cupPath.addQuadCurve(to: CGPoint(x: -bottomWidth/2, y: -cupHeight/2), 
+                            controlPoint: CGPoint(x: -cupWidth/2, y: 0))
+        
+        cupPath.close()
+        
+        // Create shape node
+        let cupShape = SKShapeNode(path: cupPath.cgPath)
+        cupShape.fillColor = SKColor.white
+        cupShape.strokeColor = SKColor(red: 0.8, green: 0.8, blue: 0.8, alpha: 1.0)
+        cupShape.lineWidth = 1.5
+        cupShape.alpha = 0.9
+        
+        return cupShape
+    }
+    
+    private func createCompletedDrinkCupShape() -> SKShapeNode {
+        // Smaller version for completed drinks
+        let cupPath = UIBezierPath()
+        
+        // Smaller cup dimensions
+        let cupWidth: CGFloat = 18
+        let cupHeight: CGFloat = 30
+        let bottomWidth: CGFloat = 15
+        
+        // Start at bottom-left
+        cupPath.move(to: CGPoint(x: -bottomWidth/2, y: -cupHeight/2))
+        
+        // Bottom edge
+        cupPath.addLine(to: CGPoint(x: bottomWidth/2, y: -cupHeight/2))
+        
+        // Right edge (slightly curved outward)
+        cupPath.addQuadCurve(to: CGPoint(x: cupWidth/2, y: cupHeight/2), 
+                            controlPoint: CGPoint(x: cupWidth/2, y: 0))
+        
+        // Top edge
+        cupPath.addLine(to: CGPoint(x: -cupWidth/2, y: cupHeight/2))
+        
+        // Left edge (slightly curved outward)
+        cupPath.addQuadCurve(to: CGPoint(x: -bottomWidth/2, y: -cupHeight/2), 
+                            controlPoint: CGPoint(x: -cupWidth/2, y: 0))
+        
+        cupPath.close()
+        
+        // Create shape node
+        let cupShape = SKShapeNode(path: cupPath.cgPath)
+        cupShape.fillColor = SKColor.white
+        cupShape.strokeColor = SKColor(red: 0.8, green: 0.8, blue: 0.8, alpha: 1.0)
+        cupShape.lineWidth = 1.0
+        cupShape.alpha = 0.9
+        
+        return cupShape
+    }
+    
+    private func createTeaShape(color: SKColor) -> SKShapeNode {
+        // Create tea shape that fits nicely inside the cup
+        let teaPath = UIBezierPath()
+        
+        // Tea dimensions (slightly smaller than cup)
+        let teaWidth: CGFloat = 26
+        let teaHeight: CGFloat = 35
+        let bottomWidth: CGFloat = 22
+        
+        // Start at bottom-left (leave space at bottom for boba)
+        teaPath.move(to: CGPoint(x: -bottomWidth/2, y: -teaHeight/2 + 8))
+        
+        // Bottom edge
+        teaPath.addLine(to: CGPoint(x: bottomWidth/2, y: -teaHeight/2 + 8))
+        
+        // Right edge (slightly curved)
+        teaPath.addQuadCurve(to: CGPoint(x: teaWidth/2, y: teaHeight/2), 
+                            controlPoint: CGPoint(x: teaWidth/2, y: 0))
+        
+        // Top edge (flat)
+        teaPath.addLine(to: CGPoint(x: -teaWidth/2, y: teaHeight/2))
+        
+        // Left edge (slightly curved)
+        teaPath.addQuadCurve(to: CGPoint(x: -bottomWidth/2, y: -teaHeight/2 + 8), 
+                            controlPoint: CGPoint(x: -teaWidth/2, y: 0))
+        
+        teaPath.close()
+        
+        // Create shape node
+        let teaShape = SKShapeNode(path: teaPath.cgPath)
+        teaShape.fillColor = color
+        teaShape.strokeColor = SKColor.clear
+        teaShape.zPosition = 1
+        
+        return teaShape
     }
     
     func resetStations(_ stations: [IngredientStation]) {
@@ -203,9 +330,11 @@ class DrinkCreator: SKNode {
             station.resetToDefault()
         }
         
-        // Clear display
+        // Clear display and update to show empty state
         isComplete = false
         updateDrink(from: stations)
+        
+        print("🎆 Stations reset - ready for next drink creation")
     }
 }
 

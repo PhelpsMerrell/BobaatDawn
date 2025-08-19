@@ -73,6 +73,9 @@ class GameScene: SKScene {
         shopFloor.zPosition = -10
         addChild(shopFloor)
         
+        // Add shop floor boundary (visual only)
+        setupShopFloorBounds()
+        
         // Add shop walls
         let wallTop = SKSpriteNode(color: SKColor(red: 0.5, green: 0.3, blue: 0.2, alpha: 1.0), size: CGSize(width: worldWidth, height: 40))
         wallTop.position = CGPoint(x: 0, y: worldHeight/2 - 20)
@@ -93,6 +96,17 @@ class GameScene: SKScene {
         wallRight.position = CGPoint(x: worldWidth/2 - 20, y: 0)
         wallRight.zPosition = -5
         addChild(wallRight)
+    }
+    
+    private func setupShopFloorBounds() {
+        // Main shop floor area - light blue rectangle under brewing stations
+        let shopFloorBounds = SKSpriteNode(color: SKColor(red: 0.7, green: 0.85, blue: 1.0, alpha: 0.6), 
+                                          size: CGSize(width: 800, height: 400))
+        shopFloorBounds.position = CGPoint(x: 0, y: 150)  // Centered under stations
+        shopFloorBounds.zPosition = -8
+        addChild(shopFloorBounds)
+        
+        print("🏠 Light blue shop floor added under brewing stations")
     }
     
     private func setupTables() {
