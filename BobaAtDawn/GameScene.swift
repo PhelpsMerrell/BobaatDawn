@@ -122,14 +122,14 @@ class GameScene: SKScene {
     }
     
     private func setupIngredientStations() {
-        // PRESERVED: 5-station boba creation system
+        // PRESERVED: 5-station boba creation system (adjusted for 60pt grid)
         let stationTypes: [IngredientStation.StationType] = [.ice, .boba, .foam, .tea, .lid]
         let stationCells = [
-            GridCoordinate(x: 18, y: 23),  // Ice station
-            GridCoordinate(x: 21, y: 23),  // Boba station
-            GridCoordinate(x: 24, y: 23),  // Foam station
-            GridCoordinate(x: 27, y: 23),  // Tea station
-            GridCoordinate(x: 30, y: 23)   // Lid station
+            GridCoordinate(x: 12, y: 15),  // Ice station
+            GridCoordinate(x: 14, y: 15),  // Boba station
+            GridCoordinate(x: 16, y: 15),  // Foam station
+            GridCoordinate(x: 18, y: 15),  // Tea station
+            GridCoordinate(x: 20, y: 15)   // Lid station
         ]
         
         for (index, type) in stationTypes.enumerated() {
@@ -148,9 +148,9 @@ class GameScene: SKScene {
             GridWorld.shared.occupyCell(cell, with: gameObject)
         }
         
-        // DrinkCreator position - also grid-aligned
+        // DrinkCreator position - also grid-aligned (adjusted for new grid)
         drinkCreator = DrinkCreator()
-        let displayCell = GridCoordinate(x: 24, y: 20)  // Below tea station
+        let displayCell = GridCoordinate(x: 16, y: 13)  // Below tea station center
         drinkCreator.position = GridWorld.shared.gridToWorld(displayCell)
         drinkCreator.zPosition = 6
         addChild(drinkCreator)
@@ -163,12 +163,12 @@ class GameScene: SKScene {
     }
     
     private func convertExistingObjectsToGrid() {
-        // Convert sample objects to grid positions
+        // Convert sample objects to grid positions (adjusted for 60pt grid)
         let objectConfigs = [
-            (gridPos: GridCoordinate(x: 35, y: 23), type: ObjectType.furniture, color: SKColor.red, shape: "arrow"),
-            (gridPos: GridCoordinate(x: 15, y: 18), type: ObjectType.furniture, color: SKColor.blue, shape: "L"),
-            (gridPos: GridCoordinate(x: 27, y: 15), type: ObjectType.drink, color: SKColor.green, shape: "triangle"),
-            (gridPos: GridCoordinate(x: 22, y: 26), type: ObjectType.furniture, color: SKColor.orange, shape: "rectangle")
+            (gridPos: GridCoordinate(x: 25, y: 15), type: ObjectType.furniture, color: SKColor.red, shape: "arrow"),
+            (gridPos: GridCoordinate(x: 8, y: 12), type: ObjectType.furniture, color: SKColor.blue, shape: "L"),
+            (gridPos: GridCoordinate(x: 18, y: 10), type: ObjectType.drink, color: SKColor.green, shape: "triangle"),
+            (gridPos: GridCoordinate(x: 14, y: 18), type: ObjectType.furniture, color: SKColor.orange, shape: "rectangle")
         ]
         
         for config in objectConfigs {
@@ -183,17 +183,17 @@ class GameScene: SKScene {
             GridWorld.shared.occupyCell(config.gridPos, with: gameObject)
         }
         
-        // Convert tables to grid positions
+        // Convert tables to grid positions (adjusted for 60pt grid)
         let tableGridPositions = [
-            GridCoordinate(x: 33, y: 26),
-            GridCoordinate(x: 15, y: 15),
-            GridCoordinate(x: 37, y: 13),
-            GridCoordinate(x: 20, y: 28),
-            GridCoordinate(x: 40, y: 21),
-            GridCoordinate(x: 10, y: 18),
-            GridCoordinate(x: 25, y: 10),
-            GridCoordinate(x: 30, y: 18),
-            GridCoordinate(x: 22, y: 16)
+            GridCoordinate(x: 22, y: 18),
+            GridCoordinate(x: 10, y: 10),
+            GridCoordinate(x: 26, y: 8),
+            GridCoordinate(x: 13, y: 20),
+            GridCoordinate(x: 28, y: 14),
+            GridCoordinate(x: 6, y: 12),
+            GridCoordinate(x: 16, y: 6),
+            GridCoordinate(x: 20, y: 12),
+            GridCoordinate(x: 14, y: 10)
         ]
         
         for gridPos in tableGridPositions {
@@ -266,19 +266,27 @@ class GameScene: SKScene {
     }
     
     private func showGridCellOccupiedFeedback(at cell: GridCoordinate) {
+        // ENHANCED: Subtle, natural feedback instead of harsh red squares
         let worldPos = GridWorld.shared.gridToWorld(cell)
-        let feedback = SKSpriteNode(color: .red.withAlphaComponent(0.5), 
-                                   size: CGSize(width: GridWorld.cellSize, height: GridWorld.cellSize))
+        
+        // Create a gentle pulsing circle instead of a red square
+        let feedback = SKShapeNode(circleOfRadius: GridWorld.cellSize * 0.3)
+        feedback.fillColor = SKColor.clear
+        feedback.strokeColor = SKColor.orange.withAlphaComponent(0.4)
+        feedback.lineWidth = 2
         feedback.position = worldPos
-        feedback.zPosition = 20
+        feedback.zPosition = 5  // Lower z-position, less intrusive
         addChild(feedback)
         
-        let fadeAction = SKAction.sequence([
+        // Gentle pulse animation instead of harsh fade
+        let pulseAction = SKAction.sequence([
+            SKAction.scale(to: 1.2, duration: 0.15),
+            SKAction.scale(to: 1.0, duration: 0.15),
             SKAction.wait(forDuration: 0.2),
-            SKAction.fadeOut(withDuration: 0.3),
+            SKAction.fadeOut(withDuration: 0.4),
             SKAction.removeFromParent()
         ])
-        feedback.run(fadeAction)
+        feedback.run(pulseAction)
     }
     
     // MARK: - Touch Handling (NEW Grid System + PRESERVED Long Press)

@@ -11,15 +11,15 @@ class GridWorld {
     static let shared = GridWorld()
     
     // Grid configuration
-    static let cellSize: CGFloat = 40
-    static let columns = 50  // 2000pt world width ÷ 40
-    static let rows = 37     // 1500pt world height ÷ 40
+    static let cellSize: CGFloat = 60  // Increased from 40pt for better touch targets
+    static let columns = 33  // 2000pt world width ÷ 60 ≈ 33
+    static let rows = 25     // 1500pt world height ÷ 60 = 25
     static let shopOrigin = CGPoint(x: -1000, y: -750)  // Bottom-left of world
     
     // Grid state
     private var occupiedCells: [GridCoordinate: GameObject] = [:]
     private var reservedCells: Set<GridCoordinate> = []
-    private var characterPosition = GridCoordinate(x: 25, y: 18)  // Center of world
+    private var characterPosition = GridCoordinate(x: 16, y: 12)  // Center of world (adjusted for new grid)
     
     private init() {
         print("🎯 GridWorld initialized: \(GridWorld.columns)x\(GridWorld.rows) grid with \(GridWorld.cellSize)pt cells")

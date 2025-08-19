@@ -30,7 +30,7 @@ class Character: SKSpriteNode {
         zPosition = 10
         
         // Position character at grid center
-        let startCell = GridCoordinate(x: 25, y: 18)
+        let startCell = GridCoordinate(x: 16, y: 12)  // Center of new 33x25 grid
         position = GridWorld.shared.gridToWorld(startCell)
         GridWorld.shared.moveCharacterTo(startCell)
         
@@ -41,7 +41,7 @@ class Character: SKSpriteNode {
         fatalError("init(coder:) has not been implemented")
     }
     
-    // MARK: - Grid Movement (NEW)
+    // MARK: - Grid Movement (ENHANCED - More Fluid)
     func moveToGridCell(_ targetCell: GridCoordinate) {
         guard targetCell.isValid() else {
             print("❌ Invalid target cell: \(targetCell)")
@@ -56,20 +56,28 @@ class Character: SKSpriteNode {
         // Update grid state
         GridWorld.shared.moveCharacterTo(targetCell)
         
-        // Smooth animation to cell center
+        // ENHANCED: More natural, fluid movement
         let worldPosition = GridWorld.shared.gridToWorld(targetCell)
-        let moveAction = SKAction.move(to: worldPosition, duration: 0.25)
-        moveAction.timingMode = .easeInEaseOut
+        
+        // Calculate distance for dynamic timing
+        let distance = sqrt(pow(worldPosition.x - position.x, 2) + pow(worldPosition.y - position.y, 2))
+        let baseSpeed: CGFloat = 300  // Points per second
+        let duration = max(0.15, min(0.6, TimeInterval(distance / baseSpeed)))  // Dynamic timing
+        
+        // Create smooth, natural movement with easing
+        let moveAction = SKAction.move(to: worldPosition, duration: duration)
+        moveAction.timingMode = .easeInEaseOut  // Much more natural feeling
         run(moveAction, withKey: "gridMovement")
         
-        // Move carried item with character (PRESERVED)
+        // Move carried item with character (PRESERVED but enhanced)
         if let item = carriedItem {
             let itemTarget = CGPoint(x: worldPosition.x, y: worldPosition.y + carryOffset)
-            let itemMove = SKAction.move(to: itemTarget, duration: 0.25)
+            let itemMove = SKAction.move(to: itemTarget, duration: duration)
+            itemMove.timingMode = .easeInEaseOut  // Match character movement
             item.run(itemMove, withKey: "itemMovement")
         }
         
-        print("👤 Character moving to grid \(targetCell)")
+        print("👤 Character moving fluidly to grid \(targetCell) in \(String(format: "%.2f", duration))s")
     }
     
     // MARK: - Item Management (PRESERVED - NO CHANGES)
@@ -112,13 +120,16 @@ class Character: SKSpriteNode {
             let gameObject = GameObject(skNode: item, gridPosition: targetCell, objectType: item.objectType)
             GridWorld.shared.occupyCell(targetCell, with: gameObject)
             
-            // Animate to grid position
+            // ENHANCED: More natural dropping animation
             let worldPos = GridWorld.shared.gridToWorld(targetCell)
-            let dropAction = SKAction.move(to: worldPos, duration: 0.3)
-            dropAction.timingMode = .easeOut
+            let distance = sqrt(pow(worldPos.x - item.position.x, 2) + pow(worldPos.y - item.position.y, 2))
+            let dropDuration = max(0.2, min(0.5, TimeInterval(distance / 400)))  // Dynamic timing
+            
+            let dropAction = SKAction.move(to: worldPos, duration: dropDuration)
+            dropAction.timingMode = .easeOut  // Natural settling motion
             item.run(dropAction)
             
-            print("📦 Dropped \(item.objectType) at grid \(targetCell)")
+            print("📦 Dropped \(item.objectType) fluidly at grid \(targetCell)")
         } else {
             // Fallback: Drop at character position if no adjacent cells available
             let dropPosition = CGPoint(x: position.x, y: position.y - 30)
