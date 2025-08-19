@@ -14,18 +14,18 @@ class GameViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        // Create our game scene directly
-        let scene = GameScene()
+        // START WITH TITLE SCREEN instead of going directly to game
+        let titleScene = TitleScene()
         
         // Set the scale mode to scale to fit the window
-        scene.scaleMode = .aspectFill
+        titleScene.scaleMode = .aspectFill
         
-        // Get the SKView and present the scene
+        // Get the SKView and present the title scene
         if let view = self.view as? SKView {
             // Set scene size to match view
-            scene.size = view.bounds.size
+            titleScene.size = view.bounds.size
             
-            view.presentScene(scene)
+            view.presentScene(titleScene)
             
             view.ignoresSiblingOrder = true
             
