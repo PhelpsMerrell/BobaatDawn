@@ -65,8 +65,13 @@ class NPC: SKLabelNode {
     private var targetCell: GridCoordinate?
     
     // Movement
-    private let moveSpeed: TimeInterval = 0.4 // Seconds per grid cell
+    private let moveSpeed: TimeInterval = 1.2 // Slow, cozy customer pace
     private var isMoving: Bool = false
+    
+    // Enhanced sitting behavior
+    private var hasCheckedForDrink: Bool = false
+    private var gotDrink: Bool = false
+    private var drinkReceivedTime: TimeInterval = 0
     
     // MARK: - Initialization
     init(animal: AnimalType? = nil, startPosition: GridCoordinate? = nil) {
@@ -144,21 +149,33 @@ class NPC: SKLabelNode {
                 stateTimer -= 10 // Reset timer, try again soon
             }
         } else if !isMoving {
-            // Random movement every 2-3 seconds
-            if Int(stateTimer * 3) % 3 == 0 {
-                moveToRandomNearbyCell()
+            // More natural wandering - pause more often, move occasionally
+            if Int(stateTimer * 2) % 8 == 0 { // Every 4 seconds
+                if Int.random(in: 1...4) == 1 { // 25% chance to move
+                    moveToRandomNearbyCell()
+                }
+                // 75% chance to pause and look around like browsing customers
             }
         }
     }
     
     private func updateSitting() {
-        // Check if there's a drink on our table immediately when we start sitting
-        if stateTimer < 1.0 && currentTable != nil { // Check within first second of sitting
+        // Check for drinks immediately when sitting, then again after peaceful sitting
+        if (stateTimer < 1.0 || (stateTimer > Double.random(in: 15...30) && !hasCheckedForDrink)) && currentTable != nil {
             checkForDrinkOnTable()
+            if stateTimer >= 1.0 { // Only mark as checked if it's the delayed check
+                hasCheckedForDrink = true
+            }
         }
         
-        // Sit and wait for service for 45-90 seconds
-        if stateTimer > Double.random(in: 45...90) {
+        // If they got a drink, enjoy it for 5-10 seconds before leaving
+        if gotDrink && stateTimer > drinkReceivedTime + Double.random(in: 5...10) {
+            startLeaving(satisfied: true)
+            return
+        }
+        
+        // Longer timeout - customers are patient in cozy shop
+        if stateTimer > Double.random(in: 60...120) {
             // Timeout - leave neutral
             startLeaving(satisfied: false)
         }
@@ -176,10 +193,13 @@ class NPC: SKLabelNode {
             // Pick up the drink (move it above NPC's head)
             pickupDrinkFromTable(drink)
             
-            // Become satisfied and leave
-            startLeaving(satisfied: true)
+            // Mark that they got a drink and record time
+            gotDrink = true
+            drinkReceivedTime = stateTimer
+            
+            print("🦊 \(animalType.rawValue) will enjoy drink for 5-10 seconds before leaving")
         } else {
-            print("🦊 \(animalType.rawValue) sitting at table with no drinks")
+            print("🦊 \(animalType.rawValue) sitting at table with no drinks - waiting for service")
         }
     }
     
@@ -245,7 +265,10 @@ class NPC: SKLabelNode {
     private func transitionToSitting() {
         state = .sitting
         stateTimer = 0
-        print("🦊 \(animalType.rawValue) sat down at table")
+        hasCheckedForDrink = false
+        gotDrink = false
+        drinkReceivedTime = 0
+        print("🦊 \(animalType.rawValue) sat down at table and is browsing peacefully")
     }
     
     func startLeaving(satisfied: Bool) {
@@ -377,15 +400,18 @@ class NPC: SKLabelNode {
     }
     
     private func chooseTable(from tables: [RotatableObject]) -> RotatableObject? {
-        // Prefer tables with drinks, but accept any table
-        let tablesWithDrinks = tables.filter { hasAtLeastOneDrink($0) }
+        // Choose tables randomly - customers don't hunt for drinks, that's the player's job!
+        let availableTables = tables.filter { table in
+            let tableGridPos = GridWorld.shared.worldToGrid(table.position)
+            return tableGridPos.adjacentCells.contains { GridWorld.shared.isCellAvailable($0) }
+        }
         
-        if !tablesWithDrinks.isEmpty {
-            print("🦊 Found \(tablesWithDrinks.count) tables with drinks!")
-            return tablesWithDrinks.randomElement()
+        if let chosenTable = availableTables.randomElement() {
+            print("🦊 \(animalType.rawValue) chose a random table to sit at")
+            return chosenTable
         } else {
-            print("🦊 No tables with drinks, choosing random table")
-            return tables.randomElement()
+            print("🦊 No tables with available seating")
+            return nil
         }
     }
     
