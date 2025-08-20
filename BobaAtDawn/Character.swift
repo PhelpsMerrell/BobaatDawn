@@ -144,6 +144,20 @@ class Character: SKSpriteNode {
         carriedItem = nil
     }
     
+    func dropItemSilently() {
+        // Remove item from character without placing it on grid
+        guard let item = carriedItem else { return }
+        
+        // Stop floating animation
+        item.removeAction(forKey: "floating")
+        
+        // Remove the item entirely (it will be recreated as table decoration)
+        item.removeFromParent()
+        
+        carriedItem = nil
+        print("📦 Silently removed carried item")
+    }
+    
     func rotateCarriedItem() {
         // Only rotate if the carried item is rotatable
         if let item = carriedItem, item.isRotatable {

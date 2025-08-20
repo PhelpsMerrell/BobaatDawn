@@ -20,6 +20,15 @@ enum TimePhase: CaseIterable {
         }
     }
     
+    var description: String {
+        switch self {
+        case .dawn: return "dawn"
+        case .day: return "day"
+        case .dusk: return "dusk"
+        case .night: return "night"
+        }
+    }
+    
     var nextPhase: TimePhase {
         let allPhases = TimePhase.allCases
         guard let currentIndex = allPhases.firstIndex(of: self) else { return .dawn }

@@ -30,6 +30,7 @@ class GameScene: SKScene {
     // MARK: - Time System (PRESERVED)
     private var timeBreaker: PowerBreaker!
     private var timeWindow: Window!
+    private var timeLabel: SKLabelNode!
     
     // MARK: - World Areas
     private var shopFloor: SKSpriteNode!
@@ -42,6 +43,12 @@ class GameScene: SKScene {
     
     // MARK: - Grid Visual Debug (Optional)
     private var showGridOverlay = false
+    
+    // MARK: - NPC System
+    private var npcs: [NPC] = []
+    private var lastNPCSpawnTime: TimeInterval = 0
+    private let maxNPCs = 3
+    private var sceneTime: TimeInterval = 0 // Track scene time consistently
     
     // MARK: - Scene Setup
     override func didMove(to view: SKView) {
@@ -60,6 +67,16 @@ class GameScene: SKScene {
         
         print("🎯 Grid-based game initialized!")
         GridWorld.shared.printGridState()
+        
+        // Initialize NPC system
+        lastNPCSpawnTime = 0 // Use scene time instead of absolute time
+        
+        print("🦊 NPC system initialized, first spawn in ~1 second")
+        
+        // IMMEDIATE DEBUG: Force spawn one animal right now
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.forceSpawnDebugNPC()
+        }
     }
     
     private func setupCamera() {
@@ -94,6 +111,19 @@ class GameScene: SKScene {
         wallLeft.position = CGPoint(x: -worldWidth/2 + 20, y: 0)
         wallLeft.zPosition = -5
         addChild(wallLeft)
+        
+        // Add front door EMOJI in left wall
+        let frontDoor = SKLabelNode(text: "🚪")
+        frontDoor.fontSize = 80 // Make it bigger
+        frontDoor.fontName = "Arial"
+        frontDoor.horizontalAlignmentMode = .center
+        frontDoor.verticalAlignmentMode = .center
+        frontDoor.position = CGPoint(x: -worldWidth/2 + 120, y: 0) // Move closer to center
+        frontDoor.zPosition = 20 // Very high above everything
+        frontDoor.name = "front_door"
+        addChild(frontDoor)
+        
+        print("🚪 EMOJI Front door added at \(frontDoor.position)")
         
         let wallRight = SKSpriteNode(color: SKColor(red: 0.5, green: 0.3, blue: 0.2, alpha: 1.0), size: CGSize(width: 40, height: worldHeight))
         wallRight.position = CGPoint(x: worldWidth/2 - 20, y: 0)
@@ -215,14 +245,25 @@ class GameScene: SKScene {
     private func setupTimeSystem() {
         // PRESERVED: Time system unchanged
         timeBreaker = PowerBreaker()
-        timeBreaker.position = CGPoint(x: -worldWidth/2 + 100, y: worldHeight/2 - 100)
+        timeBreaker.position = CGPoint(x: -600, y: 400) // Top-left corner of shop, but visible and accessible
         timeBreaker.zPosition = 10
         addChild(timeBreaker)
         
         timeWindow = Window()
-        timeWindow.position = CGPoint(x: worldWidth/2 - 100, y: worldHeight/2 - 100)
+        timeWindow.position = CGPoint(x: 400, y: 300) // Center-right of explorable area
         timeWindow.zPosition = 10
         addChild(timeWindow)
+        
+        // Add time phase label
+        timeLabel = SKLabelNode(text: "DAY")
+        timeLabel.fontSize = 24
+        timeLabel.fontName = "Arial-Bold"
+        timeLabel.fontColor = .black
+        timeLabel.horizontalAlignmentMode = .center
+        timeLabel.verticalAlignmentMode = .center
+        timeLabel.position = CGPoint(x: 400, y: 300) // Same position as time window to center it
+        timeLabel.zPosition = 11 // Above time window
+        addChild(timeLabel)
         
         print("🌅 Time system: Game starts in Day, flows until Dawn completion trips breaker")
     }
@@ -388,8 +429,19 @@ class GameScene: SKScene {
                 print("❌ Already carrying something")
             }
             
-        // 5. Pick up small objects (drinks, small furniture)
+        // 5. Handle rotatable objects (including tables)
         } else if let rotatable = node as? RotatableObject {
+            
+            // Check if this is a table and we're carrying a drink
+            if rotatable.name == "table" && character.carriedItem != nil {
+                if let carriedDrink = character.carriedItem {
+                    print("🧋 Attempting to place \(carriedDrink.objectType) on table")
+                    placeDrinkOnTable(drink: carriedDrink, table: rotatable)
+                }
+                return // Exit early for table interaction
+            }
+            
+            // Otherwise handle as pickupable object
             print("📦 Found rotatable object: \(rotatable.objectType), canBeCarried: \(rotatable.canBeCarried)")
             if rotatable.canBeCarried {
                 if character.carriedItem == nil {
@@ -449,8 +501,13 @@ class GameScene: SKScene {
                 return character.carriedItem
             }
             
-            // 5. Check for pickupable objects
+            // 5. Check for table interactions FIRST (before checking if it can be carried)
             if let rotatable = current as? RotatableObject {
+                if rotatable.name == "table" {
+                    print("✅ Found table for drink placement")
+                    return rotatable
+                }
+                
                 print("🔎 Found rotatable: \(rotatable.objectType), canBeCarried: \(rotatable.canBeCarried)")
                 if rotatable.canBeCarried {
                     print("✅ Object can be carried")
@@ -532,10 +589,242 @@ class GameScene: SKScene {
     
     // MARK: - Update Loop
     override func update(_ currentTime: TimeInterval) {
+        // Update scene time consistently
+        if sceneTime == 0 {
+            sceneTime = currentTime // Initialize on first frame
+        }
+        let deltaTime = currentTime - sceneTime
+        sceneTime = currentTime
+        
         updateCamera()
         character.update()
         
         // Update time system
         TimeManager.shared.update()
+        
+        // Update time display
+        updateTimeDisplay()
+        
+        // Update NPC system using scene time
+        updateNPCs(sceneTime)
+    }
+    
+    private func updateTimeDisplay() {
+        let phase = TimeManager.shared.currentPhase
+        let progress = TimeManager.shared.phaseProgress
+        
+        timeLabel.text = "\(phase.description.uppercased()) \(Int(progress * 100))%"
+        
+        // Change label color based on phase
+        switch phase {
+        case .dawn:
+            timeLabel.fontColor = .systemPink
+        case .day:
+            timeLabel.fontColor = .blue
+        case .dusk:
+            timeLabel.fontColor = .orange
+        case .night:
+            timeLabel.fontColor = .purple
+        }
+    }
+    
+    // MARK: - NPC Management
+    private func updateNPCs(_ currentSceneTime: TimeInterval) {
+        let deltaTime = 1.0/60.0 // Approximate frame time
+        
+        // DEBUG: Print NPC system status every 5 seconds
+        if Int(currentSceneTime) % 5 == 0 && Int(currentSceneTime * 10) % 50 == 0 {
+            let timeSinceLastSpawn = currentSceneTime - lastNPCSpawnTime
+            let nextSpawnIn = getSpawnInterval() - timeSinceLastSpawn
+            let tablesWithDrinks = countTablesWithDrinks()
+            print("🦊 NPC STATUS: \(npcs.count)/\(maxNPCs) NPCs, \(tablesWithDrinks) tables with drinks")
+            print("🦊 SPAWN TIMING: last spawn \(String(format: "%.1f", timeSinceLastSpawn))s ago, next in \(String(format: "%.1f", nextSpawnIn))s")
+            print("🦊 TIME: \(TimeManager.shared.currentPhase), active: \(TimeManager.shared.isTimeActive)")
+        }
+        
+        // Update existing NPCs
+        for npc in npcs {
+            npc.update(deltaTime: deltaTime)
+        }
+        
+        // Remove NPCs that have left (Phase 6: Enhanced cleanup)
+        let initialCount = npcs.count
+        npcs.removeAll { npc in
+            if npc.parent == nil {
+                print("🦊 Cleaned up departed NPC \(npc.animalType.rawValue)")
+                return true
+            }
+            return false
+        }
+        
+        // Log if NPCs were cleaned up
+        if npcs.count < initialCount {
+            print("🦊 NPC cleanup: \(initialCount - npcs.count) NPCs removed, \(npcs.count) remain")
+        }
+        
+        // Spawn new NPCs
+        trySpawnNPC(currentSceneTime)
+    }
+    
+    private func trySpawnNPC(_ currentTime: TimeInterval) {
+        // Don't spawn if at capacity
+        guard npcs.count < maxNPCs else {
+            if Int(currentTime) % 10 == 0 && Int(currentTime * 10) % 100 == 0 {
+                print("🦊 Not spawning: at capacity (\(npcs.count)/\(maxNPCs))")
+            }
+            return
+        }
+        
+        // Calculate spawn interval based on time of day
+        let spawnInterval = getSpawnInterval()
+        let timeSinceLastSpawn = currentTime - lastNPCSpawnTime
+        
+        // Check if enough time has passed
+        guard timeSinceLastSpawn > spawnInterval else {
+            if Int(currentTime) % 10 == 0 && Int(currentTime * 10) % 100 == 0 {
+                print("🦊 Not spawning: waiting \(Int(spawnInterval - timeSinceLastSpawn))s more")
+            }
+            return
+        }
+        
+        // Spawn new NPC
+        let isNight = TimeManager.shared.currentPhase == .night
+        let animal = selectAnimalForSpawn(isNight: isNight) // PHASE 6: Enhanced selection
+        let npc = NPC(animal: animal)
+        
+        addChild(npc)
+        npcs.append(npc)
+        lastNPCSpawnTime = currentTime
+        
+        print("🦊 ✨ SPAWNED \(animal.rawValue) at \(npc.position) (\(npcs.count)/\(maxNPCs) NPCs)")
+        
+        // PHASE 6: Add entrance animation
+        addEntranceAnimation(for: npc)
+    }
+    
+    private func getSpawnInterval() -> TimeInterval {
+        // PHASE 5: Enhanced spawn rates based on time of day and shop state
+        let baseInterval: TimeInterval
+        
+        switch TimeManager.shared.currentPhase {
+        case .day:
+            baseInterval = 15.0 // Every 15 seconds during day (was 5s for testing)
+        case .dusk:
+            baseInterval = 25.0 // Every 25 seconds during dusk
+        case .night:
+            baseInterval = 45.0 // Every 45 seconds during night (mysterious visitors)
+        case .dawn:
+            return 999 // No spawning during dawn (prep time)
+        }
+        
+        // PHASE 5: Dynamic adjustments based on shop state
+        let currentOccupancy = Double(npcs.count) / Double(maxNPCs)
+        let occupancyMultiplier = 1.0 + (currentOccupancy * 0.5) // Slower spawning when busy
+        
+        // Check if there are tables with drinks (encourage spawning)
+        let tablesWithDrinks = countTablesWithDrinks()
+        let drinkBonus = tablesWithDrinks > 0 ? 0.7 : 1.0 // 30% faster spawning if drinks available
+        
+        let finalInterval = baseInterval * occupancyMultiplier * drinkBonus
+        
+        print("🦊 Spawn timing: base=\(baseInterval)s, occupancy=\(String(format: "%.1f", occupancyMultiplier))x, drink_bonus=\(String(format: "%.1f", drinkBonus))x, final=\(String(format: "%.1f", finalInterval))s")
+        
+        return finalInterval
+    }
+    
+    private func countTablesWithDrinks() -> Int {
+        var count = 0
+        enumerateChildNodes(withName: "table") { node, _ in
+            if let table = node as? RotatableObject {
+                if table.children.contains(where: { $0.name == "drink_on_table" }) {
+                    count += 1
+                }
+            }
+        }
+        return count
+    }
+    
+    // MARK: - Phase 6: Enhanced Spawn Selection & Polish
+    private func selectAnimalForSpawn(isNight: Bool) -> AnimalType {
+        if isNight {
+            // Night: 70% normal animals, 30% mysterious night visitors
+            if Int.random(in: 1...10) <= 3 {
+                return AnimalType.nightAnimals.randomElement() ?? .owl
+            } else {
+                return AnimalType.dayAnimals.randomElement() ?? .fox
+            }
+        } else {
+            // Day/Dusk: mostly normal animals with some variety
+            let allDayAnimals = AnimalType.dayAnimals
+            return allDayAnimals.randomElement() ?? .fox
+        }
+    }
+    
+    private func addEntranceAnimation(for npc: NPC) {
+        // PHASE 6: Subtle entrance effect
+        npc.alpha = 0.0
+        npc.setScale(0.8)
+        
+        let entranceAnimation = SKAction.group([
+            SKAction.fadeIn(withDuration: 0.5),
+            SKAction.scale(to: 1.0, duration: 0.5)
+        ])
+        entranceAnimation.timingMode = .easeOut
+        
+        npc.run(entranceAnimation)
+        
+        print("🎭 Added entrance animation for \(npc.animalType.rawValue)")
+    }
+    
+    // MARK: - Debug Methods
+    private func forceSpawnDebugNPC() {
+        print("🦊 🚨 FORCE SPAWNING DEBUG NPC NOW!")
+        
+        let animal = AnimalType.fox
+        let npc = NPC(animal: animal)
+        
+        print("🦊 Created NPC at position: \(npc.position)")
+        
+        addChild(npc)
+        npcs.append(npc)
+        lastNPCSpawnTime = sceneTime // Update spawn time to current scene time
+        
+        print("🦊 ✨ FORCE SPAWNED \(animal.rawValue) - Total NPCs: \(npcs.count)")
+        print("🦊 NPC added to scene with zPosition: \(npc.zPosition)")
+    }
+    
+    // MARK: - Table Service System (Phase 2)
+    private func placeDrinkOnTable(drink: RotatableObject, table: RotatableObject) {
+        // Remove drink from character
+        character.dropItemSilently() // We'll add this method
+        
+        // Create drink sprite as child of table
+        let drinkOnTable = createTableDrink(from: drink)
+        drinkOnTable.position = CGPoint(x: 0, y: 25) // Offset on table surface
+        drinkOnTable.zPosition = 1
+        drinkOnTable.name = "drink_on_table"
+        table.addChild(drinkOnTable)
+        
+        print("🧋 ✨ Successfully placed \(drink.objectType) on table!")
+        print("🧋 Table now has \(table.children.count) child objects")
+    }
+    
+    private func createTableDrink(from originalDrink: RotatableObject) -> SKNode {
+        // Create a smaller version of the drink for table display
+        let tableDrink = SKSpriteNode(color: originalDrink.color, size: CGSize(width: 20, height: 30))
+        
+        // Copy drink visual elements if it's a completed drink
+        if originalDrink.objectType == .completedDrink {
+            // Add drink details (simplified)
+            let lid = SKSpriteNode(color: .lightGray, size: CGSize(width: 16, height: 4))
+            lid.position = CGPoint(x: 0, y: 12)
+            tableDrink.addChild(lid)
+            
+            let straw = SKSpriteNode(color: .white, size: CGSize(width: 2, height: 20))
+            straw.position = CGPoint(x: 6, y: 8)
+            tableDrink.addChild(straw)
+        }
+        
+        return tableDrink
     }
 }
