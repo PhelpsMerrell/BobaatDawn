@@ -416,7 +416,12 @@ class GameScene: SKScene {
             drinkCreator.updateDrink(from: ingredientStations)
             print("🧋 Updated drink display")
             
-        // 4. Pick up completed drink
+        // 4. Forest door - enter woods
+        } else if node.name == "front_door" {
+            print("🚪 Entering the mysterious forest...")
+            enterForest()
+            
+        // 5. Pick up completed drink
         } else if node.name == "completed_drink_pickup" {
             print("🧋 Attempting to pick up completed drink")
             if character.carriedItem == nil {
@@ -429,7 +434,7 @@ class GameScene: SKScene {
                 print("❌ Already carrying something")
             }
             
-        // 5. Handle rotatable objects (including tables)
+        // 6. Handle rotatable objects (including tables)
         } else if let rotatable = node as? RotatableObject {
             
             // Check if this is a table and we're carrying a drink
@@ -495,13 +500,19 @@ class GameScene: SKScene {
                 return current
             }
             
-            // 4. Check for carried item (to drop)
+            // 4. Check for front door (forest entrance)
+            if current?.name == "front_door" {
+                print("✅ Found front door to forest")
+                return current
+            }
+            
+            // 5. Check for carried item (to drop)
             if current == character.carriedItem {
                 print("✅ Found carried item")
                 return character.carriedItem
             }
             
-            // 5. Check for table interactions FIRST (before checking if it can be carried)
+            // 6. Check for table interactions FIRST (before checking if it can be carried)
             if let rotatable = current as? RotatableObject {
                 if rotatable.name == "table" {
                     print("✅ Found table for drink placement")
@@ -826,5 +837,20 @@ class GameScene: SKScene {
         }
         
         return tableDrink
+    }
+    
+    // MARK: - Forest Transition
+    private func enterForest() {
+        print("🌲 Transitioning to forest scene...")
+        
+        let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+        
+        run(fadeOut) { [weak self] in
+            guard let self = self else { return }
+            
+            let forestScene = ForestScene(size: self.size)
+            forestScene.scaleMode = .aspectFill
+            self.view?.presentScene(forestScene, transition: SKTransition.fade(withDuration: 0.5))
+        }
     }
 }
