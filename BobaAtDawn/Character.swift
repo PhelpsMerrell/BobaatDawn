@@ -13,9 +13,12 @@ class Character: SKSpriteNode {
     private(set) var carriedItem: RotatableObject?
     private let carryOffset: CGFloat = GameConfig.Character.carryOffset
     
+    // MARK: - Dependencies
+    private let gridService: GridService
+    
     // Grid properties
     private var gridPosition: GridCoordinate {
-        return GridWorld.shared.currentCharacterPosition
+        return gridService.currentCharacterPosition
     }
     
     var isCarrying: Bool {
@@ -23,7 +26,9 @@ class Character: SKSpriteNode {
     }
     
     // MARK: - Initialization
-    init() {
+    init(gridService: GridService) {
+        self.gridService = gridService
+        
         super.init(texture: nil, color: GameConfig.Character.color, size: GameConfig.Character.size)
         
         name = "character"
@@ -31,8 +36,8 @@ class Character: SKSpriteNode {
         
         // Position character at grid center
         let startCell = GameConfig.Grid.characterStartPosition
-        position = GridWorld.shared.gridToWorld(startCell)
-        GridWorld.shared.moveCharacterTo(startCell)
+        position = gridService.gridToWorld(startCell)
+        gridService.moveCharacterTo(startCell)
         
         print("👤 Character initialized at grid \(startCell), world \(position)")
     }
@@ -48,16 +53,16 @@ class Character: SKSpriteNode {
             return
         }
         
-        guard GridWorld.shared.isCellAvailable(targetCell) else {
+        guard gridService.isCellAvailable(targetCell) else {
             print("❌ Cell \(targetCell) is occupied")
             return
         }
         
         // Update grid state
-        GridWorld.shared.moveCharacterTo(targetCell)
+        gridService.moveCharacterTo(targetCell)
         
         // ENHANCED: More natural, fluid movement
-        let worldPosition = GridWorld.shared.gridToWorld(targetCell)
+        let worldPosition = gridService.gridToWorld(targetCell)
         
         // Calculate distance for dynamic timing
         let distance = sqrt(pow(worldPosition.x - position.x, 2) + pow(worldPosition.y - position.y, 2))
@@ -114,16 +119,16 @@ class Character: SKSpriteNode {
         item.removeAction(forKey: "floating")
         
         // NEW: Grid-based dropping
-        let currentCell = GridWorld.shared.currentCharacterPosition
-        let adjacentCells = GridWorld.shared.getAvailableAdjacentCells(to: currentCell)
+        let currentCell = gridService.currentCharacterPosition
+        let adjacentCells = gridService.getAvailableAdjacentCells(to: currentCell)
         
         if let targetCell = adjacentCells.first {
             // Create GameObject and occupy cell
-            let gameObject = GameObject(skNode: item, gridPosition: targetCell, objectType: item.objectType)
-            GridWorld.shared.occupyCell(targetCell, with: gameObject)
+            let gameObject = GameObject(skNode: item, gridPosition: targetCell, objectType: item.objectType, gridService: gridService)
+            gridService.occupyCell(targetCell, with: gameObject)
             
             // ENHANCED: More natural dropping animation
-            let worldPos = GridWorld.shared.gridToWorld(targetCell)
+            let worldPos = gridService.gridToWorld(targetCell)
             let distance = sqrt(pow(worldPos.x - item.position.x, 2) + pow(worldPos.y - item.position.y, 2))
             let dropDuration = max(0.2, min(0.5, TimeInterval(distance / 400)))  // Dynamic timing
             

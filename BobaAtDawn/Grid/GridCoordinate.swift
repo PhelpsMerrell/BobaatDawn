@@ -34,8 +34,8 @@ struct GridCoordinate: Hashable, Codable {
     }
     
     // Check if coordinate is within grid bounds
-    func isValid() -> Bool {
-        return x >= 0 && x < GridWorld.columns && y >= 0 && y < GridWorld.rows
+    func isValid(columns: Int = GameConfig.Grid.columns, rows: Int = GameConfig.Grid.rows) -> Bool {
+        return x >= 0 && x < columns && y >= 0 && y < rows
     }
 }
 

@@ -2,41 +2,40 @@
 //  GridWorld.swift
 //  BobaAtDawn
 //
-//  Central grid management system for tile-based gameplay
+//  Grid service implementation using dependency injection
 //
 
 import SpriteKit
 
-class GridWorld {
-    static let shared = GridWorld()
+class GridWorld: GridService {
     
-    // Grid configuration (using GameConfig)
-    static let cellSize: CGFloat = GameConfig.Grid.cellSize
-    static let columns = GameConfig.Grid.columns
-    static let rows = GameConfig.Grid.rows
-    static let shopOrigin = GameConfig.Grid.shopOrigin
+    // MARK: - Configuration
+    let cellSize: CGFloat = GameConfig.Grid.cellSize
+    let columns: Int = GameConfig.Grid.columns
+    let rows: Int = GameConfig.Grid.rows
+    let shopOrigin: CGPoint = GameConfig.Grid.shopOrigin
     
-    // Grid state
+    // MARK: - State
     private var occupiedCells: [GridCoordinate: GameObject] = [:]
     private var reservedCells: Set<GridCoordinate> = []
     private var characterPosition = GameConfig.Grid.characterStartPosition
     
-    private init() {
-        print("🎯 GridWorld initialized: \(GridWorld.columns)x\(GridWorld.rows) grid with \(GridWorld.cellSize)pt cells")
+    init() {
+        print("🎯 GridWorld initialized with DI: \(columns)x\(rows) grid with \(cellSize)pt cells")
     }
     
     // MARK: - Coordinate Conversion
     
     func worldToGrid(_ worldPos: CGPoint) -> GridCoordinate {
-        let x = Int((worldPos.x - GridWorld.shopOrigin.x) / GridWorld.cellSize)
-        let y = Int((worldPos.y - GridWorld.shopOrigin.y) / GridWorld.cellSize)
-        return GridCoordinate(x: max(0, min(GridWorld.columns - 1, x)), 
-                             y: max(0, min(GridWorld.rows - 1, y)))
+        let x = Int((worldPos.x - shopOrigin.x) / cellSize)
+        let y = Int((worldPos.y - shopOrigin.y) / cellSize)
+        return GridCoordinate(x: max(0, min(columns - 1, x)), 
+                             y: max(0, min(rows - 1, y)))
     }
     
     func gridToWorld(_ gridPos: GridCoordinate) -> CGPoint {
-        let x = GridWorld.shopOrigin.x + (CGFloat(gridPos.x) * GridWorld.cellSize) + (GridWorld.cellSize / 2)
-        let y = GridWorld.shopOrigin.y + (CGFloat(gridPos.y) * GridWorld.cellSize) + (GridWorld.cellSize / 2)
+        let x = shopOrigin.x + (CGFloat(gridPos.x) * cellSize) + (cellSize / 2)
+        let y = shopOrigin.y + (CGFloat(gridPos.y) * cellSize) + (cellSize / 2)
         return CGPoint(x: x, y: y)
     }
     
@@ -82,7 +81,7 @@ class GridWorld {
         return characterPosition
     }
     
-    // MARK: - Utility Methods
+    // MARK: - Pathfinding Helpers
     
     func findNearestAvailableCell(to center: GridCoordinate, maxRadius: Int = 5) -> GridCoordinate? {
         // Spiral search outward from center
@@ -116,5 +115,12 @@ class GridWorld {
         for (cell, gameObject) in occupiedCells {
             print("   \(cell): \(gameObject.objectType)")
         }
+    }
+}
+
+// MARK: - GridCoordinate Extension for Validation
+extension GridCoordinate {
+    func isValid() -> Bool {
+        return x >= 0 && x < GameConfig.Grid.columns && y >= 0 && y < GameConfig.Grid.rows
     }
 }

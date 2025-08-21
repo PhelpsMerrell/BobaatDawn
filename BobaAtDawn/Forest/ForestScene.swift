@@ -26,6 +26,12 @@ class ForestScene: SKScene {
     private let worldWidth: CGFloat = 2000
     private let worldHeight: CGFloat = 1500
     
+    // MARK: - Dependencies (Temporary - will be improved)
+    private lazy var gridService: GridService = {
+        let container = ServiceSetup.createGameServices()
+        return container.resolve(GridService.self)
+    }()
+    
     // MARK: - Game Objects
     private var character: Character!
     
@@ -115,11 +121,11 @@ class ForestScene: SKScene {
     }
     
     private func setupCharacter() {
-        character = Character()
+        character = Character(gridService: gridService)
         
         // Start character in center-bottom of room
         let startCell = GridCoordinate(x: 16, y: 8) // Bottom center
-        character.position = GridWorld.shared.gridToWorld(startCell)
+        character.position = gridService.gridToWorld(startCell)
         addChild(character)
         
         // Center camera on character
@@ -271,8 +277,8 @@ class ForestScene: SKScene {
         }
         
         // Regular movement with subtle haptic feedback
-        let targetCell = GridWorld.shared.worldToGrid(location)
-        if GridWorld.shared.isCellAvailable(targetCell) {
+        let targetCell = gridService.worldToGrid(location)
+        if gridService.isCellAvailable(targetCell) {
             // Very light haptic for footsteps
             let selectionFeedback = UISelectionFeedbackGenerator()
             selectionFeedback.selectionChanged()
@@ -410,7 +416,7 @@ class ForestScene: SKScene {
     
     private func repositionCharacterForTransition(from previousRoom: Int, preservingY yPosition: CGFloat) {
         // Convert Y position to grid coordinate and clamp to safe bounds
-        let gridY = GridWorld.shared.worldToGrid(CGPoint(x: 0, y: yPosition)).y
+        let gridY = gridService.worldToGrid(CGPoint(x: 0, y: yPosition)).y
         let safeGridY = max(3, min(22, gridY)) // Keep within forest bounds
         
         let targetCell: GridCoordinate
@@ -420,20 +426,20 @@ class ForestScene: SKScene {
             // Player walked left → spawn at right edge of right transition zone
             // Right transition starts at worldWidth/2 - 133, so spawn just inside it
             let edgeX = worldWidth/2 - 133 + 20 // 20pt inside the transition zone
-            let gridX = GridWorld.shared.worldToGrid(CGPoint(x: edgeX, y: 0)).x
+            let gridX = gridService.worldToGrid(CGPoint(x: edgeX, y: 0)).x
             targetCell = GridCoordinate(x: gridX, y: safeGridY)
             print("👤 Player went LEFT → spawning at RIGHT transition edge (x: \(gridX), y: \(safeGridY))")
         } else {
             // Player walked right → spawn at left edge of left transition zone
             // Left transition ends at -worldWidth/2 + 133, so spawn just inside it
             let edgeX = -worldWidth/2 + 133 - 20 // 20pt inside the transition zone
-            let gridX = GridWorld.shared.worldToGrid(CGPoint(x: edgeX, y: 0)).x
+            let gridX = gridService.worldToGrid(CGPoint(x: edgeX, y: 0)).x
             targetCell = GridCoordinate(x: gridX, y: safeGridY)
             print("👤 Player went RIGHT → spawning at LEFT transition edge (x: \(gridX), y: \(safeGridY))")
         }
         
         // Instantly position character (hidden by black screen)
-        character.position = GridWorld.shared.gridToWorld(targetCell)
+        character.position = gridService.gridToWorld(targetCell)
         
         print("👤 Character repositioned to \(targetCell) for room \(currentRoom), at transition edge")
     }

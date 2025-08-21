@@ -1,0 +1,34 @@
+//
+//  ServiceSetup.swift
+//  BobaAtDawn
+//
+//  Sets up dependency injection container for the game
+//
+
+import Foundation
+
+class ServiceSetup {
+    
+    static func createGameServices() -> GameServiceContainer {
+        let container = GameServiceContainer()
+        
+        // Register core services as singletons
+        container.registerSingleton(TimeService.self) {
+            return StandardTimeService()
+        }
+        
+        container.registerSingleton(GridService.self) {
+            return GridWorld()
+        }
+        
+        // Register NPC service with dependencies
+        container.register(NPCService.self) {
+            let timeService = container.resolve(TimeService.self)
+            let gridService = container.resolve(GridService.self)
+            return StandardNPCService(gridService: gridService, timeService: timeService)
+        }
+        
+        print("🎯 Game services registered successfully")
+        return container
+    }
+}

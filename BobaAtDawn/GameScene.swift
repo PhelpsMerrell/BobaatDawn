@@ -10,6 +10,12 @@ import SpriteKit
 // MARK: - Main Game Scene
 class GameScene: SKScene {
     
+    // MARK: - Dependency Injection (Internal)
+    private lazy var serviceContainer: GameServiceContainer = ServiceSetup.createGameServices()
+    private lazy var gridService: GridService = serviceContainer.resolve(GridService.self)
+    private lazy var npcService: NPCService = serviceContainer.resolve(NPCService.self)
+    private lazy var timeService: TimeService = serviceContainer.resolve(TimeService.self)
+    
     // MARK: - Camera System
     private var gameCamera: SKCameraNode!
     private let cameraLerpSpeed: CGFloat = GameConfig.Camera.lerpSpeed
@@ -65,8 +71,8 @@ class GameScene: SKScene {
             addGridOverlay()
         }
         
-        print("🎯 Grid-based game initialized!")
-        GridWorld.shared.printGridState()
+        print("🍯 Grid-based game initialized with DI!")
+        gridService.printGridState()
         
         // Initialize NPC system
         lastNPCSpawnTime = 0 // Use scene time instead of absolute time
@@ -147,7 +153,7 @@ class GameScene: SKScene {
     }
     
     private func setupCharacter() {
-        character = Character()
+        character = Character(gridService: gridService)
         addChild(character)
         
         // Center camera on character
@@ -169,7 +175,7 @@ class GameScene: SKScene {
         for (index, type) in stationTypes.enumerated() {
             let station = IngredientStation(type: type)
             let cell = stationCells[index]
-            let worldPos = GridWorld.shared.gridToWorld(cell)
+            let worldPos = gridService.gridToWorld(cell)
             
             station.position = worldPos
             station.zPosition = 5
@@ -177,18 +183,18 @@ class GameScene: SKScene {
             ingredientStations.append(station)
             
             // Reserve cell and register with grid
-            GridWorld.shared.reserveCell(cell)
-            let gameObject = GameObject(skNode: station, gridPosition: cell, objectType: .station)
-            GridWorld.shared.occupyCell(cell, with: gameObject)
+            gridService.reserveCell(cell)
+            let gameObject = GameObject(skNode: station, gridPosition: cell, objectType: .station, gridService: gridService)
+            gridService.occupyCell(cell, with: gameObject)
         }
         
         // DrinkCreator position - also grid-aligned (adjusted for new grid)
         drinkCreator = DrinkCreator()
         let displayCell = GridCoordinate(x: 16, y: 13)  // Below tea station center
-        drinkCreator.position = GridWorld.shared.gridToWorld(displayCell)
+        drinkCreator.position = gridService.gridToWorld(displayCell)
         drinkCreator.zPosition = 6
         addChild(drinkCreator)
-        GridWorld.shared.reserveCell(displayCell)
+        gridService.reserveCell(displayCell)
         
         // PRESERVED: All boba creation logic unchanged
         drinkCreator.updateDrink(from: ingredientStations)
@@ -207,14 +213,14 @@ class GameScene: SKScene {
         
         for config in objectConfigs {
             let obj = RotatableObject(type: config.type, color: config.color, shape: config.shape)
-            let worldPos = GridWorld.shared.gridToWorld(config.gridPos)
+            let worldPos = gridService.gridToWorld(config.gridPos)
             obj.position = worldPos
             obj.zPosition = 3
             addChild(obj)
             
             // Register with grid
-            let gameObject = GameObject(skNode: obj, gridPosition: config.gridPos, objectType: config.type)
-            GridWorld.shared.occupyCell(config.gridPos, with: gameObject)
+            let gameObject = GameObject(skNode: obj, gridPosition: config.gridPos, objectType: config.type, gridService: gridService)
+            gridService.occupyCell(config.gridPos, with: gameObject)
         }
         
         // Convert tables to grid positions (adjusted for 60pt grid)
@@ -232,15 +238,15 @@ class GameScene: SKScene {
         
         for gridPos in tableGridPositions {
             let table = RotatableObject(type: .furniture, color: SKColor(red: 0.4, green: 0.2, blue: 0.1, alpha: 1.0), shape: "table")
-            let worldPos = GridWorld.shared.gridToWorld(gridPos)
+            let worldPos = gridService.gridToWorld(gridPos)
             table.position = worldPos
             table.zPosition = 1
             table.name = "table"
             addChild(table)
             
             // Register with grid
-            let gameObject = GameObject(skNode: table, gridPosition: gridPos, objectType: .furniture)
-            GridWorld.shared.occupyCell(gridPos, with: gameObject)
+            let gameObject = GameObject(skNode: table, gridPosition: gridPos, objectType: .furniture, gridService: gridService)
+            gridService.occupyCell(gridPos, with: gameObject)
         }
         
         print("🎯 All objects converted to grid positions")
@@ -289,20 +295,20 @@ class GameScene: SKScene {
     // MARK: - Grid Visual Debug (Optional)
     private func addGridOverlay() {
         // Subtle grid lines for development
-        for x in 0...GridWorld.columns {
+        for x in 0...gridService.columns {
             let line = SKSpriteNode(color: SKColor.black.withAlphaComponent(0.1), 
-                                   size: CGSize(width: 1, height: CGFloat(GridWorld.rows) * GridWorld.cellSize))
-            line.position = CGPoint(x: GridWorld.shopOrigin.x + CGFloat(x) * GridWorld.cellSize, 
-                                   y: GridWorld.shopOrigin.y + CGFloat(GridWorld.rows) * GridWorld.cellSize / 2)
+                                   size: CGSize(width: 1, height: CGFloat(gridService.rows) * gridService.cellSize))
+            line.position = CGPoint(x: gridService.shopOrigin.x + CGFloat(x) * gridService.cellSize, 
+                                   y: gridService.shopOrigin.y + CGFloat(gridService.rows) * gridService.cellSize / 2)
             line.zPosition = -5
             addChild(line)
         }
         
-        for y in 0...GridWorld.rows {
+        for y in 0...gridService.rows {
             let line = SKSpriteNode(color: SKColor.black.withAlphaComponent(0.1), 
-                                   size: CGSize(width: CGFloat(GridWorld.columns) * GridWorld.cellSize, height: 1))
-            line.position = CGPoint(x: GridWorld.shopOrigin.x + CGFloat(GridWorld.columns) * GridWorld.cellSize / 2, 
-                                   y: GridWorld.shopOrigin.y + CGFloat(y) * GridWorld.cellSize)
+                                   size: CGSize(width: CGFloat(gridService.columns) * gridService.cellSize, height: 1))
+            line.position = CGPoint(x: gridService.shopOrigin.x + CGFloat(gridService.columns) * gridService.cellSize / 2, 
+                                   y: gridService.shopOrigin.y + CGFloat(y) * gridService.cellSize)
             line.zPosition = -5
             addChild(line)
         }
@@ -312,10 +318,10 @@ class GameScene: SKScene {
     
     private func showGridCellOccupiedFeedback(at cell: GridCoordinate) {
         // ENHANCED: Subtle, natural feedback instead of harsh red squares
-        let worldPos = GridWorld.shared.gridToWorld(cell)
+        let worldPos = gridService.gridToWorld(cell)
         
         // Create a gentle pulsing circle instead of a red square
-        let feedback = SKShapeNode(circleOfRadius: GridWorld.cellSize * 0.3)
+        let feedback = SKShapeNode(circleOfRadius: gridService.cellSize * 0.3)
         feedback.fillColor = SKColor.clear
         feedback.strokeColor = SKColor.orange.withAlphaComponent(0.4)
         feedback.lineWidth = 2
@@ -339,11 +345,11 @@ class GameScene: SKScene {
         guard !isHandlingPinch else { return }
         guard let touch = touches.first else { return }
         let location = touch.location(in: self)
-        let targetCell = GridWorld.shared.worldToGrid(location)
+        let targetCell = gridService.worldToGrid(location)
         let touchedNode = atPoint(location)
         
         // Check what's in the tapped cell first
-        if let gameObject = GridWorld.shared.objectAt(targetCell) {
+        if let gameObject = gridService.objectAt(targetCell) {
             // PRESERVED: Use existing long press system for objects
             if let interactable = findInteractableNode(gameObject.skNode) {
                 startLongPress(for: interactable, at: location)
@@ -359,9 +365,9 @@ class GameScene: SKScene {
         }
         
         // NEW: Grid-based movement
-        if GridWorld.shared.isCellAvailable(targetCell) {
+        if gridService.isCellAvailable(targetCell) {
             character.moveToGridCell(targetCell)
-            print("🎯 Character moving to available cell \(targetCell)")
+            print("🎯 Character moving to available cell \(targetCell) using DI")
         } else {
             // Show feedback for occupied cell
             showGridCellOccupiedFeedback(at: targetCell)
@@ -458,8 +464,8 @@ class GameScene: SKScene {
             if rotatable.canBeCarried {
                 if character.carriedItem == nil {
                     // Remove from grid when picked up
-                    if let gameObject = GridWorld.shared.objectAt(GridWorld.shared.worldToGrid(rotatable.position)) {
-                        GridWorld.shared.freeCell(gameObject.gridPosition)
+                    if let gameObject = gridService.objectAt(gridService.worldToGrid(rotatable.position)) {
+                        gridService.freeCell(gameObject.gridPosition)
                     }
                     
                     character.pickupItem(rotatable)
@@ -618,7 +624,7 @@ class GameScene: SKScene {
         character.update()
         
         // Update time system
-        TimeManager.shared.update()
+        timeService.update()
         
         // Update time display
         updateTimeDisplay()
@@ -628,8 +634,8 @@ class GameScene: SKScene {
     }
     
     private func updateTimeDisplay() {
-        let phase = TimeManager.shared.currentPhase
-        let progress = TimeManager.shared.phaseProgress
+        let phase = timeService.currentPhase
+        let progress = timeService.phaseProgress
         
         timeLabel.text = "\(phase.description.uppercased()) \(Int(progress * 100))%"
         
@@ -657,7 +663,7 @@ class GameScene: SKScene {
             let tablesWithDrinks = countTablesWithDrinks()
             print("🦊 NPC STATUS: \(npcs.count)/\(maxNPCs) NPCs, \(tablesWithDrinks) tables with drinks")
             print("🦊 SPAWN TIMING: last spawn \(String(format: "%.1f", timeSinceLastSpawn))s ago, next in \(String(format: "%.1f", nextSpawnIn))s")
-            print("🦊 TIME: \(TimeManager.shared.currentPhase), active: \(TimeManager.shared.isTimeActive)")
+            print("🦊 TIME: \(timeService.currentPhase), active: \(timeService.isTimeActive)")
         }
         
         // Update existing NPCs
@@ -705,10 +711,10 @@ class GameScene: SKScene {
             return
         }
         
-        // Spawn new NPC
-        let isNight = TimeManager.shared.currentPhase == .night
-        let animal = selectAnimalForSpawn(isNight: isNight) // PHASE 6: Enhanced selection
-        let npc = NPC(animal: animal)
+        // Spawn new NPC using DI
+        let isNight = timeService.currentPhase == .night
+        let animal = npcService.selectAnimalForSpawn(isNight: isNight)
+        let npc = npcService.spawnNPC(animal: animal, at: nil as GridCoordinate?)
         
         addChild(npc)
         npcs.append(npc)
@@ -716,15 +722,14 @@ class GameScene: SKScene {
         
         print("🦊 ✨ SPAWNED \(animal.rawValue) at \(npc.position) (\(npcs.count)/\(maxNPCs) NPCs)")
         
-        // PHASE 6: Add entrance animation
-        addEntranceAnimation(for: npc)
+        // No need for entrance animation - already handled in service
     }
     
     private func getSpawnInterval() -> TimeInterval {
         // PHASE 5: Enhanced spawn rates based on time of day and shop state
         let baseInterval: TimeInterval
         
-        switch TimeManager.shared.currentPhase {
+        switch timeService.currentPhase {
         case .day:
             baseInterval = 15.0 // Every 15 seconds during day (was 5s for testing)
         case .dusk:
@@ -762,52 +767,19 @@ class GameScene: SKScene {
         return count
     }
     
-    // MARK: - Phase 6: Enhanced Spawn Selection & Polish
-    private func selectAnimalForSpawn(isNight: Bool) -> AnimalType {
-        if isNight {
-            // Night: 70% normal animals, 30% mysterious night visitors
-            if Int.random(in: 1...10) <= 3 {
-                return AnimalType.nightAnimals.randomElement() ?? .owl
-            } else {
-                return AnimalType.dayAnimals.randomElement() ?? .fox
-            }
-        } else {
-            // Day/Dusk: mostly normal animals with some variety
-            let allDayAnimals = AnimalType.dayAnimals
-            return allDayAnimals.randomElement() ?? .fox
-        }
-    }
-    
-    private func addEntranceAnimation(for npc: NPC) {
-        // PHASE 6: Subtle entrance effect
-        npc.alpha = 0.0
-        npc.setScale(0.8)
-        
-        let entranceAnimation = SKAction.group([
-            SKAction.fadeIn(withDuration: 0.5),
-            SKAction.scale(to: 1.0, duration: 0.5)
-        ])
-        entranceAnimation.timingMode = .easeOut
-        
-        npc.run(entranceAnimation)
-        
-        print("🎭 Added entrance animation for \(npc.animalType.rawValue)")
-    }
-    
     // MARK: - Debug Methods
     private func forceSpawnDebugNPC() {
         print("🦊 🚨 FORCE SPAWNING DEBUG NPC NOW!")
         
-        let animal = AnimalType.fox
-        let npc = NPC(animal: animal)
+        let npc = npcService.spawnNPC(animal: .fox, at: nil as GridCoordinate?)
         
         print("🦊 Created NPC at position: \(npc.position)")
         
         addChild(npc)
         npcs.append(npc)
-        lastNPCSpawnTime = sceneTime // Update spawn time to current scene time
+        lastNPCSpawnTime = sceneTime
         
-        print("🦊 ✨ FORCE SPAWNED \(animal.rawValue) - Total NPCs: \(npcs.count)")
+        print("🦊 ✨ FORCE SPAWNED fox - Total NPCs: \(npcs.count)")
         print("🦊 NPC added to scene with zPosition: \(npc.zPosition)")
     }
     

@@ -11,15 +11,17 @@ class GameObject {
     let gridPosition: GridCoordinate
     let skNode: SKNode
     let objectType: ObjectType
+    private let gridService: GridService
     
     var worldPosition: CGPoint {
-        return GridWorld.shared.gridToWorld(gridPosition)
+        return gridService.gridToWorld(gridPosition)
     }
     
-    init(skNode: SKNode, gridPosition: GridCoordinate, objectType: ObjectType) {
+    init(skNode: SKNode, gridPosition: GridCoordinate, objectType: ObjectType, gridService: GridService) {
         self.skNode = skNode
         self.gridPosition = gridPosition
         self.objectType = objectType
+        self.gridService = gridService
     }
     
     // Update the SKNode position to match grid position
