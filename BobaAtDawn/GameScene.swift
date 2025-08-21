@@ -16,6 +16,7 @@ class GameScene: SKScene {
     private lazy var gridService: GridService = serviceContainer.resolve(GridService.self)
     private lazy var npcService: NPCService = serviceContainer.resolve(NPCService.self)
     private lazy var timeService: TimeService = serviceContainer.resolve(TimeService.self)
+    private lazy var transitionService: SceneTransitionService = serviceContainer.resolve(SceneTransitionService.self)
     
     // MARK: - Camera System
     private var gameCamera: SKCameraNode!
@@ -430,8 +431,7 @@ class GameScene: SKScene {
         // 4. Forest door - enter woods
         } else if node.name == "front_door" {
             // Haptic feedback for entering forest
-            let notificationFeedback = UINotificationFeedbackGenerator()
-            notificationFeedback.notificationOccurred(.success)
+            transitionService.triggerHapticFeedback(type: .success)
             print("🚪 Entering the mysterious forest...")
             enterForest()
             
@@ -821,16 +821,11 @@ class GameScene: SKScene {
     
     // MARK: - Forest Transition
     private func enterForest() {
-        print("🌲 Transitioning to forest scene...")
+        print("🌲 Entering the mysterious forest...")
         
-        let fadeOut = SKAction.fadeOut(withDuration: configService.forestTransitionFadeOutDuration)
-        
-        run(fadeOut) { [weak self] in
-            guard let self = self else { return }
-            
-            let forestScene = ForestScene(size: self.size)
-            forestScene.scaleMode = .aspectFill
-            self.view?.presentScene(forestScene, transition: SKTransition.fade(withDuration: self.configService.forestTransitionFadeInDuration))
+        // Use transition service for forest entry
+        transitionService.transitionToForest(from: self) {
+            print("🌲 Successfully transitioned to forest")
         }
     }
 }

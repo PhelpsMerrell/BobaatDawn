@@ -26,11 +26,10 @@ class ForestScene: SKScene {
     private let worldWidth: CGFloat = 2000
     private let worldHeight: CGFloat = 1500
     
-    // MARK: - Dependencies (Temporary - will be improved)
-    private lazy var gridService: GridService = {
-        let container = ServiceSetup.createGameServices()
-        return container.resolve(GridService.self)
-    }()
+    // MARK: - Dependencies 
+    private lazy var serviceContainer: GameServiceContainer = ServiceSetup.createGameServices()
+    private lazy var gridService: GridService = serviceContainer.resolve(GridService.self)
+    private lazy var transitionService: SceneTransitionService = serviceContainer.resolve(SceneTransitionService.self)
     
     // MARK: - Game Objects
     private var character: Character!
@@ -280,8 +279,7 @@ class ForestScene: SKScene {
         let targetCell = gridService.worldToGrid(location)
         if gridService.isCellAvailable(targetCell) {
             // Very light haptic for footsteps
-            let selectionFeedback = UISelectionFeedbackGenerator()
-            selectionFeedback.selectionChanged()
+            transitionService.triggerHapticFeedback(type: .selection)
             
             character.moveToGridCell(targetCell)
             print("👤 Character moving to forest cell \(targetCell)")
@@ -315,8 +313,7 @@ class ForestScene: SKScene {
     private func handleLongPress(on node: SKNode, at location: CGPoint) {
         if node.name == "back_door" {
             // Haptic feedback for door interaction
-            let notificationFeedback = UINotificationFeedbackGenerator()
-            notificationFeedback.notificationOccurred(.success)
+            transitionService.triggerHapticFeedback(type: .success)
             returnToShop()
         }
         
@@ -347,114 +344,37 @@ class ForestScene: SKScene {
         isTransitioning = true
         transitionCooldown = transitionCooldownDuration
         
-        print("🌲 Transitioning from Room \(currentRoom) to Room \(newRoom)")
-        
         // Store previous room for character repositioning logic
         let previousRoom = currentRoom
         currentRoom = newRoom
         
-        // Create full-screen black overlay that follows camera
-        let blackOverlay = SKSpriteNode(color: .black, size: CGSize(width: 4000, height: 3000))
-        blackOverlay.zPosition = 1000 // Above everything
-        blackOverlay.alpha = 0
-        addChild(blackOverlay)
-        
-        // Position overlay relative to camera, not world coordinates
-        func updateOverlayPosition() {
-            blackOverlay.position = gameCamera.position
-        }
-        
-        // Update overlay position initially
-        updateOverlayPosition()
-        
-        // Enhanced transition sequence with camera management
-        let fadeToBlack = SKAction.fadeAlpha(to: 1.0, duration: 0.3)
-        let waitInDarkness = SKAction.wait(forDuration: 0.1)
-        
-        let repositionEverything = SKAction.run { [weak self] in
-            // Store current Y position before room change
-            let currentY = self?.character.position.y ?? 0
-            
-            // During black screen, reposition everything instantly
-            self?.setupCurrentRoom()
-            self?.repositionCharacterForTransition(from: previousRoom, preservingY: currentY)
-            
-            // Instantly snap camera to character (hidden by black screen)
-            if let characterPos = self?.character.position {
-                self?.gameCamera.position = characterPos
+        // Use transition service for room transitions
+        transitionService.transitionForestRoom(
+            in: self,
+            from: previousRoom,
+            to: newRoom,
+            character: character,
+            camera: gameCamera,
+            gridService: gridService,
+            lastTriggeredSide: lastTriggeredSide,
+            roomSetupAction: { [weak self] in
+                self?.setupCurrentRoom()
+            },
+            completion: { [weak self] in
+                self?.isTransitioning = false
+                self?.hasLeftTransitionZone = false
+                print("🌲 Room transition complete")
             }
-            
-            // Update overlay position after camera snap
-            updateOverlayPosition()
-        }
-        
-        let waitAfterReposition = SKAction.wait(forDuration: 0.1)
-        let fadeFromBlack = SKAction.fadeAlpha(to: 0.0, duration: 0.3)
-        
-        let cleanup = SKAction.run {
-            blackOverlay.removeFromParent()
-        }
-        
-        let resetTransition = SKAction.run { [weak self] in
-            self?.isTransitioning = false
-            self?.hasLeftTransitionZone = false
-        }
-        
-        // Run the complete sequence
-        let transitionSequence = SKAction.sequence([
-            fadeToBlack,
-            waitInDarkness,
-            repositionEverything,
-            waitAfterReposition,
-            fadeFromBlack,
-            cleanup,
-            resetTransition
-        ])
-        
-        blackOverlay.run(transitionSequence)
+        )
     }
-    
-    private func repositionCharacterForTransition(from previousRoom: Int, preservingY yPosition: CGFloat) {
-        // Convert Y position to grid coordinate and clamp to safe bounds
-        let gridY = gridService.worldToGrid(CGPoint(x: 0, y: yPosition)).y
-        let safeGridY = max(3, min(22, gridY)) // Keep within forest bounds
-        
-        let targetCell: GridCoordinate
-        
-        // Spawn at the edge of transition zones - like you just walked in
-        if lastTriggeredSide == "left" {
-            // Player walked left → spawn at right edge of right transition zone
-            // Right transition starts at worldWidth/2 - 133, so spawn just inside it
-            let edgeX = worldWidth/2 - 133 + 20 // 20pt inside the transition zone
-            let gridX = gridService.worldToGrid(CGPoint(x: edgeX, y: 0)).x
-            targetCell = GridCoordinate(x: gridX, y: safeGridY)
-            print("👤 Player went LEFT → spawning at RIGHT transition edge (x: \(gridX), y: \(safeGridY))")
-        } else {
-            // Player walked right → spawn at left edge of left transition zone
-            // Left transition ends at -worldWidth/2 + 133, so spawn just inside it
-            let edgeX = -worldWidth/2 + 133 - 20 // 20pt inside the transition zone
-            let gridX = gridService.worldToGrid(CGPoint(x: edgeX, y: 0)).x
-            targetCell = GridCoordinate(x: gridX, y: safeGridY)
-            print("👤 Player went RIGHT → spawning at LEFT transition edge (x: \(gridX), y: \(safeGridY))")
-        }
-        
-        // Instantly position character (hidden by black screen)
-        character.position = gridService.gridToWorld(targetCell)
-        
-        print("👤 Character repositioned to \(targetCell) for room \(currentRoom), at transition edge")
-    }
+
     
     private func returnToShop() {
-        print("🚪 Returning to boba shop")
+        print("🏠 Returning to boba shop")
         
-        // Transition back to GameScene
-        let fadeOut = SKAction.fadeOut(withDuration: 0.5)
-        
-        run(fadeOut) { [weak self] in
-            // Create and present GameScene
-            let gameScene = GameScene(size: self?.size ?? CGSize(width: 1024, height: 768))
-            gameScene.scaleMode = .aspectFill
-            self?.view?.presentScene(gameScene, transition: SKTransition.fade(withDuration: 0.5))
+        // Use transition service for returning to game
+        transitionService.transitionToGame(from: self) {
+            print("🏠 Successfully returned to boba shop")
         }
     }
     
@@ -547,16 +467,14 @@ class ForestScene: SKScene {
         // Check if character walked into left transition area (entire pulsing zone)
         if characterPos.x < -worldWidth/2 + 133 && lastTriggeredSide != "left" {
             // Haptic feedback for room transition
-            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-            impactFeedback.impactOccurred()
+            transitionService.triggerHapticFeedback(type: .light)
             lastTriggeredSide = "left"
             transitionToRoom(getPreviousRoom())
         }
         // Check if character walked into right transition area (entire pulsing zone)
         else if characterPos.x > worldWidth/2 - 133 && lastTriggeredSide != "right" {
             // Haptic feedback for room transition
-            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-            impactFeedback.impactOccurred()
+            transitionService.triggerHapticFeedback(type: .light)
             lastTriggeredSide = "right"
             transitionToRoom(getNextRoom())
         }

@@ -25,6 +25,11 @@ class ServiceSetup {
             return GridWorld()
         }
         
+        container.registerSingleton(SceneTransitionService.self) {
+            let configService = container.resolve(ConfigurationService.self)
+            return StandardSceneTransitionService(configService: configService)
+        }
+        
         // Register NPC service with dependencies
         container.register(NPCService.self) {
             let timeService = container.resolve(TimeService.self)
