@@ -17,13 +17,16 @@ class GameScene: SKScene {
     private lazy var npcService: NPCService = serviceContainer.resolve(NPCService.self)
     private lazy var timeService: TimeService = serviceContainer.resolve(TimeService.self)
     private lazy var transitionService: SceneTransitionService = serviceContainer.resolve(SceneTransitionService.self)
+    private lazy var inputService: InputService = serviceContainer.resolve(InputService.self)
     
     // MARK: - Camera System
     private var gameCamera: SKCameraNode!
     private lazy var cameraLerpSpeed: CGFloat = configService.cameraLerpSpeed
-    private lazy var cameraScale: CGFloat = configService.cameraDefaultScale
-    private lazy var minZoom: CGFloat = configService.cameraMinZoom
-    private lazy var maxZoom: CGFloat = configService.cameraMaxZoom
+    private lazy var cameraState = CameraState(
+        defaultScale: configService.cameraDefaultScale,
+        minZoom: configService.cameraMinZoom,
+        maxZoom: configService.cameraMaxZoom
+    )
     private var lastPinchScale: CGFloat = 1.0
     
     // MARK: - World Settings
@@ -42,12 +45,6 @@ class GameScene: SKScene {
     
     // MARK: - World Areas
     private var shopFloor: SKSpriteNode!
-    
-    // MARK: - Touch Handling (PRESERVED Long Press System)
-    private var longPressTimer: Timer?
-    private var longPressTarget: SKNode?
-    private lazy var longPressDuration: TimeInterval = configService.touchLongPressDuration
-    private var isHandlingPinch = false
     
     // MARK: - Grid Visual Debug (Optional)
     private var showGridOverlay = false
@@ -160,7 +157,7 @@ class GameScene: SKScene {
         
         // Center camera on character
         gameCamera.position = character.position
-        gameCamera.setScale(cameraScale)
+        gameCamera.setScale(cameraState.scale)
     }
     
     private func setupIngredientStations() {
@@ -283,15 +280,9 @@ class GameScene: SKScene {
     private func setupGestures() {
         guard let view = view else { return }
         
-        // PRESERVED: Gesture system for pinch/rotation unchanged
-        let pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
-        let rotationGesture = UIRotationGestureRecognizer(target: self, action: #selector(handleRotation(_:)))
-        let twoFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleTwoFingerTap(_:)))
-        twoFingerTap.numberOfTouchesRequired = 2
-        
-        view.addGestureRecognizer(pinchGesture)
-        view.addGestureRecognizer(rotationGesture)
-        view.addGestureRecognizer(twoFingerTap)
+        // Use InputService for gesture setup
+        inputService.setupGestures(for: view, context: .gameScene, config: nil, target: self)
+        print("🎮 Gestures setup using InputService")
     }
     
     // MARK: - Grid Visual Debug (Optional)
@@ -317,96 +308,50 @@ class GameScene: SKScene {
         
         print("🎯 Grid overlay added for debugging")
     }
+
     
-    private func showGridCellOccupiedFeedback(at cell: GridCoordinate) {
-        // ENHANCED: Subtle, natural feedback instead of harsh red squares
-        let worldPos = gridService.gridToWorld(cell)
-        
-        // Create a gentle pulsing circle instead of a red square
-        let feedback = SKShapeNode(circleOfRadius: configService.touchOccupiedCellFeedbackRadius)
-        feedback.fillColor = SKColor.clear
-        feedback.strokeColor = configService.touchFeedbackColor
-        feedback.lineWidth = configService.touchFeedbackLineWidth
-        feedback.position = worldPos
-        feedback.zPosition = configService.touchFeedbackZPosition
-        addChild(feedback)
-        
-        // Gentle pulse animation instead of harsh fade
-        let pulseAction = SKAction.sequence([
-            SKAction.scale(to: configService.touchFeedbackScaleAmount, duration: configService.touchFeedbackScaleDuration),
-            SKAction.scale(to: 1.0, duration: configService.touchFeedbackScaleDuration),
-            SKAction.wait(forDuration: configService.touchFeedbackWaitDuration),
-            SKAction.fadeOut(withDuration: configService.touchFeedbackFadeDuration),
-            SKAction.removeFromParent()
-        ])
-        feedback.run(pulseAction)
-    }
-    
-    // MARK: - Touch Handling (NEW Grid System + PRESERVED Long Press)
+    // MARK: - Touch Handling (Using InputService)
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard !isHandlingPinch else { return }
-        guard let touch = touches.first else { return }
-        let location = touch.location(in: self)
-        let targetCell = gridService.worldToGrid(location)
-        let touchedNode = atPoint(location)
+        let result = inputService.handleTouchBegan(touches, with: event, in: self, gridService: gridService, context: .gameScene)
         
-        // Check what's in the tapped cell first
-        if let gameObject = gridService.objectAt(targetCell) {
-            // PRESERVED: Use existing long press system for objects
-            if let interactable = findInteractableNode(gameObject.skNode) {
-                startLongPress(for: interactable, at: location)
-                print("🔍 Long press started on \(gameObject.objectType) at grid \(targetCell)")
-                return
+        switch result {
+        case .handled:
+            break // Already handled by service
+            
+        case .notHandled:
+            break // Not handled, ignore
+            
+        case .longPress(let node, let location):
+            let gameNodes = [
+                "timeBreaker": timeBreaker as SKNode,
+                "carriedItem": character.carriedItem as SKNode? ?? SKNode() // Fallback to avoid optionals
+            ].compactMapValues { $0 != SKNode() ? $0 : nil }
+            
+            if let interactable = inputService.findInteractableNode(node, context: .gameScene, gameSpecificNodes: gameNodes) {
+                inputService.startLongPress(for: interactable, at: location) { [weak self] node, location in
+                    self?.handleLongPress(on: node, at: location)
+                }
+                print("🔍 Long press started on \(node) using InputService")
             }
-        }
-        
-        // Check for direct node touches (ingredient stations, drink display, etc.)
-        if let interactable = findInteractableNode(touchedNode) {
-            startLongPress(for: interactable, at: location)
-            return
-        }
-        
-        // NEW: Grid-based movement
-        if gridService.isCellAvailable(targetCell) {
+            
+        case .movement(let targetCell):
             character.moveToGridCell(targetCell)
-            print("🎯 Character moving to available cell \(targetCell) using DI")
-        } else {
-            // Show feedback for occupied cell
-            showGridCellOccupiedFeedback(at: targetCell)
-            print("❌ Cell \(targetCell) is occupied")
+            print("🎯 Character moving to available cell \(targetCell) using InputService")
+            
+        case .occupiedCell(let cell):
+            inputService.showOccupiedCellFeedback(at: cell, in: self, gridService: gridService)
+            print("❌ Cell \(cell) is occupied")
         }
     }
     
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        cancelLongPress()
+        inputService.handleTouchEnded(touches, with: event)
     }
     
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        cancelLongPress()
+        inputService.handleTouchCancelled(touches, with: event)
     }
-    
-    // MARK: - Long Press System (PRESERVED - NO CHANGES)
-    private func startLongPress(for node: SKNode, at location: CGPoint) {
-        longPressTarget = node
-        longPressTimer = Timer.scheduledTimer(withTimeInterval: longPressDuration, repeats: false) { [weak self] _ in
-            self?.handleLongPress(on: node, at: location)
-        }
-        
-        // Visual feedback for long press start
-        if let rotatable = node as? RotatableObject {
-            let pulseAction = SKAction.sequence([
-                SKAction.scale(to: 1.05, duration: 0.1),
-                SKAction.scale(to: 1.0, duration: 0.1)
-            ])
-            rotatable.run(pulseAction)
-        }
-    }
-    
-    private func cancelLongPress() {
-        longPressTimer?.invalidate()
-        longPressTimer = nil
-        longPressTarget = nil
-    }
+
     
     private func handleLongPress(on node: SKNode, at location: CGPoint) {
         print("🔍 Long press on: \(node.name ?? "unnamed") - \(type(of: node))")
@@ -481,107 +426,22 @@ class GameScene: SKScene {
             print("🤷‍♂️ No action for this node")
         }
         
-        longPressTimer = nil
-        longPressTarget = nil
+        // Note: Timer cleanup is now handled by InputService
     }
+
     
-    // MARK: - Helper Methods (PRESERVED)
-    private func findInteractableNode(_ node: SKNode) -> SKNode? {
-        print("🔎 Checking node: \(node.name ?? "unnamed") - \(type(of: node))")
-        
-        // Start with the touched node and search up the hierarchy
-        var current: SKNode? = node
-        var depth = 0
-        
-        while current != nil && depth < 5 {
-            print("🔎 Level \(depth): \(current?.name ?? "unnamed") - \(type(of: current!))")
-            
-            // 1. Check for power breaker
-            if current == timeBreaker {
-                print("✅ Found power breaker")
-                return timeBreaker
-            }
-            
-            // 2. Check for ingredient stations
-            if let station = current as? IngredientStation {
-                print("✅ Found ingredient station: \(station.stationType)")
-                return station
-            }
-            
-            // 3. Check for completed drink pickup
-            if current?.name == "completed_drink_pickup" {
-                print("✅ Found completed drink ready for pickup")
-                return current
-            }
-            
-            // 4. Check for front door (forest entrance)
-            if current?.name == "front_door" {
-                print("✅ Found front door to forest")
-                return current
-            }
-            
-            // 5. Check for carried item (to drop)
-            if current == character.carriedItem {
-                print("✅ Found carried item")
-                return character.carriedItem
-            }
-            
-            // 6. Check for table interactions FIRST (before checking if it can be carried)
-            if let rotatable = current as? RotatableObject {
-                if rotatable.name == "table" {
-                    print("✅ Found table for drink placement")
-                    return rotatable
-                }
-                
-                print("🔎 Found rotatable: \(rotatable.objectType), canBeCarried: \(rotatable.canBeCarried)")
-                if rotatable.canBeCarried {
-                    print("✅ Object can be carried")
-                    return rotatable
-                } else {
-                    print("🔎 Object cannot be carried, checking parents...")
-                }
-            }
-            
-            current = current?.parent
-            depth += 1
-        }
-        
-        print("❌ No interactable found after checking \(depth) levels")
-        return nil
-    }
-    
-    // MARK: - Gesture Handlers (PRESERVED)
+    // MARK: - Gesture Handlers (Using InputService)
     @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-        isHandlingPinch = true
-        
-        switch gesture.state {
-        case .began:
-            lastPinchScale = cameraScale
-        case .changed:
-            let newScale = lastPinchScale / gesture.scale
-            cameraScale = max(minZoom, min(maxZoom, newScale))
-            gameCamera.setScale(cameraScale)
-        case .ended, .cancelled:
-            isHandlingPinch = false
-        default:
-            break
-        }
+        let isHandling = inputService.handlePinch(gesture, cameraState: &cameraState, camera: gameCamera)
+        // InputService manages the pinch state internally
     }
     
     @objc private func handleRotation(_ gesture: UIRotationGestureRecognizer) {
-        guard gesture.state == .ended else { return }
-        
-        // PRESERVED: Rotate carried items
-        if character.isCarrying {
-            character.rotateCarriedItem()
-        }
+        inputService.handleRotation(gesture, character: character)
     }
     
     @objc private func handleTwoFingerTap(_ gesture: UITapGestureRecognizer) {
-        // Reset camera zoom
-        cameraScale = 1.0
-        let zoomAction = SKAction.scale(to: cameraScale, duration: 0.3)
-        gameCamera.run(zoomAction)
+        inputService.handleTwoFingerTap(gesture, cameraState: &cameraState, camera: gameCamera)
     }
     
     // MARK: - Camera Update
@@ -595,8 +455,8 @@ class GameScene: SKScene {
         let newX = currentPosition.x + deltaX * cameraLerpSpeed * 0.016
         let newY = currentPosition.y + deltaY * cameraLerpSpeed * 0.016
         
-        let effectiveViewWidth = size.width * cameraScale
-        let effectiveViewHeight = size.height * cameraScale
+        let effectiveViewWidth = size.width * cameraState.scale
+        let effectiveViewHeight = size.height * cameraState.scale
         
         let halfViewWidth = effectiveViewWidth / 2
         let halfViewHeight = effectiveViewHeight / 2
