@@ -20,28 +20,18 @@ class IngredientStation: RotatableObject {
     init(type: StationType) {
         self.stationType = type
         
-        let color: SKColor
+        let color = GameConfig.stationColor(for: type)
+        
         switch type {
         case .ice:
-            color = SKColor.cyan
             currentState = 0 // 0=ice, 1=lite, 2=none
-        case .boba:
-            color = SKColor.black
-            currentState = false
-        case .foam:
-            color = SKColor(red: 1.0, green: 0.9, blue: 0.7, alpha: 1.0)
-            currentState = false
-        case .tea:
-            color = SKColor(red: 0.6, green: 0.3, blue: 0.1, alpha: 1.0)
-            currentState = false
-        case .lid:
-            color = SKColor.gray
+        case .boba, .foam, .tea, .lid:
             currentState = false
         }
         
         super.init(type: .station, color: color, shape: "station")
         self.name = "ingredient_station_\(type)"
-        self.size = CGSize(width: 80, height: 80)
+        self.size = GameConfig.IngredientStations.size
         
         updateVisuals()
     }
@@ -67,8 +57,8 @@ class IngredientStation: RotatableObject {
         
         // Visual feedback
         let pulseAction = SKAction.sequence([
-            SKAction.scale(to: 1.2, duration: 0.1),
-            SKAction.scale(to: 1.0, duration: 0.1)
+            SKAction.scale(to: GameConfig.IngredientStations.interactionScaleAmount, duration: GameConfig.IngredientStations.interactionDuration),
+            SKAction.scale(to: 1.0, duration: GameConfig.IngredientStations.interactionDuration)
         ])
         run(pulseAction)
     }

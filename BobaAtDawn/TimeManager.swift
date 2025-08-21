@@ -13,10 +13,10 @@ enum TimePhase: CaseIterable {
     
     var duration: TimeInterval {
         switch self {
-        case .dawn: return 4 * 60  // 4 minutes
-        case .day: return 12 * 60  // 12 minutes
-        case .dusk: return 4 * 60  // 4 minutes
-        case .night: return 12 * 60 // 12 minutes
+        case .dawn: return GameConfig.Time.dawnDuration
+        case .day: return GameConfig.Time.dayDuration
+        case .dusk: return GameConfig.Time.duskDuration
+        case .night: return GameConfig.Time.nightDuration
         }
     }
     

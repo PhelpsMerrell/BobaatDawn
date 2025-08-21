@@ -10,16 +10,16 @@ import SpriteKit
 class GridWorld {
     static let shared = GridWorld()
     
-    // Grid configuration
-    static let cellSize: CGFloat = 60  // Increased from 40pt for better touch targets
-    static let columns = 33  // 2000pt world width ÷ 60 ≈ 33
-    static let rows = 25     // 1500pt world height ÷ 60 = 25
-    static let shopOrigin = CGPoint(x: -1000, y: -750)  // Bottom-left of world
+    // Grid configuration (using GameConfig)
+    static let cellSize: CGFloat = GameConfig.Grid.cellSize
+    static let columns = GameConfig.Grid.columns
+    static let rows = GameConfig.Grid.rows
+    static let shopOrigin = GameConfig.Grid.shopOrigin
     
     // Grid state
     private var occupiedCells: [GridCoordinate: GameObject] = [:]
     private var reservedCells: Set<GridCoordinate> = []
-    private var characterPosition = GridCoordinate(x: 16, y: 12)  // Center of world (adjusted for new grid)
+    private var characterPosition = GameConfig.Grid.characterStartPosition
     
     private init() {
         print("🎯 GridWorld initialized: \(GridWorld.columns)x\(GridWorld.rows) grid with \(GridWorld.cellSize)pt cells")

@@ -11,7 +11,7 @@ class Character: SKSpriteNode {
     
     // MARK: - Properties
     private(set) var carriedItem: RotatableObject?
-    private let carryOffset: CGFloat = 80
+    private let carryOffset: CGFloat = GameConfig.Character.carryOffset
     
     // Grid properties
     private var gridPosition: GridCoordinate {
@@ -24,13 +24,13 @@ class Character: SKSpriteNode {
     
     // MARK: - Initialization
     init() {
-        super.init(texture: nil, color: SKColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1.0), size: CGSize(width: 40, height: 60))
+        super.init(texture: nil, color: GameConfig.Character.color, size: GameConfig.Character.size)
         
         name = "character"
-        zPosition = 10
+        zPosition = GameConfig.Character.zPosition
         
         // Position character at grid center
-        let startCell = GridCoordinate(x: 16, y: 12)  // Center of new 33x25 grid
+        let startCell = GameConfig.Grid.characterStartPosition
         position = GridWorld.shared.gridToWorld(startCell)
         GridWorld.shared.moveCharacterTo(startCell)
         
@@ -61,8 +61,10 @@ class Character: SKSpriteNode {
         
         // Calculate distance for dynamic timing
         let distance = sqrt(pow(worldPosition.x - position.x, 2) + pow(worldPosition.y - position.y, 2))
-        let baseSpeed: CGFloat = 300  // Points per second
-        let duration = max(0.15, min(0.6, TimeInterval(distance / baseSpeed)))  // Dynamic timing
+        let baseSpeed: CGFloat = GameConfig.Character.baseMovementSpeed
+        let duration = max(GameConfig.Character.minMovementDuration, 
+                          min(GameConfig.Character.maxMovementDuration, 
+                              TimeInterval(distance / baseSpeed)))
         
         // Create smooth, natural movement with easing
         let moveAction = SKAction.move(to: worldPosition, duration: duration)
@@ -97,12 +99,12 @@ class Character: SKSpriteNode {
         // Add floating animation
         let floatAction = SKAction.repeatForever(
             SKAction.sequence([
-                SKAction.moveBy(x: 0, y: 5, duration: 1.0),
-                SKAction.moveBy(x: 0, y: -5, duration: 1.0)
+                SKAction.moveBy(x: 0, y: GameConfig.Character.floatDistance, duration: GameConfig.Character.floatDuration),
+                SKAction.moveBy(x: 0, y: -GameConfig.Character.floatDistance, duration: GameConfig.Character.floatDuration)
             ])
         )
         item.run(floatAction, withKey: "floating")
-        item.zPosition = 15
+        item.zPosition = GameConfig.Objects.carryZPosition
     }
     
     func dropItem() {
@@ -140,7 +142,7 @@ class Character: SKSpriteNode {
             print("📦 Dropped \(item.objectType) at character position (no grid cells available)")
         }
         
-        item.zPosition = 3
+        item.zPosition = GameConfig.Objects.defaultZPosition
         carriedItem = nil
     }
     

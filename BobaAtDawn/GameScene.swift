@@ -12,15 +12,15 @@ class GameScene: SKScene {
     
     // MARK: - Camera System
     private var gameCamera: SKCameraNode!
-    private let cameraLerpSpeed: CGFloat = 2.0
-    private var cameraScale: CGFloat = 1.0
-    private let minZoom: CGFloat = 0.3
-    private let maxZoom: CGFloat = 1.5
+    private let cameraLerpSpeed: CGFloat = GameConfig.Camera.lerpSpeed
+    private var cameraScale: CGFloat = GameConfig.Camera.defaultScale
+    private let minZoom: CGFloat = GameConfig.Camera.minZoom
+    private let maxZoom: CGFloat = GameConfig.Camera.maxZoom
     private var lastPinchScale: CGFloat = 1.0
     
     // MARK: - World Settings
-    private let worldWidth: CGFloat = 2000
-    private let worldHeight: CGFloat = 1500
+    private let worldWidth: CGFloat = GameConfig.World.width
+    private let worldHeight: CGFloat = GameConfig.World.height
     
     // MARK: - Game Objects
     private var character: Character!
@@ -38,7 +38,7 @@ class GameScene: SKScene {
     // MARK: - Touch Handling (PRESERVED Long Press System)
     private var longPressTimer: Timer?
     private var longPressTarget: SKNode?
-    private let longPressDuration: TimeInterval = 0.8
+    private let longPressDuration: TimeInterval = GameConfig.Touch.longPressDuration
     private var isHandlingPinch = false
     
     // MARK: - Grid Visual Debug (Optional)
@@ -47,7 +47,7 @@ class GameScene: SKScene {
     // MARK: - NPC System
     private var npcs: [NPC] = []
     private var lastNPCSpawnTime: TimeInterval = 0
-    private let maxNPCs = 3
+    private let maxNPCs = GameConfig.NPC.maxNPCs
     private var sceneTime: TimeInterval = 0 // Track scene time consistently
     
     // MARK: - Scene Setup
@@ -86,9 +86,9 @@ class GameScene: SKScene {
     }
     
     private func setupWorld() {
-        backgroundColor = SKColor(red: 0.9, green: 0.8, blue: 0.7, alpha: 1.0)
+        backgroundColor = GameConfig.World.backgroundColor
         
-        shopFloor = SKSpriteNode(color: SKColor(red: 0.8, green: 0.7, blue: 0.6, alpha: 1.0), size: CGSize(width: worldWidth, height: worldHeight))
+        shopFloor = SKSpriteNode(color: GameConfig.World.floorColor, size: CGSize(width: worldWidth, height: worldHeight))
         shopFloor.position = CGPoint(x: 0, y: 0)
         shopFloor.zPosition = -10
         addChild(shopFloor)
@@ -97,45 +97,49 @@ class GameScene: SKScene {
         setupShopFloorBounds()
         
         // Add shop walls
-        let wallTop = SKSpriteNode(color: SKColor(red: 0.5, green: 0.3, blue: 0.2, alpha: 1.0), size: CGSize(width: worldWidth, height: 40))
-        wallTop.position = CGPoint(x: 0, y: worldHeight/2 - 20)
+        let wallThickness = GameConfig.World.wallThickness
+        let wallInset = GameConfig.World.wallInset
+        let wallColor = GameConfig.World.wallColor
+        
+        let wallTop = SKSpriteNode(color: wallColor, size: CGSize(width: worldWidth, height: wallThickness))
+        wallTop.position = CGPoint(x: 0, y: worldHeight/2 - wallInset)
         wallTop.zPosition = -5
         addChild(wallTop)
         
-        let wallBottom = SKSpriteNode(color: SKColor(red: 0.5, green: 0.3, blue: 0.2, alpha: 1.0), size: CGSize(width: worldWidth, height: 40))
-        wallBottom.position = CGPoint(x: 0, y: -worldHeight/2 + 20)
+        let wallBottom = SKSpriteNode(color: wallColor, size: CGSize(width: worldWidth, height: wallThickness))
+        wallBottom.position = CGPoint(x: 0, y: -worldHeight/2 + wallInset)
         wallBottom.zPosition = -5
         addChild(wallBottom)
         
-        let wallLeft = SKSpriteNode(color: SKColor(red: 0.5, green: 0.3, blue: 0.2, alpha: 1.0), size: CGSize(width: 40, height: worldHeight))
-        wallLeft.position = CGPoint(x: -worldWidth/2 + 20, y: 0)
+        let wallLeft = SKSpriteNode(color: wallColor, size: CGSize(width: wallThickness, height: worldHeight))
+        wallLeft.position = CGPoint(x: -worldWidth/2 + wallInset, y: 0)
         wallLeft.zPosition = -5
         addChild(wallLeft)
         
         // Add front door EMOJI in left wall
         let frontDoor = SKLabelNode(text: "🚪")
-        frontDoor.fontSize = 80 // Make it bigger
+        frontDoor.fontSize = GameConfig.World.doorSize
         frontDoor.fontName = "Arial"
         frontDoor.horizontalAlignmentMode = .center
         frontDoor.verticalAlignmentMode = .center
-        frontDoor.position = CGPoint(x: -worldWidth/2 + 120, y: 0) // Move closer to center
+        frontDoor.position = CGPoint(x: -worldWidth/2 + GameConfig.World.doorOffsetFromWall, y: 0)
         frontDoor.zPosition = 20 // Very high above everything
         frontDoor.name = "front_door"
         addChild(frontDoor)
         
         print("🚪 EMOJI Front door added at \(frontDoor.position)")
         
-        let wallRight = SKSpriteNode(color: SKColor(red: 0.5, green: 0.3, blue: 0.2, alpha: 1.0), size: CGSize(width: 40, height: worldHeight))
-        wallRight.position = CGPoint(x: worldWidth/2 - 20, y: 0)
+        let wallRight = SKSpriteNode(color: wallColor, size: CGSize(width: wallThickness, height: worldHeight))
+        wallRight.position = CGPoint(x: worldWidth/2 - wallInset, y: 0)
         wallRight.zPosition = -5
         addChild(wallRight)
     }
     
     private func setupShopFloorBounds() {
         // Main shop floor area - light blue rectangle under brewing stations
-        let shopFloorBounds = SKSpriteNode(color: SKColor(red: 0.7, green: 0.85, blue: 1.0, alpha: 0.6), 
-                                          size: CGSize(width: 800, height: 400))
-        shopFloorBounds.position = CGPoint(x: 0, y: 150)  // Centered under stations
+        let shopFloorBounds = SKSpriteNode(color: GameConfig.World.shopFloorColor, 
+                                          size: GameConfig.World.shopFloorSize)
+        shopFloorBounds.position = GameConfig.World.shopFloorOffset
         shopFloorBounds.zPosition = -8
         addChild(shopFloorBounds)
         
@@ -418,6 +422,9 @@ class GameScene: SKScene {
             
         // 4. Forest door - enter woods
         } else if node.name == "front_door" {
+            // Haptic feedback for entering forest
+            let notificationFeedback = UINotificationFeedbackGenerator()
+            notificationFeedback.notificationOccurred(.success)
             print("🚪 Entering the mysterious forest...")
             enterForest()
             
@@ -843,14 +850,14 @@ class GameScene: SKScene {
     private func enterForest() {
         print("🌲 Transitioning to forest scene...")
         
-        let fadeOut = SKAction.fadeOut(withDuration: 0.5)
+        let fadeOut = SKAction.fadeOut(withDuration: GameConfig.ForestTransition.fadeOutDuration)
         
         run(fadeOut) { [weak self] in
             guard let self = self else { return }
             
             let forestScene = ForestScene(size: self.size)
             forestScene.scaleMode = .aspectFill
-            self.view?.presentScene(forestScene, transition: SKTransition.fade(withDuration: 0.5))
+            self.view?.presentScene(forestScene, transition: SKTransition.fade(withDuration: GameConfig.ForestTransition.fadeInDuration))
         }
     }
 }

@@ -65,7 +65,7 @@ class NPC: SKLabelNode {
     private var targetCell: GridCoordinate?
     
     // Movement
-    private let moveSpeed: TimeInterval = 1.2 // Slow, cozy customer pace
+    private let moveSpeed: TimeInterval = GameConfig.NPC.moveSpeed
     private var isMoving: Bool = false
     
     // Enhanced sitting behavior
@@ -79,18 +79,18 @@ class NPC: SKLabelNode {
         self.animalType = animal ?? AnimalType.random()
         
         // Default start position (at front door)
-        let doorPosition = GridCoordinate(x: 5, y: 12) // Adjusted for new door position
+        let doorPosition = GameConfig.World.doorPosition
         self.gridPosition = startPosition ?? doorPosition
         
         super.init()
         
         // Setup visual
         text = animalType.rawValue
-        fontSize = 36
-        fontName = "Arial"
+        fontSize = GameConfig.NPC.fontSize
+        fontName = GameConfig.NPC.fontName
         horizontalAlignmentMode = .center
         verticalAlignmentMode = .center
-        zPosition = 12 // Above tables and objects
+        zPosition = GameConfig.NPC.zPosition
         
         // Position in world
         position = GridWorld.shared.gridToWorld(gridPosition)
@@ -123,15 +123,16 @@ class NPC: SKLabelNode {
         }
         
         // Safety timeout - remove NPCs that have been around too long
-        if totalLifetime > 300 { // 5 minutes max
+        if totalLifetime > GameConfig.NPC.maxLifetime { // Configuration-based timeout
             startLeaving(satisfied: false)
         }
     }
     
     // MARK: - State Updates
     private func updateEntering() {
-        // Walk toward center of shop for 5-10 seconds
-        if stateTimer > Double.random(in: 5...10) {
+        // Walk toward center of shop for configured duration
+        let enteringDuration = Double.random(in: GameConfig.NPC.enteringDuration.min...GameConfig.NPC.enteringDuration.max)
+        if stateTimer > enteringDuration {
             transitionToWandering()
         } else if !isMoving {
             // Move toward shop center randomly
@@ -140,8 +141,9 @@ class NPC: SKLabelNode {
     }
     
     private func updateWandering() {
-        // Wander for 30-60 seconds, then try to sit
-        if stateTimer > Double.random(in: 30...60) {
+        // Wander for configured duration, then try to sit
+        let wanderingDuration = Double.random(in: GameConfig.NPC.wanderingDuration.min...GameConfig.NPC.wanderingDuration.max)
+        if stateTimer > wanderingDuration {
             if findAndMoveToTable() {
                 transitionToSitting()
             } else {
@@ -161,21 +163,24 @@ class NPC: SKLabelNode {
     
     private func updateSitting() {
         // Check for drinks immediately when sitting, then again after peaceful sitting
-        if (stateTimer < 1.0 || (stateTimer > Double.random(in: 15...30) && !hasCheckedForDrink)) && currentTable != nil {
+        let checkDelay = Double.random(in: GameConfig.NPC.sittingTimeout.min/4...GameConfig.NPC.sittingTimeout.max/4)
+        if (stateTimer < 1.0 || (stateTimer > checkDelay && !hasCheckedForDrink)) && currentTable != nil {
             checkForDrinkOnTable()
             if stateTimer >= 1.0 { // Only mark as checked if it's the delayed check
                 hasCheckedForDrink = true
             }
         }
         
-        // If they got a drink, enjoy it for 5-10 seconds before leaving
-        if gotDrink && stateTimer > drinkReceivedTime + Double.random(in: 5...10) {
+        // If they got a drink, enjoy it for configured time before leaving
+        let enjoymentTime = Double.random(in: GameConfig.NPC.drinkEnjoymentTime.min...GameConfig.NPC.drinkEnjoymentTime.max)
+        if gotDrink && stateTimer > drinkReceivedTime + enjoymentTime {
             startLeaving(satisfied: true)
             return
         }
         
         // Longer timeout - customers are patient in cozy shop
-        if stateTimer > Double.random(in: 60...120) {
+        let sittingTimeout = Double.random(in: GameConfig.NPC.sittingTimeout.min...GameConfig.NPC.sittingTimeout.max)
+        if stateTimer > sittingTimeout {
             // Timeout - leave neutral
             startLeaving(satisfied: false)
         }
@@ -209,15 +214,15 @@ class NPC: SKLabelNode {
         
         // Create carried drink above NPC's head
         let carriedDrink = createCarriedDrink(from: drink)
-        carriedDrink.position = CGPoint(x: 0, y: 50) // Above NPC
+        carriedDrink.position = GameConfig.NPC.CarriedDrink.carryOffset
         carriedDrink.zPosition = 1
         addChild(carriedDrink)
         
         // Add floating animation
         let floatAction = SKAction.repeatForever(
             SKAction.sequence([
-                SKAction.moveBy(x: 0, y: 3, duration: 1.0),
-                SKAction.moveBy(x: 0, y: -3, duration: 1.0)
+                SKAction.moveBy(x: 0, y: GameConfig.NPC.CarriedDrink.floatDistance, duration: GameConfig.NPC.CarriedDrink.floatDuration),
+                SKAction.moveBy(x: 0, y: -GameConfig.NPC.CarriedDrink.floatDistance, duration: GameConfig.NPC.CarriedDrink.floatDuration)
             ])
         )
         carriedDrink.run(floatAction, withKey: "floating")
@@ -229,15 +234,15 @@ class NPC: SKLabelNode {
     
     private func createCarriedDrink(from tableDrink: SKNode) -> SKNode {
         // Create a version of the drink for carrying
-        let carriedVersion = SKSpriteNode(color: .brown, size: CGSize(width: 25, height: 35))
+        let carriedVersion = SKSpriteNode(color: .brown, size: GameConfig.NPC.CarriedDrink.size)
         
         // Add basic drink details
-        let lid = SKSpriteNode(color: .lightGray, size: CGSize(width: 20, height: 5))
-        lid.position = CGPoint(x: 0, y: 15)
+        let lid = SKSpriteNode(color: .lightGray, size: GameConfig.NPC.CarriedDrink.lidSize)
+        lid.position = GameConfig.NPC.CarriedDrink.lidOffset
         carriedVersion.addChild(lid)
         
-        let straw = SKSpriteNode(color: .white, size: CGSize(width: 2, height: 25))
-        straw.position = CGPoint(x: 8, y: 10)
+        let straw = SKSpriteNode(color: .white, size: GameConfig.NPC.CarriedDrink.strawSize)
+        straw.position = GameConfig.NPC.CarriedDrink.strawOffset
         carriedVersion.addChild(straw)
         
         return carriedVersion
@@ -279,8 +284,8 @@ class NPC: SKLabelNode {
             startHappyAnimation()
             print("🦊 \(animalType.rawValue) leaving satisfied! ✨")
             
-            // FIXED: Stop shimmer after 5-10 seconds and proceed to normal exit
-            let shimmerDuration = Double.random(in: 5.0...10.0)
+            // FIXED: Stop shimmer after configured time and proceed to normal exit
+            let shimmerDuration = Double.random(in: GameConfig.NPC.Animations.happyCelebrationTime.min...GameConfig.NPC.Animations.happyCelebrationTime.max)
             DispatchQueue.main.asyncAfter(deadline: .now() + shimmerDuration) { [weak self] in
                 self?.stopHappyAnimationAndProceedToExit()
             }
@@ -321,8 +326,8 @@ class NPC: SKLabelNode {
     }
     
     private func moveToRandomNearbyCell() {
-        // Find random available cell within 2-3 grid cells
-        let radius = Int.random(in: 1...3)
+        // Find random available cell within configured radius
+        let radius = Int.random(in: 1...GameConfig.NPC.wanderRadius)
         let candidates = generateCandidateCells(radius: radius)
         
         if let randomCell = candidates.randomElement() {
@@ -339,13 +344,8 @@ class NPC: SKLabelNode {
                 
                 let candidate = GridCoordinate(x: gridPosition.x + dx, y: gridPosition.y + dy)
                 
-                // Keep NPCs within shop bounds (not too close to edges)
-                let shopBounds = (
-                    minX: 3,  // Stay away from left edge (entrance area)
-                    maxX: 29, // Stay away from right edge
-                    minY: 3,  // Stay away from bottom edge
-                    maxY: 21  // Stay away from top edge
-                )
+                // Keep NPCs within shop bounds using configuration
+                let shopBounds = GameConfig.Grid.ShopBounds.self
                 
                 if candidate.x >= shopBounds.minX && candidate.x <= shopBounds.maxX &&
                    candidate.y >= shopBounds.minY && candidate.y <= shopBounds.maxY &&
@@ -422,7 +422,7 @@ class NPC: SKLabelNode {
     // MARK: - Exit System
     private func moveTowardExit() {
         // Move toward front door (exit) - improved pathfinding
-        let doorPosition = GridCoordinate(x: 5, y: 12) // Match the door position
+        let doorPosition = GameConfig.World.doorPosition
         
         // Calculate direction to door
         let deltaX = doorPosition.x - gridPosition.x
@@ -453,7 +453,8 @@ class NPC: SKLabelNode {
     }
     
     private func isNearExit() -> Bool {
-        return gridPosition.x <= 6 && abs(gridPosition.y - 12) <= 2 // Near door area (x ≤ 6, y around 12)
+        return gridPosition.x <= GameConfig.NPC.exitThreshold && 
+               abs(gridPosition.y - GameConfig.World.doorPosition.y) <= GameConfig.NPC.exitYTolerance
     }
     
     // MARK: - Animations (Phase 4 - Enhanced Exit Effects)
@@ -463,13 +464,13 @@ class NPC: SKLabelNode {
         removeAction(forKey: "happy_shake")
         removeAction(forKey: "happy_scale")
         
-        // Multi-layered happiness effect
+        // Multi-layered happiness effect using configuration
         
         // 1. Shimmer effect (scale pulsing)
         let shimmer = SKAction.repeatForever(
             SKAction.sequence([
-                SKAction.scale(to: 1.15, duration: 0.25),
-                SKAction.scale(to: 1.0, duration: 0.25)
+                SKAction.scale(to: GameConfig.NPC.Animations.shimmerScaleAmount, duration: GameConfig.NPC.Animations.shimmerDuration),
+                SKAction.scale(to: 1.0, duration: GameConfig.NPC.Animations.shimmerDuration)
             ])
         )
         run(shimmer, withKey: "happy_shimmer")
@@ -477,10 +478,10 @@ class NPC: SKLabelNode {
         // 2. Shake effect (position wobble)
         let shake = SKAction.repeatForever(
             SKAction.sequence([
-                SKAction.moveBy(x: -3, y: 0, duration: 0.1),
-                SKAction.moveBy(x: 6, y: 0, duration: 0.1),
-                SKAction.moveBy(x: -6, y: 0, duration: 0.1),
-                SKAction.moveBy(x: 3, y: 0, duration: 0.1)
+                SKAction.moveBy(x: -GameConfig.NPC.Animations.shakeDistance, y: 0, duration: GameConfig.NPC.Animations.shakeDuration),
+                SKAction.moveBy(x: GameConfig.NPC.Animations.shakeDistance * 2, y: 0, duration: GameConfig.NPC.Animations.shakeDuration),
+                SKAction.moveBy(x: -GameConfig.NPC.Animations.shakeDistance * 2, y: 0, duration: GameConfig.NPC.Animations.shakeDuration),
+                SKAction.moveBy(x: GameConfig.NPC.Animations.shakeDistance, y: 0, duration: GameConfig.NPC.Animations.shakeDuration)
             ])
         )
         run(shake, withKey: "happy_shake")
@@ -488,10 +489,10 @@ class NPC: SKLabelNode {
         // 3. Color flash effect
         let colorFlash = SKAction.repeatForever(
             SKAction.sequence([
-                SKAction.colorize(with: .yellow, colorBlendFactor: 0.3, duration: 0.2),
-                SKAction.colorize(withColorBlendFactor: 0.0, duration: 0.2),
-                SKAction.colorize(with: .white, colorBlendFactor: 0.2, duration: 0.2),
-                SKAction.colorize(withColorBlendFactor: 0.0, duration: 0.2)
+                SKAction.colorize(with: .yellow, colorBlendFactor: 0.3, duration: GameConfig.NPC.Animations.colorFlashDuration),
+                SKAction.colorize(withColorBlendFactor: 0.0, duration: GameConfig.NPC.Animations.colorFlashDuration),
+                SKAction.colorize(with: .white, colorBlendFactor: 0.2, duration: GameConfig.NPC.Animations.colorFlashDuration),
+                SKAction.colorize(withColorBlendFactor: 0.0, duration: GameConfig.NPC.Animations.colorFlashDuration)
             ])
         )
         run(colorFlash, withKey: "happy_flash")
@@ -500,20 +501,20 @@ class NPC: SKLabelNode {
     }
     
     private func startNeutralAnimation() {
-        // Subtle disappointed animation for neutral customers
+        // Subtle disappointed animation for neutral customers using configuration
         removeAction(forKey: "neutral_sigh")
         
         // Slow, subtle scale down to show disappointment
         let sigh = SKAction.repeatForever(
             SKAction.sequence([
-                SKAction.scale(to: 0.95, duration: 1.0),
-                SKAction.scale(to: 1.0, duration: 1.0)
+                SKAction.scale(to: GameConfig.NPC.Animations.neutralScaleAmount, duration: GameConfig.NPC.Animations.neutralSighDuration),
+                SKAction.scale(to: 1.0, duration: GameConfig.NPC.Animations.neutralSighDuration)
             ])
         )
         run(sigh, withKey: "neutral_sigh")
         
         // Slight gray tint to show neutrality
-        let grayTint = SKAction.colorize(with: .gray, colorBlendFactor: 0.15, duration: 0.5)
+        let grayTint = SKAction.colorize(with: .gray, colorBlendFactor: GameConfig.NPC.Animations.neutralGrayBlend, duration: GameConfig.NPC.Animations.neutralFadeDuration)
         run(grayTint, withKey: "neutral_tint")
         
         print("😐 \(animalType.rawValue) is leaving disappointed (no drink)")
@@ -527,9 +528,9 @@ class NPC: SKLabelNode {
         
         // Reset to normal appearance
         let resetAction = SKAction.group([
-            SKAction.scale(to: 1.0, duration: 0.2),
-            SKAction.move(to: position, duration: 0.2), // Reset any shake offset
-            SKAction.colorize(withColorBlendFactor: 0.0, duration: 0.2)
+            SKAction.scale(to: 1.0, duration: GameConfig.NPC.Animations.resetDuration),
+            SKAction.move(to: position, duration: GameConfig.NPC.Animations.resetDuration), // Reset any shake offset
+            SKAction.colorize(withColorBlendFactor: 0.0, duration: GameConfig.NPC.Animations.resetDuration)
         ])
         run(resetAction)
     }
@@ -555,8 +556,8 @@ class NPC: SKLabelNode {
         
         // Reset to normal appearance
         let resetAction = SKAction.group([
-            SKAction.scale(to: 1.0, duration: 0.2),
-            SKAction.colorize(withColorBlendFactor: 0.0, duration: 0.2)
+            SKAction.scale(to: 1.0, duration: GameConfig.NPC.Animations.resetDuration),
+            SKAction.colorize(withColorBlendFactor: 0.0, duration: GameConfig.NPC.Animations.resetDuration)
         ])
         run(resetAction)
     }

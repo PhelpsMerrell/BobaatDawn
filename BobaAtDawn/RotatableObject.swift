@@ -40,7 +40,7 @@ class RotatableObject: SKSpriteNode {
     let objectType: ObjectType
     private(set) var rotationState: RotationState = .north
     private var isSelected: Bool = false
-    private let defaultSize = CGSize(width: 60, height: 60)
+    private let defaultSize = GameConfig.Objects.defaultSize
     
     // MARK: - Initialization
     init(type: ObjectType, color: SKColor, shape: String) {
@@ -48,7 +48,7 @@ class RotatableObject: SKSpriteNode {
         super.init(texture: nil, color: color, size: defaultSize)
         
         name = "rotatable_\(type)_\(shape)"
-        zPosition = 3
+        zPosition = GameConfig.Objects.defaultZPosition
         setupVisualShape(shape)
     }
     
@@ -88,7 +88,7 @@ class RotatableObject: SKSpriteNode {
         let arrow = SKSpriteNode(color: .white, size: CGSize(width: 8, height: 20))
         arrow.position = CGPoint(x: 0, y: 15)
         arrow.name = "direction_indicator"
-        arrow.alpha = 0.8
+        arrow.alpha = GameConfig.Objects.indicatorAlpha
         addChild(arrow)
     }
     
@@ -97,13 +97,13 @@ class RotatableObject: SKSpriteNode {
         let vertical = SKSpriteNode(color: .white, size: CGSize(width: 6, height: 30))
         vertical.position = CGPoint(x: -10, y: 5)
         vertical.name = "L_vertical"
-        vertical.alpha = 0.8
+        vertical.alpha = GameConfig.Objects.indicatorAlpha
         addChild(vertical)
         
         let horizontal = SKSpriteNode(color: .white, size: CGSize(width: 20, height: 6))
         horizontal.position = CGPoint(x: 0, y: -10)
         horizontal.name = "L_horizontal"
-        horizontal.alpha = 0.8
+        horizontal.alpha = GameConfig.Objects.indicatorAlpha
         addChild(horizontal)
     }
     
@@ -112,7 +112,7 @@ class RotatableObject: SKSpriteNode {
         let triangle = SKSpriteNode(color: .white, size: CGSize(width: 20, height: 20))
         triangle.position = CGPoint(x: 0, y: 8)
         triangle.name = "triangle_indicator"
-        triangle.alpha = 0.8
+        triangle.alpha = GameConfig.Objects.indicatorAlpha
         addChild(triangle)
     }
     
@@ -121,7 +121,7 @@ class RotatableObject: SKSpriteNode {
         let centerDot = SKSpriteNode(color: .white, size: CGSize(width: 12, height: 12))
         centerDot.position = CGPoint(x: 0, y: 0)
         centerDot.name = "station_center"
-        centerDot.alpha = 0.7
+        centerDot.alpha = GameConfig.Objects.stationIndicatorAlpha
         addChild(centerDot)
         
         // Corner indicators
@@ -136,7 +136,7 @@ class RotatableObject: SKSpriteNode {
             let cornerDot = SKSpriteNode(color: .white, size: CGSize(width: 6, height: 6))
             cornerDot.position = corner
             cornerDot.name = "station_corner_\(index)"
-            cornerDot.alpha = 0.5
+            cornerDot.alpha = GameConfig.Objects.cornerIndicatorAlpha
             addChild(cornerDot)
         }
     }
@@ -146,19 +146,19 @@ class RotatableObject: SKSpriteNode {
         let lid = SKSpriteNode(color: .white, size: CGSize(width: 16, height: 4))
         lid.position = CGPoint(x: 0, y: 12)
         lid.name = "drink_lid"
-        lid.alpha = 0.8
+        lid.alpha = GameConfig.Objects.indicatorAlpha
         addChild(lid)
         
         let straw = SKSpriteNode(color: .white, size: CGSize(width: 2, height: 20))
         straw.position = CGPoint(x: 6, y: 8)
         straw.name = "drink_straw"
-        straw.alpha = 0.8
+        straw.alpha = GameConfig.Objects.indicatorAlpha
         addChild(straw)
     }
     
     private func createTableShape() {
         // Table visual indicator - simple geometric pattern
-        let centerDot = SKSpriteNode(color: .white, size: CGSize(width: 8, height: 8))
+        let centerDot = SKSpriteNode(color: .white, size: GameConfig.Objects.tableCenterDotSize)
         centerDot.position = CGPoint(x: 0, y: 0)
         centerDot.name = "table_center"
         centerDot.alpha = 0.6
@@ -166,17 +166,17 @@ class RotatableObject: SKSpriteNode {
         
         // Corner dots to show it's a table
         let corners = [
-            CGPoint(x: -20, y: 20),
-            CGPoint(x: 20, y: 20),
-            CGPoint(x: -20, y: -20),
-            CGPoint(x: 20, y: -20)
+            CGPoint(x: -GameConfig.Objects.tableIndicatorOffset, y: GameConfig.Objects.tableIndicatorOffset),
+            CGPoint(x: GameConfig.Objects.tableIndicatorOffset, y: GameConfig.Objects.tableIndicatorOffset),
+            CGPoint(x: -GameConfig.Objects.tableIndicatorOffset, y: -GameConfig.Objects.tableIndicatorOffset),
+            CGPoint(x: GameConfig.Objects.tableIndicatorOffset, y: -GameConfig.Objects.tableIndicatorOffset)
         ]
         
         for (index, corner) in corners.enumerated() {
-            let cornerDot = SKSpriteNode(color: .white, size: CGSize(width: 4, height: 4))
+            let cornerDot = SKSpriteNode(color: .white, size: GameConfig.Objects.tableCornerDotSize)
             cornerDot.position = corner
             cornerDot.name = "table_corner_\(index)"
-            cornerDot.alpha = 0.4
+            cornerDot.alpha = GameConfig.Objects.cornerIndicatorAlpha
             addChild(cornerDot)
         }
     }
@@ -186,21 +186,21 @@ class RotatableObject: SKSpriteNode {
         rotationState = rotationState.next()
         
         // Animate rotation
-        let rotateAction = SKAction.rotate(toAngle: rotationState.angle, duration: 0.3)
+        let rotateAction = SKAction.rotate(toAngle: rotationState.angle, duration: GameConfig.Objects.rotationDuration)
         rotateAction.timingMode = .easeInEaseOut
         run(rotateAction)
         
         // Add rotation feedback
         let scaleAction = SKAction.sequence([
-            SKAction.scale(to: 1.1, duration: 0.15),
-            SKAction.scale(to: 1.0, duration: 0.15)
+            SKAction.scale(to: GameConfig.Objects.rotationFeedbackScale, duration: GameConfig.Objects.rotationFeedbackDuration),
+            SKAction.scale(to: 1.0, duration: GameConfig.Objects.rotationFeedbackDuration)
         ])
         run(scaleAction)
     }
     
     func setRotationState(_ state: RotationState) {
         rotationState = state
-        let rotateAction = SKAction.rotate(toAngle: state.angle, duration: 0.2)
+        let rotateAction = SKAction.rotate(toAngle: state.angle, duration: GameConfig.Objects.rotationDuration / 1.5)
         run(rotateAction)
     }
     
