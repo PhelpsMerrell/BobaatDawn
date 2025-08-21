@@ -12,21 +12,22 @@ class GameScene: SKScene {
     
     // MARK: - Dependency Injection (Internal)
     private lazy var serviceContainer: GameServiceContainer = ServiceSetup.createGameServices()
+    private lazy var configService: ConfigurationService = serviceContainer.resolve(ConfigurationService.self)
     private lazy var gridService: GridService = serviceContainer.resolve(GridService.self)
     private lazy var npcService: NPCService = serviceContainer.resolve(NPCService.self)
     private lazy var timeService: TimeService = serviceContainer.resolve(TimeService.self)
     
     // MARK: - Camera System
     private var gameCamera: SKCameraNode!
-    private let cameraLerpSpeed: CGFloat = GameConfig.Camera.lerpSpeed
-    private var cameraScale: CGFloat = GameConfig.Camera.defaultScale
-    private let minZoom: CGFloat = GameConfig.Camera.minZoom
-    private let maxZoom: CGFloat = GameConfig.Camera.maxZoom
+    private lazy var cameraLerpSpeed: CGFloat = configService.cameraLerpSpeed
+    private lazy var cameraScale: CGFloat = configService.cameraDefaultScale
+    private lazy var minZoom: CGFloat = configService.cameraMinZoom
+    private lazy var maxZoom: CGFloat = configService.cameraMaxZoom
     private var lastPinchScale: CGFloat = 1.0
     
     // MARK: - World Settings
-    private let worldWidth: CGFloat = GameConfig.World.width
-    private let worldHeight: CGFloat = GameConfig.World.height
+    private lazy var worldWidth: CGFloat = configService.worldWidth
+    private lazy var worldHeight: CGFloat = configService.worldHeight
     
     // MARK: - Game Objects
     private var character: Character!
@@ -44,7 +45,7 @@ class GameScene: SKScene {
     // MARK: - Touch Handling (PRESERVED Long Press System)
     private var longPressTimer: Timer?
     private var longPressTarget: SKNode?
-    private let longPressDuration: TimeInterval = GameConfig.Touch.longPressDuration
+    private lazy var longPressDuration: TimeInterval = configService.touchLongPressDuration
     private var isHandlingPinch = false
     
     // MARK: - Grid Visual Debug (Optional)
@@ -53,7 +54,7 @@ class GameScene: SKScene {
     // MARK: - NPC System
     private var npcs: [NPC] = []
     private var lastNPCSpawnTime: TimeInterval = 0
-    private let maxNPCs = GameConfig.NPC.maxNPCs
+    private lazy var maxNPCs = configService.npcMaxCount
     private var sceneTime: TimeInterval = 0 // Track scene time consistently
     
     // MARK: - Scene Setup
@@ -92,9 +93,9 @@ class GameScene: SKScene {
     }
     
     private func setupWorld() {
-        backgroundColor = GameConfig.World.backgroundColor
+        backgroundColor = configService.backgroundColor
         
-        shopFloor = SKSpriteNode(color: GameConfig.World.floorColor, size: CGSize(width: worldWidth, height: worldHeight))
+        shopFloor = SKSpriteNode(color: configService.floorColor, size: CGSize(width: worldWidth, height: worldHeight))
         shopFloor.position = CGPoint(x: 0, y: 0)
         shopFloor.zPosition = -10
         addChild(shopFloor)
@@ -103,9 +104,9 @@ class GameScene: SKScene {
         setupShopFloorBounds()
         
         // Add shop walls
-        let wallThickness = GameConfig.World.wallThickness
-        let wallInset = GameConfig.World.wallInset
-        let wallColor = GameConfig.World.wallColor
+        let wallThickness = configService.wallThickness
+        let wallInset = configService.wallInset
+        let wallColor = configService.wallColor
         
         let wallTop = SKSpriteNode(color: wallColor, size: CGSize(width: worldWidth, height: wallThickness))
         wallTop.position = CGPoint(x: 0, y: worldHeight/2 - wallInset)
@@ -124,11 +125,11 @@ class GameScene: SKScene {
         
         // Add front door EMOJI in left wall
         let frontDoor = SKLabelNode(text: "🚪")
-        frontDoor.fontSize = GameConfig.World.doorSize
+        frontDoor.fontSize = configService.doorSize
         frontDoor.fontName = "Arial"
         frontDoor.horizontalAlignmentMode = .center
         frontDoor.verticalAlignmentMode = .center
-        frontDoor.position = CGPoint(x: -worldWidth/2 + GameConfig.World.doorOffsetFromWall, y: 0)
+        frontDoor.position = CGPoint(x: -worldWidth/2 + configService.doorOffsetFromWall, y: 0)
         frontDoor.zPosition = 20 // Very high above everything
         frontDoor.name = "front_door"
         addChild(frontDoor)
@@ -143,9 +144,9 @@ class GameScene: SKScene {
     
     private func setupShopFloorBounds() {
         // Main shop floor area - light blue rectangle under brewing stations
-        let shopFloorBounds = SKSpriteNode(color: GameConfig.World.shopFloorColor, 
-                                          size: GameConfig.World.shopFloorSize)
-        shopFloorBounds.position = GameConfig.World.shopFloorOffset
+        let shopFloorBounds = SKSpriteNode(color: configService.shopFloorColor, 
+                                          size: configService.shopFloorSize)
+        shopFloorBounds.position = configService.shopFloorOffset
         shopFloorBounds.zPosition = -8
         addChild(shopFloorBounds)
         
@@ -321,20 +322,20 @@ class GameScene: SKScene {
         let worldPos = gridService.gridToWorld(cell)
         
         // Create a gentle pulsing circle instead of a red square
-        let feedback = SKShapeNode(circleOfRadius: gridService.cellSize * 0.3)
+        let feedback = SKShapeNode(circleOfRadius: configService.touchOccupiedCellFeedbackRadius)
         feedback.fillColor = SKColor.clear
-        feedback.strokeColor = SKColor.orange.withAlphaComponent(0.4)
-        feedback.lineWidth = 2
+        feedback.strokeColor = configService.touchFeedbackColor
+        feedback.lineWidth = configService.touchFeedbackLineWidth
         feedback.position = worldPos
-        feedback.zPosition = 5  // Lower z-position, less intrusive
+        feedback.zPosition = configService.touchFeedbackZPosition
         addChild(feedback)
         
         // Gentle pulse animation instead of harsh fade
         let pulseAction = SKAction.sequence([
-            SKAction.scale(to: 1.2, duration: 0.15),
-            SKAction.scale(to: 1.0, duration: 0.15),
-            SKAction.wait(forDuration: 0.2),
-            SKAction.fadeOut(withDuration: 0.4),
+            SKAction.scale(to: configService.touchFeedbackScaleAmount, duration: configService.touchFeedbackScaleDuration),
+            SKAction.scale(to: 1.0, duration: configService.touchFeedbackScaleDuration),
+            SKAction.wait(forDuration: configService.touchFeedbackWaitDuration),
+            SKAction.fadeOut(withDuration: configService.touchFeedbackFadeDuration),
             SKAction.removeFromParent()
         ])
         feedback.run(pulseAction)
@@ -790,8 +791,8 @@ class GameScene: SKScene {
         
         // Create drink sprite as child of table
         let drinkOnTable = createTableDrink(from: drink)
-        drinkOnTable.position = CGPoint(x: 0, y: 25) // Offset on table surface
-        drinkOnTable.zPosition = 1
+        drinkOnTable.position = configService.tableDrinkOnTableOffset
+        drinkOnTable.zPosition = configService.tableDrinkOnTableZPosition
         drinkOnTable.name = "drink_on_table"
         table.addChild(drinkOnTable)
         
@@ -801,17 +802,17 @@ class GameScene: SKScene {
     
     private func createTableDrink(from originalDrink: RotatableObject) -> SKNode {
         // Create a smaller version of the drink for table display
-        let tableDrink = SKSpriteNode(color: originalDrink.color, size: CGSize(width: 20, height: 30))
+        let tableDrink = SKSpriteNode(color: originalDrink.color, size: configService.tableDrinkOnTableSize)
         
         // Copy drink visual elements if it's a completed drink
         if originalDrink.objectType == .completedDrink {
             // Add drink details (simplified)
-            let lid = SKSpriteNode(color: .lightGray, size: CGSize(width: 16, height: 4))
-            lid.position = CGPoint(x: 0, y: 12)
+            let lid = SKSpriteNode(color: configService.tableLidColor, size: configService.tableLidSize)
+            lid.position = configService.tableLidOffset
             tableDrink.addChild(lid)
             
-            let straw = SKSpriteNode(color: .white, size: CGSize(width: 2, height: 20))
-            straw.position = CGPoint(x: 6, y: 8)
+            let straw = SKSpriteNode(color: configService.tableStrawColor, size: configService.tableStrawSize)
+            straw.position = configService.tableStrawOffset
             tableDrink.addChild(straw)
         }
         
@@ -822,14 +823,14 @@ class GameScene: SKScene {
     private func enterForest() {
         print("🌲 Transitioning to forest scene...")
         
-        let fadeOut = SKAction.fadeOut(withDuration: GameConfig.ForestTransition.fadeOutDuration)
+        let fadeOut = SKAction.fadeOut(withDuration: configService.forestTransitionFadeOutDuration)
         
         run(fadeOut) { [weak self] in
             guard let self = self else { return }
             
             let forestScene = ForestScene(size: self.size)
             forestScene.scaleMode = .aspectFill
-            self.view?.presentScene(forestScene, transition: SKTransition.fade(withDuration: GameConfig.ForestTransition.fadeInDuration))
+            self.view?.presentScene(forestScene, transition: SKTransition.fade(withDuration: self.configService.forestTransitionFadeInDuration))
         }
     }
 }

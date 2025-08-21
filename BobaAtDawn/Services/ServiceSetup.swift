@@ -13,6 +13,10 @@ class ServiceSetup {
         let container = GameServiceContainer()
         
         // Register core services as singletons
+        container.registerSingleton(ConfigurationService.self) {
+            return StandardConfigurationService()
+        }
+        
         container.registerSingleton(TimeService.self) {
             return StandardTimeService()
         }
