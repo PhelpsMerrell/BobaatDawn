@@ -18,6 +18,7 @@ class GameScene: SKScene {
     private lazy var timeService: TimeService = serviceContainer.resolve(TimeService.self)
     private lazy var transitionService: SceneTransitionService = serviceContainer.resolve(SceneTransitionService.self)
     private lazy var inputService: InputService = serviceContainer.resolve(InputService.self)
+    private lazy var animationService: AnimationService = serviceContainer.resolve(AnimationService.self)
     
     // MARK: - Camera System
     private var gameCamera: SKCameraNode!
@@ -152,7 +153,7 @@ class GameScene: SKScene {
     }
     
     private func setupCharacter() {
-        character = Character(gridService: gridService)
+        character = Character(gridService: gridService, animationService: animationService)
         addChild(character)
         
         // Center camera on character
@@ -369,9 +370,14 @@ class GameScene: SKScene {
         // 3. Ingredient station interactions
         } else if let station = node as? IngredientStation {
             print("🧋 Interacting with \(station.stationType) station")
+            
+            // Use AnimationService for consistent station interaction feedback
+            let pulseAction = animationService.stationInteractionPulse(station)
+            animationService.run(pulseAction, on: station, withKey: AnimationKeys.stationInteraction, completion: nil)
+            
             station.interact()
             drinkCreator.updateDrink(from: ingredientStations)
-            print("🧋 Updated drink display")
+            print("🧋 Updated drink display with AnimationService feedback")
             
         // 4. Forest door - enter woods
         } else if node.name == "front_door" {

@@ -275,6 +275,35 @@ struct GameConfig {
         static let tableIndicatorOffset: CGFloat = 20
     }
     
+    // MARK: - Animation Configuration
+    struct Animation {
+        // Basic animation defaults
+        static let defaultDuration: TimeInterval = 0.3
+        static let quickDuration: TimeInterval = 0.15
+        static let slowDuration: TimeInterval = 0.6
+        
+        // Pulse effects
+        static let pulseScale: CGFloat = 1.1
+        static let pulseDuration: TimeInterval = 0.2
+        
+        // Floating effects
+        static let floatDistance: CGFloat = 5.0
+        static let floatDuration: TimeInterval = 1.0
+        
+        // Fade effects
+        static let fadeInDuration: TimeInterval = 0.3
+        static let fadeOutDuration: TimeInterval = 0.3
+        
+        // Scale feedback
+        static let feedbackScale: CGFloat = 1.15
+        static let feedbackDuration: TimeInterval = 0.1
+        
+        // Entrance animations
+        static let entranceDuration: TimeInterval = 0.5
+        static let entranceStartScale: CGFloat = 0.8
+        static let entranceStartAlpha: CGFloat = 0.0
+    }
+    
     // MARK: - Debug Configuration
     struct Debug {
         static let showGridOverlay = false

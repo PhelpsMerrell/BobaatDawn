@@ -35,6 +35,11 @@ class ServiceSetup {
             return StandardInputService(configService: configService)
         }
         
+        container.registerSingleton(AnimationService.self) {
+            let configService = container.resolve(ConfigurationService.self)
+            return StandardAnimationService(configService: configService)
+        }
+        
         // Register NPC service with dependencies
         container.register(NPCService.self) {
             let timeService = container.resolve(TimeService.self)

@@ -15,6 +15,7 @@ class Character: SKSpriteNode {
     
     // MARK: - Dependencies
     private let gridService: GridService
+    private var animationService: AnimationService?
     
     // Grid properties
     private var gridPosition: GridCoordinate {
@@ -26,8 +27,9 @@ class Character: SKSpriteNode {
     }
     
     // MARK: - Initialization
-    init(gridService: GridService) {
+    init(gridService: GridService, animationService: AnimationService? = nil) {
         self.gridService = gridService
+        self.animationService = animationService
         
         super.init(texture: nil, color: GameConfig.Character.color, size: GameConfig.Character.size)
         
@@ -101,22 +103,33 @@ class Character: SKSpriteNode {
         // Position above head
         updateCarriedItemPosition()
         
-        // Add floating animation
-        let floatAction = SKAction.repeatForever(
-            SKAction.sequence([
-                SKAction.moveBy(x: 0, y: GameConfig.Character.floatDistance, duration: GameConfig.Character.floatDuration),
-                SKAction.moveBy(x: 0, y: -GameConfig.Character.floatDistance, duration: GameConfig.Character.floatDuration)
-            ])
-        )
-        item.run(floatAction, withKey: "floating")
+        // Add floating animation using AnimationService if available
+        if let animationService = animationService {
+            let floatAction = animationService.carriedItemFloat(item)
+            animationService.run(floatAction, on: item, withKey: AnimationKeys.carriedFloat, completion: nil)
+        } else {
+            // Fallback to original floating animation
+            let floatAction = SKAction.repeatForever(
+                SKAction.sequence([
+                    SKAction.moveBy(x: 0, y: GameConfig.Character.floatDistance, duration: GameConfig.Character.floatDuration),
+                    SKAction.moveBy(x: 0, y: -GameConfig.Character.floatDistance, duration: GameConfig.Character.floatDuration)
+                ])
+            )
+            item.run(floatAction, withKey: "floating")
+        }
         item.zPosition = GameConfig.Objects.carryZPosition
     }
     
     func dropItem() {
         guard let item = carriedItem else { return }
         
-        // Stop floating animation
-        item.removeAction(forKey: "floating")
+        // Stop floating animation using AnimationService if available
+        if let animationService = animationService {
+            animationService.stopAnimation(item, withKey: AnimationKeys.carriedFloat)
+        } else {
+            // Fallback to original method
+            item.removeAction(forKey: "floating")
+        }
         
         // NEW: Grid-based dropping
         let currentCell = gridService.currentCharacterPosition
@@ -155,8 +168,13 @@ class Character: SKSpriteNode {
         // Remove item from character without placing it on grid
         guard let item = carriedItem else { return }
         
-        // Stop floating animation
-        item.removeAction(forKey: "floating")
+        // Stop floating animation using AnimationService if available
+        if let animationService = animationService {
+            animationService.stopAnimation(item, withKey: AnimationKeys.carriedFloat)
+        } else {
+            // Fallback to original method
+            item.removeAction(forKey: "floating")
+        }
         
         // Remove the item entirely (it will be recreated as table decoration)
         item.removeFromParent()

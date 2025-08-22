@@ -30,6 +30,7 @@ class ForestScene: SKScene {
     private lazy var serviceContainer: GameServiceContainer = ServiceSetup.createGameServices()
     private lazy var gridService: GridService = serviceContainer.resolve(GridService.self)
     private lazy var transitionService: SceneTransitionService = serviceContainer.resolve(SceneTransitionService.self)
+    private lazy var animationService: AnimationService = serviceContainer.resolve(AnimationService.self)
     
     // MARK: - Game Objects
     private var character: Character!
@@ -120,7 +121,7 @@ class ForestScene: SKScene {
     }
     
     private func setupCharacter() {
-        character = Character(gridService: gridService)
+        character = Character(gridService: gridService, animationService: animationService)
         
         // Start character in center-bottom of room
         let startCell = GridCoordinate(x: 16, y: 8) // Bottom center
@@ -201,22 +202,20 @@ class ForestScene: SKScene {
     }
     
     private func startPulsingAnimation() {
-        let baseColor = SKColor(red: 0.25, green: 0.35, blue: 0.25, alpha: 1.0)
-        let lightColor = SKColor(red: 0.4, green: 0.5, blue: 0.4, alpha: 1.0) // Lighter version
-        
-        // Create pulsing color animation that repeats forever
-        let colorPulse = SKAction.repeatForever(
-            SKAction.sequence([
-                SKAction.colorize(with: lightColor, colorBlendFactor: 1.0, duration: 1.0),
-                SKAction.colorize(with: baseColor, colorBlendFactor: 1.0, duration: 1.0)
-            ])
+        // Use AnimationService for consistent pulsing effect
+        let pulseConfig = AnimationConfig(
+            duration: 2.0, // 2 second full cycle
+            easing: .easeInOut,
+            repeatCount: -1 // Repeat forever
         )
         
-        // Apply to both transition areas
-        leftMist.run(colorPulse, withKey: "colorPulse")
-        rightMist.run(colorPulse, withKey: "colorPulse")
+        let leftPulseAction = animationService.pulse(leftMist, scale: 1.2, config: pulseConfig)
+        let rightPulseAction = animationService.pulse(rightMist, scale: 1.2, config: pulseConfig)
         
-        print("✨ Pulsing animation started")
+        animationService.run(leftPulseAction, on: leftMist, withKey: AnimationKeys.pulse, completion: nil)
+        animationService.run(rightPulseAction, on: rightMist, withKey: AnimationKeys.pulse, completion: nil)
+        
+        print("✨ AnimationService pulsing started for forest transition areas")
     }
     
     private func setupHintEmojis() {
