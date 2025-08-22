@@ -8,7 +8,7 @@
 import SpriteKit
 import UIKit // For haptic feedback
 
-class ForestScene: SKScene {
+class ForestScene: SKScene, InputServiceDelegate {
     
     // MARK: - Room System
     private var currentRoom: Int = 1 // Rooms 1-5
@@ -252,13 +252,11 @@ class ForestScene: SKScene {
     private func setupGestures() {
         guard let view = view else { return }
         
-        // Reuse gesture system from GameScene
-        let pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
-        let twoFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleTwoFingerTap(_:)))
-        twoFingerTap.numberOfTouchesRequired = 2
+        // Use InputService for gesture setup with delegate pattern
+        let inputService = serviceContainer.resolve(InputService.self)
+        inputService.setupGestures(for: view, context: .forestScene, config: nil, delegate: self)
         
-        view.addGestureRecognizer(pinchGesture)
-        view.addGestureRecognizer(twoFingerTap)
+        print("🎮 Forest gestures setup using InputService delegate pattern")
     }
     
     // MARK: - Touch Handling
@@ -377,8 +375,8 @@ class ForestScene: SKScene {
         }
     }
     
-    // MARK: - Gesture Handlers (Reused from GameScene)
-    @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+    // MARK: - InputServiceDelegate Methods
+    func inputService(_ service: InputService, didReceivePinch gesture: UIPinchGestureRecognizer) {
         isHandlingPinch = true
         
         switch gesture.state {
@@ -395,11 +393,18 @@ class ForestScene: SKScene {
         }
     }
     
-    @objc private func handleTwoFingerTap(_ gesture: UITapGestureRecognizer) {
+    func inputService(_ service: InputService, didReceiveRotation gesture: UIRotationGestureRecognizer) {
+        // ForestScene doesn't handle rotation - do nothing
+        print("🎮 ForestScene: Ignoring rotation gesture")
+    }
+    
+    func inputService(_ service: InputService, didReceiveTwoFingerTap gesture: UITapGestureRecognizer) {
         // Reset camera zoom
         cameraScale = 1.0
         let zoomAction = SKAction.scale(to: cameraScale, duration: 0.3)
         gameCamera.run(zoomAction)
+        
+        print("🎮 ForestScene: Camera zoom reset through delegate")
     }
     
     // MARK: - Camera Update (Reused from GameScene)

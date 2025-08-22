@@ -8,7 +8,7 @@
 import SpriteKit
 
 // MARK: - Main Game Scene
-class GameScene: SKScene {
+class GameScene: SKScene, InputServiceDelegate {
     
     // MARK: - Dependency Injection (Internal)
     private lazy var serviceContainer: GameServiceContainer = ServiceSetup.createGameServices()
@@ -29,6 +29,7 @@ class GameScene: SKScene {
         maxZoom: configService.cameraMaxZoom
     )
     private var lastPinchScale: CGFloat = 1.0
+    private var isHandlingPinch = false
     
     // MARK: - World Settings
     private lazy var worldWidth: CGFloat = configService.worldWidth
@@ -281,9 +282,9 @@ class GameScene: SKScene {
     private func setupGestures() {
         guard let view = view else { return }
         
-        // Use InputService for gesture setup
-        inputService.setupGestures(for: view, context: .gameScene, config: nil, target: self)
-        print("🎮 Gestures setup using InputService")
+        // Use InputService for gesture setup with delegate pattern
+        inputService.setupGestures(for: view, context: .gameScene, config: nil, delegate: self)
+        print("🎮 Gestures setup using InputService with delegate pattern")
     }
     
     // MARK: - Grid Visual Debug (Optional)
@@ -313,6 +314,9 @@ class GameScene: SKScene {
     
     // MARK: - Touch Handling (Using InputService)
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        // Don't handle touches during pinch
+        guard !isHandlingPinch else { return }
+        
         let result = inputService.handleTouchBegan(touches, with: event, in: self, gridService: gridService, context: .gameScene)
         
         switch result {
@@ -436,18 +440,43 @@ class GameScene: SKScene {
     }
 
     
-    // MARK: - Gesture Handlers (Using InputService)
-    @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
-        let isHandling = inputService.handlePinch(gesture, cameraState: &cameraState, camera: gameCamera)
-        // InputService manages the pinch state internally
+    // MARK: - InputServiceDelegate Methods
+    func inputService(_ service: InputService, didReceivePinch gesture: UIPinchGestureRecognizer) {
+        isHandlingPinch = true
+        
+        switch gesture.state {
+        case .began:
+            cameraState.lastPinchScale = cameraState.scale
+        case .changed:
+            let newScale = cameraState.lastPinchScale / gesture.scale
+            cameraState.scale = max(cameraState.minZoom, min(cameraState.maxZoom, newScale))
+            gameCamera.setScale(cameraState.scale)
+        case .ended, .cancelled:
+            isHandlingPinch = false
+        default:
+            break
+        }
+        
+        print("🎮 GameScene: Handled pinch gesture through delegate")
     }
     
-    @objc private func handleRotation(_ gesture: UIRotationGestureRecognizer) {
-        inputService.handleRotation(gesture, character: character)
+    func inputService(_ service: InputService, didReceiveRotation gesture: UIRotationGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        
+        // Rotate carried items if character is carrying something
+        if character.isCarrying {
+            character.rotateCarriedItem()
+            print("🎮 GameScene: Rotated carried item through delegate")
+        }
     }
     
-    @objc private func handleTwoFingerTap(_ gesture: UITapGestureRecognizer) {
-        inputService.handleTwoFingerTap(gesture, cameraState: &cameraState, camera: gameCamera)
+    func inputService(_ service: InputService, didReceiveTwoFingerTap gesture: UITapGestureRecognizer) {
+        // Reset camera zoom to default
+        cameraState.scale = configService.cameraDefaultScale
+        let zoomAction = SKAction.scale(to: cameraState.scale, duration: configService.cameraZoomResetDuration)
+        gameCamera.run(zoomAction)
+        
+        print("🎮 GameScene: Camera zoom reset through delegate")
     }
     
     // MARK: - Camera Update

@@ -65,16 +65,16 @@ protocol InputService {
     
     // MARK: - Gesture Setup
     
-    /// Setup gesture recognizers for a scene view
+    /// Setup gesture recognizers for a scene view - service handles all gestures internally
     /// - Parameters:
     ///   - view: The SKView to add gestures to
     ///   - context: Input context (game vs forest)
     ///   - config: Gesture configuration
-    ///   - target: Target object for gesture callbacks
+    ///   - delegate: Delegate to receive gesture callbacks
     func setupGestures(for view: SKView, 
                       context: InputContext,
                       config: GestureConfig?,
-                      target: AnyObject)
+                      delegate: InputServiceDelegate)
     
     // MARK: - Touch Handling
     
@@ -115,33 +115,6 @@ protocol InputService {
     /// Check if currently handling long press
     var isHandlingLongPress: Bool { get }
     
-    // MARK: - Gesture Handlers
-    
-    /// Handle pinch gesture for camera zoom
-    /// - Parameters:
-    ///   - gesture: Pinch gesture recognizer
-    ///   - cameraState: Current camera state (will be modified)
-    ///   - camera: Camera node to update
-    func handlePinch(_ gesture: UIPinchGestureRecognizer,
-                    cameraState: inout CameraState,
-                    camera: SKCameraNode) -> Bool // Returns if handling
-    
-    /// Handle rotation gesture
-    /// - Parameters:
-    ///   - gesture: Rotation gesture recognizer
-    ///   - character: Character with potential carried items
-    func handleRotation(_ gesture: UIRotationGestureRecognizer, 
-                       character: Character?)
-    
-    /// Handle two finger tap for camera reset
-    /// - Parameters:
-    ///   - gesture: Two finger tap gesture
-    ///   - cameraState: Current camera state (will be modified)
-    ///   - camera: Camera node to reset
-    func handleTwoFingerTap(_ gesture: UITapGestureRecognizer,
-                           cameraState: inout CameraState,
-                           camera: SKCameraNode)
-    
     // MARK: - Node Finding
     
     /// Find interactable node in hierarchy for game scene
@@ -172,4 +145,29 @@ protocol InputService {
     
     /// Get interaction search depth
     var interactionSearchDepth: Int { get }
+}
+
+// MARK: - Input Service Delegate Protocol
+protocol InputServiceDelegate: AnyObject {
+    
+    /// Called when pinch gesture occurs
+    /// - Parameters:
+    ///   - service: The input service
+    ///   - gesture: The pinch gesture
+    func inputService(_ service: InputService, 
+                     didReceivePinch gesture: UIPinchGestureRecognizer)
+    
+    /// Called when rotation gesture occurs
+    /// - Parameters:
+    ///   - service: The input service
+    ///   - gesture: The rotation gesture
+    func inputService(_ service: InputService,
+                     didReceiveRotation gesture: UIRotationGestureRecognizer)
+    
+    /// Called when two finger tap occurs
+    /// - Parameters:
+    ///   - service: The input service
+    ///   - gesture: The two finger tap gesture
+    func inputService(_ service: InputService,
+                     didReceiveTwoFingerTap gesture: UITapGestureRecognizer)
 }

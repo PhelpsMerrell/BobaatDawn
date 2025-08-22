@@ -21,6 +21,9 @@ class StandardInputService: InputService {
     // MARK: - Pinch Handling State
     private var isHandlingPinch = false
     
+    // MARK: - Delegate Reference
+    private weak var delegate: InputServiceDelegate?
+    
     // MARK: - Initialization
     init(configService: ConfigurationService) {
         self.configService = configService
@@ -43,25 +46,28 @@ class StandardInputService: InputService {
     func setupGestures(for view: SKView, 
                       context: InputContext,
                       config: GestureConfig? = nil,
-                      target: AnyObject) {
+                      delegate: InputServiceDelegate) {
+        
+        // Store delegate reference
+        self.delegate = delegate
         
         let gestureConfig = config ?? (context == .gameScene ? .gameDefault : .forestDefault)
         
-        // Setup pinch gesture
+        // Setup pinch gesture - InputService handles it internally
         if gestureConfig.enablePinch {
-            let pinchGesture = UIPinchGestureRecognizer(target: target, action: #selector(handlePinchGesture(_:)))
+            let pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinchGesture(_:)))
             view.addGestureRecognizer(pinchGesture)
         }
         
-        // Setup rotation gesture (mainly for GameScene)
+        // Setup rotation gesture (mainly for GameScene) - InputService handles it internally
         if gestureConfig.enableRotation {
-            let rotationGesture = UIRotationGestureRecognizer(target: target, action: #selector(handleRotationGesture(_:)))
+            let rotationGesture = UIRotationGestureRecognizer(target: self, action: #selector(handleRotationGesture(_:)))
             view.addGestureRecognizer(rotationGesture)
         }
         
-        // Setup two finger tap
+        // Setup two finger tap - InputService handles it internally
         if gestureConfig.enableTwoFingerTap {
-            let twoFingerTap = UITapGestureRecognizer(target: target, action: #selector(handleTwoFingerTapGesture(_:)))
+            let twoFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleTwoFingerTapGesture(_:)))
             twoFingerTap.numberOfTouchesRequired = 2
             view.addGestureRecognizer(twoFingerTap)
         }
@@ -157,7 +163,9 @@ class StandardInputService: InputService {
         completion?(node, location)
     }
     
-    // MARK: - Gesture Handlers
+    // MARK: - Internal Helper Methods - for backward compatibility
+    
+    /// Legacy method for scenes that haven't been updated to delegate pattern
     func handlePinch(_ gesture: UIPinchGestureRecognizer,
                     cameraState: inout CameraState,
                     camera: SKCameraNode) -> Bool {
@@ -180,6 +188,7 @@ class StandardInputService: InputService {
         return isHandlingPinch
     }
     
+    /// Legacy method for scenes that haven't been updated to delegate pattern
     func handleRotation(_ gesture: UIRotationGestureRecognizer, character: Character?) {
         guard gesture.state == .ended else { return }
         
@@ -190,6 +199,7 @@ class StandardInputService: InputService {
         }
     }
     
+    /// Legacy method for scenes that haven't been updated to delegate pattern
     func handleTwoFingerTap(_ gesture: UITapGestureRecognizer,
                            cameraState: inout CameraState,
                            camera: SKCameraNode) {
@@ -344,17 +354,32 @@ class StandardInputService: InputService {
 // MARK: - Objective-C Gesture Selectors
 extension StandardInputService {
     @objc private func handlePinchGesture(_ gesture: UIPinchGestureRecognizer) {
-        // This is just a placeholder - actual scenes will call the handlePinch method
-        // with their specific camera state
+        // Handle pinch gesture through delegate pattern
+        guard let delegate = delegate else {
+            print("🎮 InputService: Pinch gesture received but no delegate set")
+            return
+        }
+        
+        delegate.inputService(self, didReceivePinch: gesture)
     }
     
     @objc private func handleRotationGesture(_ gesture: UIRotationGestureRecognizer) {
-        // This is just a placeholder - actual scenes will call the handleRotation method
-        // with their specific character
+        // Handle rotation gesture through delegate pattern
+        guard let delegate = delegate else {
+            print("🎮 InputService: Rotation gesture received but no delegate set")
+            return
+        }
+        
+        delegate.inputService(self, didReceiveRotation: gesture)
     }
     
     @objc private func handleTwoFingerTapGesture(_ gesture: UITapGestureRecognizer) {
-        // This is just a placeholder - actual scenes will call the handleTwoFingerTap method
-        // with their specific camera state
+        // Handle two finger tap through delegate pattern
+        guard let delegate = delegate else {
+            print("🎮 InputService: Two finger tap received but no delegate set")
+            return
+        }
+        
+        delegate.inputService(self, didReceiveTwoFingerTap: gesture)
     }
 }
