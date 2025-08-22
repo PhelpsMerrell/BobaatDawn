@@ -10,9 +10,20 @@ import UIKit // For haptic feedback
 
 class ForestScene: SKScene, InputServiceDelegate {
     
-    // MARK: - Room System
-    private var currentRoom: Int = 1 // Rooms 1-5
-    private let roomEmojis = ["", "🍄", "⛰️", "⭐", "💎", "🌳"] // Index 0 unused, rooms 1-5
+    // MARK: - Room System (Internal - accessible to extensions)
+    internal var currentRoom: Int = 1 // Rooms 1-5
+    internal let roomEmojis = ["", "🍄", "⛰️", "⭐", "💎", "🌳"] // Index 0 unused, rooms 1-5
+    
+    // MARK: - Initializers
+    override init(size: CGSize) {
+        super.init(size: size)
+        self.scaleMode = .aspectFill
+    }
+    
+    required init?(coder aDecoder: NSCoder) {
+        super.init(coder: aDecoder)
+        self.scaleMode = .aspectFill
+    }
     
     // MARK: - Camera System (Reuse from GameScene)
     private var gameCamera: SKCameraNode!
@@ -22,22 +33,22 @@ class ForestScene: SKScene, InputServiceDelegate {
     private let maxZoom: CGFloat = 1.5
     private var lastPinchScale: CGFloat = 1.0
     
-    // MARK: - World Settings (Same as shop)
-    private let worldWidth: CGFloat = 2000
-    private let worldHeight: CGFloat = 1500
+    // MARK: - World Settings (Internal - accessible to extensions)
+    internal let worldWidth: CGFloat = 2000
+    internal let worldHeight: CGFloat = 1500
     
-    // MARK: - Dependencies 
-    private lazy var serviceContainer: GameServiceContainer = ServiceSetup.createGameServices()
-    private lazy var gridService: GridService = serviceContainer.resolve(GridService.self)
-    private lazy var transitionService: SceneTransitionService = serviceContainer.resolve(SceneTransitionService.self)
-    private lazy var animationService: AnimationService = serviceContainer.resolve(AnimationService.self)
+    // MARK: - Dependencies (Internal - accessible to extensions)
+    internal lazy var serviceContainer: GameServiceContainer = ServiceSetup.createGameServices()
+    internal lazy var gridService: GridService = serviceContainer.resolve(GridService.self)
+    internal lazy var transitionService: SceneTransitionService = serviceContainer.resolve(SceneTransitionService.self)
+    internal lazy var animationService: AnimationService = serviceContainer.resolve(AnimationService.self)
     
     // MARK: - Game Objects
     private var character: Character!
     
-    // MARK: - Room Elements
-    private var roomIdentifier: SKLabelNode! // Big emoji in center
-    private var backDoor: SKLabelNode! // Return to shop (Room 1 only)
+    // MARK: - Room Elements (Internal - accessible to extensions)
+    internal var roomIdentifier: SKLabelNode! // Big emoji in center
+    internal var backDoor: SKLabelNode! // Return to shop (Room 1 only)
     
     // MARK: - Transition Control
     private var isTransitioning: Bool = false
@@ -46,11 +57,11 @@ class ForestScene: SKScene, InputServiceDelegate {
     private var lastTriggeredSide: String = "" // Track which side last triggered ("left" or "right")
     private var hasLeftTransitionZone: Bool = true // Must leave zone before triggering again
     
-    // MARK: - Misty Visual Effects
-    private var leftMist: SKSpriteNode!
-    private var rightMist: SKSpriteNode!
-    private var leftHintEmoji: SKLabelNode!
-    private var rightHintEmoji: SKLabelNode!
+    // MARK: - Misty Visual Effects (Internal - accessible to extensions)
+    internal var leftMist: SKSpriteNode!
+    internal var rightMist: SKSpriteNode!
+    internal var leftHintEmoji: SKLabelNode!
+    internal var rightHintEmoji: SKLabelNode!
     
     // MARK: - Touch Handling
     private var longPressTimer: Timer?
@@ -60,6 +71,15 @@ class ForestScene: SKScene, InputServiceDelegate {
     
     // MARK: - Scene Setup
     override func didMove(to view: SKView) {
+        print("🌲 Forest Scene starting setup with size: \(self.size)")
+        
+        // Validate scene size before proceeding
+        guard self.size.width > 0 && self.size.height > 0 else {
+            print("❌ CRITICAL ERROR: ForestScene has invalid size: \(self.size)")
+            print("❌ This will cause crashes when creating sprites")
+            return
+        }
+        
         setupCamera()
         setupWorld()
         setupCharacter()
@@ -79,15 +99,29 @@ class ForestScene: SKScene, InputServiceDelegate {
         // Forest atmosphere - darker than shop
         backgroundColor = SKColor(red: 0.2, green: 0.3, blue: 0.2, alpha: 1.0)
         
-        // Forest floor
+        // Validate world dimensions before creating sprites
+        guard worldWidth > 0 && worldHeight > 0 else {
+            print("❌ ERROR: Invalid world dimensions: \(worldWidth) x \(worldHeight)")
+            return
+        }
+        
+        // Forest floor - FIXED: ensure positive size
+        let floorSize = CGSize(width: worldWidth, height: worldHeight)
+        guard floorSize.width > 0 && floorSize.height > 0 else {
+            print("❌ ERROR: Invalid floor size: \(floorSize)")
+            return
+        }
+        
         let forestFloor = SKSpriteNode(color: SKColor(red: 0.15, green: 0.25, blue: 0.15, alpha: 1.0), 
-                                      size: CGSize(width: worldWidth, height: worldHeight))
+                                      size: floorSize)
         forestFloor.position = CGPoint(x: 0, y: 0)
         forestFloor.zPosition = -10
         addChild(forestFloor)
         
         // Forest boundaries (darker trees)
         setupForestBounds()
+        
+        print("🌲 Forest world setup complete with validated sizes")
     }
     
     private func setupForestBounds() {
@@ -136,61 +170,48 @@ class ForestScene: SKScene, InputServiceDelegate {
     }
     
     private func setupCurrentRoom() {
-        // Remove previous room elements
-        roomIdentifier?.removeFromParent()
-        backDoor?.removeFromParent()
-        leftMist?.removeFromParent()
-        rightMist?.removeFromParent()
-        leftHintEmoji?.removeFromParent()
-        rightHintEmoji?.removeFromParent()
+        // Use the new grid positioning system
+        setupRoomWithGrid(currentRoom)
         
-        // Add room identifier emoji (big, center)
-        roomIdentifier = SKLabelNode(text: roomEmojis[currentRoom])
-        roomIdentifier.fontSize = 120 // Very big for identification
-        roomIdentifier.fontName = "Arial"
-        roomIdentifier.horizontalAlignmentMode = .center
-        roomIdentifier.verticalAlignmentMode = .center
-        roomIdentifier.position = CGPoint(x: 0, y: 0) // World center
-        roomIdentifier.zPosition = 5
-        addChild(roomIdentifier)
-        
-        // Add misty transition effects
+        // Add misty transition effects (keep existing system for now)
         setupMistyEffects()
-        
-        // Add back door only in Room 1
-        if currentRoom == 1 {
-            backDoor = SKLabelNode(text: "🚪")
-            backDoor.fontSize = 80
-            backDoor.fontName = "Arial"
-            backDoor.horizontalAlignmentMode = .center
-            backDoor.verticalAlignmentMode = .center
-            backDoor.position = CGPoint(x: 0, y: worldHeight/2 - 150) // Top center
-            backDoor.zPosition = 10
-            backDoor.name = "back_door"
-            addChild(backDoor)
-            
-            print("🚪 Back door to shop added to Room 1")
-        }
         
         print("🌲 Room \(currentRoom) setup complete: \(roomEmojis[currentRoom])")
     }
     
     // MARK: - Misty Visual Effects
     private func setupMistyEffects() {
+        print("🌫️ Setting up misty effects with world dimensions: \(worldWidth) x \(worldHeight)")
+        
+        // Validate world dimensions before creating misty sprites
+        guard worldWidth > 0 && worldHeight > 0 else {
+            print("❌ ERROR: Invalid world dimensions for mist: \(worldWidth) x \(worldHeight)")
+            return
+        }
+        
         // Create smaller walkable side transition areas (1/3 width)
         let baseColor = SKColor(red: 0.25, green: 0.35, blue: 0.25, alpha: 1.0) // Slightly lighter than floor
         
+        // FIXED: Validate mist sizes before creating sprites
+        let mistSize = CGSize(width: 133, height: worldHeight)
+        guard mistSize.width > 0 && mistSize.height > 0 else {
+            print("❌ ERROR: Invalid mist size: \(mistSize)")
+            return
+        }
+        
         // Left transition area - smaller walkable rectangle (1/3 width = ~133pt)
-        leftMist = SKSpriteNode(color: baseColor, size: CGSize(width: 133, height: worldHeight))
+        leftMist = SKSpriteNode(color: baseColor, size: mistSize)
         leftMist.position = CGPoint(x: -worldWidth/2 + 67, y: 0) // Left side, centered in area
         leftMist.zPosition = -8 // Below character but above floor
         addChild(leftMist)
         
         // Right transition area - smaller walkable rectangle (1/3 width = ~133pt)
-        rightMist = SKSpriteNode(color: baseColor, size: CGSize(width: 133, height: worldHeight))
+        rightMist = SKSpriteNode(color: baseColor, size: mistSize)
         rightMist.position = CGPoint(x: worldWidth/2 - 67, y: 0) // Right side, centered in area
         rightMist.zPosition = -8 // Below character but above floor
         addChild(rightMist)
+        
+        print("🌫️ Created mist sprites successfully with size: \(mistSize)")
         
         // Start the pulsing animation immediately
         startPulsingAnimation()
@@ -318,7 +339,7 @@ class ForestScene: SKScene, InputServiceDelegate {
         longPressTarget = nil
     }
     
-    // MARK: - Room Transition System
+    // MARK: - Room Transition System (Internal - accessible to extensions)
     private func isNearLeftEdge(_ location: CGPoint) -> Bool {
         return location.x < -worldWidth/2 + 300 // Expanded transition zone (was 100)
     }
@@ -327,11 +348,11 @@ class ForestScene: SKScene, InputServiceDelegate {
         return location.x > worldWidth/2 - 300 // Expanded transition zone (was 100)
     }
     
-    private func getPreviousRoom() -> Int {
+    internal func getPreviousRoom() -> Int {
         return currentRoom == 1 ? 5 : currentRoom - 1 // Loop: Room 1 → Room 5
     }
     
-    private func getNextRoom() -> Int {
+    internal func getNextRoom() -> Int {
         return currentRoom == 5 ? 1 : currentRoom + 1 // Loop: Room 5 → Room 1
     }
     

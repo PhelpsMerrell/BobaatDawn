@@ -25,7 +25,7 @@ class StandardNPCService: NPCService {
         let selectedAnimal = animal ?? selectAnimalForSpawn(isNight: timeService.currentPhase == .night)
         
         // Default start position (at front door)
-        let doorPosition = GameConfig.World.doorPosition
+        let doorPosition = GameConfig.World.doorGridPosition  // FIXED: Use new property name
         let startPosition = position ?? doorPosition
         
         // Create NPC with dependencies injected
@@ -177,7 +177,7 @@ class StandardNPCService: NPCService {
     
     func findPathToExit(from position: GridCoordinate) -> GridCoordinate? {
         // Move toward front door (exit) - improved pathfinding
-        let doorPosition = GameConfig.World.doorPosition
+        let doorPosition = GameConfig.World.doorGridPosition  // FIXED: Use new property name
         
         // Calculate direction to door
         let deltaX = doorPosition.x - position.x
@@ -211,7 +211,7 @@ class StandardNPCService: NPCService {
     
     func isNearExit(_ position: GridCoordinate) -> Bool {
         return position.x <= GameConfig.NPC.exitThreshold && 
-               abs(position.y - GameConfig.World.doorPosition.y) <= GameConfig.NPC.exitYTolerance
+               abs(position.y - GameConfig.World.doorGridPosition.y) <= GameConfig.NPC.exitYTolerance  // FIXED: Use new property name
     }
     
     // MARK: - Animations

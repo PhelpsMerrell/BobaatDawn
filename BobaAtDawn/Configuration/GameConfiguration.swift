@@ -19,14 +19,16 @@ struct GameConfig {
         static let wallThickness: CGFloat = 40
         static let wallInset: CGFloat = 20
         
-        // Door and entrance
-        static let doorPosition = GridCoordinate(x: 5, y: 12)
+        // FIXED: Door positioning using grid coordinates
+        static let doorGridPosition = GridCoordinate(x: 1, y: 12)  // Left wall, center height
         static let doorSize: CGFloat = 80
-        static let doorOffsetFromWall: CGFloat = 120
         
-        // Shop floor styling
-        static let shopFloorSize = CGSize(width: 800, height: 400)
-        static let shopFloorOffset = CGPoint(x: 0, y: 150)
+        // FIXED: Shop floor area using grid coordinates
+        // Define rectangular area under brewing stations
+        static let shopFloorArea = (
+            topLeft: GridCoordinate(x: 10, y: 8),
+            bottomRight: GridCoordinate(x: 23, y: 18)
+        )
         static let shopFloorColor = SKColor(red: 0.7, green: 0.85, blue: 1.0, alpha: 0.6)
         
         // Background colors
@@ -40,7 +42,11 @@ struct GameConfig {
         static let cellSize: CGFloat = 60
         static let columns = 33
         static let rows = 25
-        static let shopOrigin = CGPoint(x: -1000, y: -750)
+        
+        // FIXED: Center the grid in the world
+        // Grid total size: 33*60 = 1980w, 25*60 = 1500h
+        // Centered origin: -990, -750
+        static let shopOrigin = CGPoint(x: -990, y: -750)
         
         // Character starting position (center of world)
         static let characterStartPosition = GridCoordinate(x: 16, y: 12)
@@ -210,6 +216,11 @@ struct GameConfig {
         static let duskDuration: TimeInterval = 4 * 60  // 4 minutes
         static let nightDuration: TimeInterval = 12 * 60 // 12 minutes
         
+        // FIXED: Time system positioning using grid coordinates
+        static let breakerGridPosition = GridCoordinate(x: 3, y: 20)   // Top-left area
+        static let windowGridPosition = GridCoordinate(x: 28, y: 18)   // Top-right area
+        static let labelGridPosition = GridCoordinate(x: 28, y: 18)    // Same as window
+        
         // Time display configuration
         static let labelFontSize: CGFloat = 24
         static let labelFontName = "Arial-Bold"
@@ -220,11 +231,6 @@ struct GameConfig {
         static let dayColor = SKColor.blue
         static let duskColor = SKColor.orange
         static let nightColor = SKColor.purple
-        
-        // Time system positioning
-        static let breakerPosition = CGPoint(x: -600, y: 400)
-        static let windowPosition = CGPoint(x: 400, y: 300)
-        static let labelPosition = CGPoint(x: 400, y: 300)
     }
     
     // MARK: - Table Service Configuration
@@ -315,6 +321,64 @@ struct GameConfig {
 
 // MARK: - Convenience Extensions
 extension GameConfig {
+    
+    // FIXED: Grid positioning helpers
+    
+    /// Convert grid coordinate to world position using current grid settings
+    static func gridToWorld(_ gridPos: GridCoordinate) -> CGPoint {
+        let x = Grid.shopOrigin.x + (CGFloat(gridPos.x) * Grid.cellSize) + (Grid.cellSize / 2)
+        let y = Grid.shopOrigin.y + (CGFloat(gridPos.y) * Grid.cellSize) + (Grid.cellSize / 2)
+        return CGPoint(x: x, y: y)
+    }
+    
+    /// Get world position for time system components
+    static func timeSystemPositions() -> (breaker: CGPoint, window: CGPoint, label: CGPoint) {
+        return (
+            breaker: gridToWorld(Time.breakerGridPosition),
+            window: gridToWorld(Time.windowGridPosition),
+            label: gridToWorld(Time.labelGridPosition)
+        )
+    }
+    
+    /// Get world position for door
+    static func doorWorldPosition() -> CGPoint {
+        return gridToWorld(World.doorGridPosition)
+    }
+    
+    /// Get shop floor rectangle in world coordinates - FIXED
+    static func shopFloorRect() -> (position: CGPoint, size: CGSize) {
+        let topLeft = gridToWorld(World.shopFloorArea.topLeft)
+        let bottomRight = gridToWorld(World.shopFloorArea.bottomRight)
+        
+        print("🔍 shopFloorRect debug:")
+        print("   topLeft grid: \(World.shopFloorArea.topLeft) -> world: \(topLeft)")
+        print("   bottomRight grid: \(World.shopFloorArea.bottomRight) -> world: \(bottomRight)")
+        
+        let width = bottomRight.x - topLeft.x + Grid.cellSize
+        // FIXED: In world coordinates, bottomRight.y is LARGER than topLeft.y
+        let height = bottomRight.y - topLeft.y + Grid.cellSize
+        let centerX = (topLeft.x + bottomRight.x) / 2
+        let centerY = (topLeft.y + bottomRight.y) / 2
+        
+        let calculatedSize = CGSize(width: width, height: height)
+        print("   calculated width: \(width), height: \(height)")
+        print("   final size: \(calculatedSize)")
+        
+        // Extra validation
+        guard calculatedSize.width > 0 && calculatedSize.height > 0 else {
+            print("❌ CRITICAL: shopFloorRect calculated invalid size: \(calculatedSize)")
+            // Return a safe fallback size
+            return (
+                position: CGPoint(x: 0, y: 0),
+                size: CGSize(width: 100, height: 100)
+            )
+        }
+        
+        return (
+            position: CGPoint(x: centerX, y: centerY),
+            size: calculatedSize
+        )
+    }
     
     // Get ingredient station position by type
     static func stationPosition(for type: IngredientStation.StationType) -> GridCoordinate {

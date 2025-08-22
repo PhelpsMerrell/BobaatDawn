@@ -104,8 +104,16 @@ class StandardSceneTransitionService: SceneTransitionService {
         
         print("🌲 Transitioning from Room \(fromRoom) to Room \(toRoom)")
         
-        // Create full-screen black overlay that follows camera
-        let blackOverlay = SKSpriteNode(color: .black, size: CGSize(width: 4000, height: 3000))
+        // Create full-screen black overlay that follows camera - FIXED size calculation
+        // Use much larger size to ensure it covers screen at any scale
+        let overlaySize = CGSize(width: 4000, height: 3000)
+        // Validate the size to prevent negative values
+        guard overlaySize.width > 0 && overlaySize.height > 0 else {
+            print("❌ ERROR: Invalid overlay size: \(overlaySize)")
+            return
+        }
+        
+        let blackOverlay = SKSpriteNode(color: .black, size: overlaySize)
         blackOverlay.zPosition = 1000 // Above everything
         blackOverlay.alpha = 0
         forestScene.addChild(blackOverlay)

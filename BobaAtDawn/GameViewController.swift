@@ -14,25 +14,28 @@ class GameViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        // START WITH TITLE SCREEN instead of going directly to game
-        let titleScene = TitleScene()
+        // Get the SKView first
+        guard let skView = self.view as? SKView else {
+            print("❌ ERROR: View is not an SKView")
+            return
+        }
+        
+        // START WITH TITLE SCENE instead of going directly to game - FIXED: Pass size parameter
+        let titleScene = TitleScene(size: skView.bounds.size)
         
         // Set the scale mode to scale to fit the window
         titleScene.scaleMode = .aspectFill
         
-        // Get the SKView and present the title scene
-        if let view = self.view as? SKView {
-            // Set scene size to match view
-            titleScene.size = view.bounds.size
-            
-            view.presentScene(titleScene)
-            
-            view.ignoresSiblingOrder = true
-            
-            // Show debug info during development
-            view.showsFPS = true
-            view.showsNodeCount = true
-        }
+        // Present the title scene
+        skView.presentScene(titleScene)
+        
+        skView.ignoresSiblingOrder = true
+        
+        // Show debug info during development
+        skView.showsFPS = true
+        skView.showsNodeCount = true
+        
+        print("📱 GameViewController loaded with view bounds: \(skView.bounds.size)")
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {

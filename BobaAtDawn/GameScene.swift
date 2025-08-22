@@ -10,10 +10,21 @@ import SpriteKit
 // MARK: - Main Game Scene
 class GameScene: SKScene, InputServiceDelegate {
     
-    // MARK: - Dependency Injection (Internal)
-    private lazy var serviceContainer: GameServiceContainer = ServiceSetup.createGameServices()
+    // MARK: - Initializers
+    override init(size: CGSize) {
+        super.init(size: size)
+        self.scaleMode = .aspectFill
+    }
+    
+    required init?(coder aDecoder: NSCoder) {
+        super.init(coder: aDecoder)
+        self.scaleMode = .aspectFill
+    }
+    
+    // MARK: - Dependency Injection (Internal - accessible to extensions)
+    internal lazy var serviceContainer: GameServiceContainer = ServiceSetup.createGameServices()
     private lazy var configService: ConfigurationService = serviceContainer.resolve(ConfigurationService.self)
-    private lazy var gridService: GridService = serviceContainer.resolve(GridService.self)
+    internal lazy var gridService: GridService = serviceContainer.resolve(GridService.self)
     private lazy var npcService: NPCService = serviceContainer.resolve(NPCService.self)
     private lazy var timeService: TimeService = serviceContainer.resolve(TimeService.self)
     private lazy var transitionService: SceneTransitionService = serviceContainer.resolve(SceneTransitionService.self)
@@ -35,21 +46,21 @@ class GameScene: SKScene, InputServiceDelegate {
     private lazy var worldWidth: CGFloat = configService.worldWidth
     private lazy var worldHeight: CGFloat = configService.worldHeight
     
-    // MARK: - Game Objects
-    private var character: Character!
-    private var ingredientStations: [IngredientStation] = []
+    // MARK: - Game Objects (Internal - accessible to extensions)
+    internal var character: Character!
+    internal var ingredientStations: [IngredientStation] = []
     private var drinkCreator: DrinkCreator!
     
-    // MARK: - Time System (PRESERVED)
-    private var timeBreaker: PowerBreaker!
-    private var timeWindow: Window!
-    private var timeLabel: SKLabelNode!
+    // MARK: - Time System (Internal - accessible to extensions)
+    internal var timeBreaker: PowerBreaker!
+    internal var timeWindow: Window!
+    internal var timeLabel: SKLabelNode!
     
     // MARK: - World Areas
     private var shopFloor: SKSpriteNode!
     
     // MARK: - Grid Visual Debug (Optional)
-    private var showGridOverlay = false
+    private var showGridOverlay = false  // DISABLED: Grid overlay hidden
     
     // MARK: - NPC System
     private var npcs: [NPC] = []
@@ -93,9 +104,25 @@ class GameScene: SKScene, InputServiceDelegate {
     }
     
     private func setupWorld() {
+        print("🌍 GameScene.setupWorld() starting with world dimensions: \(worldWidth) x \(worldHeight)")
+        print("🌍 Scene size: \(self.size)")
+        
         backgroundColor = configService.backgroundColor
         
-        shopFloor = SKSpriteNode(color: configService.floorColor, size: CGSize(width: worldWidth, height: worldHeight))
+        // CRITICAL: Add size validation before creating sprites
+        guard worldWidth > 0 && worldHeight > 0 else {
+            print("❌ ERROR: Invalid world dimensions: \(worldWidth) x \(worldHeight)")
+            return
+        }
+        
+        let shopFloorSize = CGSize(width: worldWidth, height: worldHeight)
+        print("🏠 Creating shop floor with size: \(shopFloorSize)")
+        guard shopFloorSize.width > 0 && shopFloorSize.height > 0 else {
+            print("❌ ERROR: Invalid shop floor size: \(shopFloorSize)")
+            return
+        }
+        
+        shopFloor = SKSpriteNode(color: configService.floorColor, size: shopFloorSize)
         shopFloor.position = CGPoint(x: 0, y: 0)
         shopFloor.zPosition = -10
         addChild(shopFloor)
@@ -103,54 +130,98 @@ class GameScene: SKScene, InputServiceDelegate {
         // Add shop floor boundary (visual only)
         setupShopFloorBounds()
         
-        // Add shop walls
+        // Add shop walls - WITH SIZE VALIDATION
         let wallThickness = configService.wallThickness
         let wallInset = configService.wallInset
         let wallColor = configService.wallColor
         
-        let wallTop = SKSpriteNode(color: wallColor, size: CGSize(width: worldWidth, height: wallThickness))
+        print("🧱 Wall config: thickness=\(wallThickness), inset=\(wallInset)")
+        
+        // Top wall
+        let topWallSize = CGSize(width: worldWidth, height: wallThickness)
+        print("🔴 Creating top wall with size: \(topWallSize)")
+        guard topWallSize.width > 0 && topWallSize.height > 0 else {
+            print("❌ ERROR: Invalid top wall size: \(topWallSize)")
+            return
+        }
+        let wallTop = SKSpriteNode(color: wallColor, size: topWallSize)
         wallTop.position = CGPoint(x: 0, y: worldHeight/2 - wallInset)
         wallTop.zPosition = -5
         addChild(wallTop)
         
-        let wallBottom = SKSpriteNode(color: wallColor, size: CGSize(width: worldWidth, height: wallThickness))
+        // Bottom wall
+        let bottomWallSize = CGSize(width: worldWidth, height: wallThickness)
+        print("🔵 Creating bottom wall with size: \(bottomWallSize)")
+        guard bottomWallSize.width > 0 && bottomWallSize.height > 0 else {
+            print("❌ ERROR: Invalid bottom wall size: \(bottomWallSize)")
+            return
+        }
+        let wallBottom = SKSpriteNode(color: wallColor, size: bottomWallSize)
         wallBottom.position = CGPoint(x: 0, y: -worldHeight/2 + wallInset)
         wallBottom.zPosition = -5
         addChild(wallBottom)
         
-        let wallLeft = SKSpriteNode(color: wallColor, size: CGSize(width: wallThickness, height: worldHeight))
+        // Left wall
+        let leftWallSize = CGSize(width: wallThickness, height: worldHeight)
+        print("🟡 Creating left wall with size: \(leftWallSize)")
+        guard leftWallSize.width > 0 && leftWallSize.height > 0 else {
+            print("❌ ERROR: Invalid left wall size: \(leftWallSize)")
+            return
+        }
+        let wallLeft = SKSpriteNode(color: wallColor, size: leftWallSize)
         wallLeft.position = CGPoint(x: -worldWidth/2 + wallInset, y: 0)
         wallLeft.zPosition = -5
         addChild(wallLeft)
         
-        // Add front door EMOJI in left wall
+        // Add front door using grid positioning
         let frontDoor = SKLabelNode(text: "🚪")
         frontDoor.fontSize = configService.doorSize
         frontDoor.fontName = "Arial"
         frontDoor.horizontalAlignmentMode = .center
         frontDoor.verticalAlignmentMode = .center
-        frontDoor.position = CGPoint(x: -worldWidth/2 + configService.doorOffsetFromWall, y: 0)
+        frontDoor.position = GameConfig.doorWorldPosition()  // FIXED: Use grid positioning
         frontDoor.zPosition = 20 // Very high above everything
         frontDoor.name = "front_door"
         addChild(frontDoor)
         
-        print("🚪 EMOJI Front door added at \(frontDoor.position)")
+        print("🚪 EMOJI Front door added at grid \(GameConfig.World.doorGridPosition) = world \(frontDoor.position)")
         
-        let wallRight = SKSpriteNode(color: wallColor, size: CGSize(width: wallThickness, height: worldHeight))
+        // Right wall
+        let rightWallSize = CGSize(width: wallThickness, height: worldHeight)
+        print("🟢 Creating right wall with size: \(rightWallSize)")
+        guard rightWallSize.width > 0 && rightWallSize.height > 0 else {
+            print("❌ ERROR: Invalid right wall size: \(rightWallSize)")
+            return
+        }
+        let wallRight = SKSpriteNode(color: wallColor, size: rightWallSize)
         wallRight.position = CGPoint(x: worldWidth/2 - wallInset, y: 0)
         wallRight.zPosition = -5
         addChild(wallRight)
+        
+        print("🌍 GameScene.setupWorld() completed successfully")
     }
     
     private func setupShopFloorBounds() {
-        // Main shop floor area - light blue rectangle under brewing stations
+        print("🏠 Setting up shop floor bounds...")
+        
+        // FIXED: Shop floor area using grid positioning
+        let shopFloorRect = GameConfig.shopFloorRect()
+        print("🏠 Shop floor rect: position=\(shopFloorRect.position), size=\(shopFloorRect.size)")
+        
+        // CRITICAL: Validate the calculated size
+        guard shopFloorRect.size.width > 0 && shopFloorRect.size.height > 0 else {
+            print("❌ ERROR: Invalid shop floor rect size: \(shopFloorRect.size)")
+            print("❌ This is likely where the {840, -540} crash occurs!")
+            return
+        }
+        
         let shopFloorBounds = SKSpriteNode(color: configService.shopFloorColor, 
-                                          size: configService.shopFloorSize)
-        shopFloorBounds.position = configService.shopFloorOffset
+                                          size: shopFloorRect.size)
+        shopFloorBounds.position = shopFloorRect.position
         shopFloorBounds.zPosition = -8
         addChild(shopFloorBounds)
         
-        print("🏠 Light blue shop floor added under brewing stations")
+        print("🏠 Shop floor added: grid area \(GameConfig.World.shopFloorArea) = world rect \(shopFloorRect)")
     }
     
     private func setupCharacter() {
@@ -254,14 +325,16 @@ class GameScene: SKScene, InputServiceDelegate {
     }
     
     private func setupTimeSystem() {
-        // PRESERVED: Time system unchanged
+        // FIXED: Time system using grid positioning
+        let timePositions = GameConfig.timeSystemPositions()
+        
         timeBreaker = PowerBreaker()
-        timeBreaker.position = CGPoint(x: -600, y: 400) // Top-left corner of shop, but visible and accessible
+        timeBreaker.position = timePositions.breaker
         timeBreaker.zPosition = 10
         addChild(timeBreaker)
         
         timeWindow = Window()
-        timeWindow.position = CGPoint(x: 400, y: 300) // Center-right of explorable area
+        timeWindow.position = timePositions.window
         timeWindow.zPosition = 10
         addChild(timeWindow)
         
@@ -272,11 +345,11 @@ class GameScene: SKScene, InputServiceDelegate {
         timeLabel.fontColor = .black
         timeLabel.horizontalAlignmentMode = .center
         timeLabel.verticalAlignmentMode = .center
-        timeLabel.position = CGPoint(x: 400, y: 300) // Same position as time window to center it
+        timeLabel.position = timePositions.label
         timeLabel.zPosition = 11 // Above time window
         addChild(timeLabel)
         
-        print("🌅 Time system: Game starts in Day, flows until Dawn completion trips breaker")
+        print("🌅 Time system positioned: breaker at grid \(GameConfig.Time.breakerGridPosition), window at grid \(GameConfig.Time.windowGridPosition)")
     }
     
     private func setupGestures() {

@@ -9,6 +9,17 @@ import SpriteKit
 
 class TitleScene: SKScene {
     
+    // MARK: - Initializers
+    override init(size: CGSize) {
+        super.init(size: size)
+        self.scaleMode = .aspectFill
+    }
+    
+    required init?(coder aDecoder: NSCoder) {
+        super.init(coder: aDecoder)
+        self.scaleMode = .aspectFill
+    }
+    
     // MARK: - UI Elements
     private var titleLabel: SKLabelNode!
     private var startButton: SKSpriteNode!
@@ -235,10 +246,9 @@ class TitleScene: SKScene {
         let exitAnimation = SKAction.group([fadeOut, scaleDown])
         
         run(exitAnimation) {
-            // Create and transition to game scene
-            let gameScene = GameScene()
+            // Create and transition to game scene - FIXED: Pass size parameter
+            let gameScene = GameScene(size: self.size)
             gameScene.scaleMode = .aspectFill
-            gameScene.size = self.size
             
             let transition = SKTransition.fade(withDuration: 0.5)
             self.view?.presentScene(gameScene, transition: transition)

@@ -14,11 +14,8 @@ class StandardConfigurationService: ConfigurationService {
     var worldHeight: CGFloat { GameConfig.World.height }
     var wallThickness: CGFloat { GameConfig.World.wallThickness }
     var wallInset: CGFloat { GameConfig.World.wallInset }
-    var doorPosition: GridCoordinate { GameConfig.World.doorPosition }
+    var doorGridPosition: GridCoordinate { GameConfig.World.doorGridPosition }  // FIXED
     var doorSize: CGFloat { GameConfig.World.doorSize }
-    var doorOffsetFromWall: CGFloat { GameConfig.World.doorOffsetFromWall }
-    var shopFloorSize: CGSize { GameConfig.World.shopFloorSize }
-    var shopFloorOffset: CGPoint { GameConfig.World.shopFloorOffset }
     var shopFloorColor: SKColor { GameConfig.World.shopFloorColor }
     var backgroundColor: SKColor { GameConfig.World.backgroundColor }
     var floorColor: SKColor { GameConfig.World.floorColor }
@@ -122,9 +119,10 @@ class StandardConfigurationService: ConfigurationService {
     var timeDayColor: SKColor { GameConfig.Time.dayColor }
     var timeDuskColor: SKColor { GameConfig.Time.duskColor }
     var timeNightColor: SKColor { GameConfig.Time.nightColor }
-    var timeBreakerPosition: CGPoint { GameConfig.Time.breakerPosition }
-    var timeWindowPosition: CGPoint { GameConfig.Time.windowPosition }
-    var timeLabelPosition: CGPoint { GameConfig.Time.labelPosition }
+    // FIXED: Time system uses grid positioning now
+    var timeBreakerGridPosition: GridCoordinate { GameConfig.Time.breakerGridPosition }
+    var timeWindowGridPosition: GridCoordinate { GameConfig.Time.windowGridPosition }
+    var timeLabelGridPosition: GridCoordinate { GameConfig.Time.labelGridPosition }
     
     // MARK: - Forest Transition Configuration
     var forestTransitionFadeOutDuration: TimeInterval { GameConfig.ForestTransition.fadeOutDuration }

@@ -91,7 +91,7 @@ class NPC: SKLabelNode {
         self.animalType = animal ?? AnimalType.random()
         
         // Default start position (at front door)
-        let doorPosition = GameConfig.World.doorPosition
+        let doorPosition = GameConfig.World.doorGridPosition  // FIXED: Use new property name
         self.gridPosition = startPosition ?? doorPosition
         
         super.init()

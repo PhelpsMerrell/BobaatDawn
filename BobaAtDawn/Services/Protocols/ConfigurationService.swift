@@ -15,11 +15,8 @@ protocol ConfigurationService {
     var worldHeight: CGFloat { get }
     var wallThickness: CGFloat { get }
     var wallInset: CGFloat { get }
-    var doorPosition: GridCoordinate { get }
+    var doorGridPosition: GridCoordinate { get }  // FIXED
     var doorSize: CGFloat { get }
-    var doorOffsetFromWall: CGFloat { get }
-    var shopFloorSize: CGSize { get }
-    var shopFloorOffset: CGPoint { get }
     var shopFloorColor: SKColor { get }
     var backgroundColor: SKColor { get }
     var floorColor: SKColor { get }
@@ -123,9 +120,10 @@ protocol ConfigurationService {
     var timeDayColor: SKColor { get }
     var timeDuskColor: SKColor { get }
     var timeNightColor: SKColor { get }
-    var timeBreakerPosition: CGPoint { get }
-    var timeWindowPosition: CGPoint { get }
-    var timeLabelPosition: CGPoint { get }
+    // FIXED: Time system uses grid positioning now
+    var timeBreakerGridPosition: GridCoordinate { get }
+    var timeWindowGridPosition: GridCoordinate { get }
+    var timeLabelGridPosition: GridCoordinate { get }
     
     // MARK: - Forest Transition Configuration
     var forestTransitionFadeOutDuration: TimeInterval { get }
