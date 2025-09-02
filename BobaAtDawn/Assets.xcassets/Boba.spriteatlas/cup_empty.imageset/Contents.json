@@ -1,6 +1,7 @@
 {
   "images" : [
     {
+      "filename" : "empty_cup.png",
       "idiom" : "universal",
       "scale" : "1x"
     },

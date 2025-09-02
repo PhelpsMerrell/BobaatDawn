@@ -1,0 +1,1 @@
+chmod +x clean_and_build.sh

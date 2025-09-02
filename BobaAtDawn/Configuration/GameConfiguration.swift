@@ -354,9 +354,9 @@ extension GameConfig {
         print("   topLeft grid: \(World.shopFloorArea.topLeft) -> world: \(topLeft)")
         print("   bottomRight grid: \(World.shopFloorArea.bottomRight) -> world: \(bottomRight)")
         
-        let width = bottomRight.x - topLeft.x + Grid.cellSize
-        // FIXED: In world coordinates, bottomRight.y is LARGER than topLeft.y
-        let height = bottomRight.y - topLeft.y + Grid.cellSize
+        // Calculate width and height using absolute values to prevent negative sizes
+        let width = abs(bottomRight.x - topLeft.x) + Grid.cellSize
+        let height = abs(bottomRight.y - topLeft.y) + Grid.cellSize
         let centerX = (topLeft.x + bottomRight.x) / 2
         let centerY = (topLeft.y + bottomRight.y) / 2
         

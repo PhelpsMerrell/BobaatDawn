@@ -8,43 +8,11 @@
 import SpriteKit
 import UIKit // For haptic feedback
 
-class ForestScene: SKScene, InputServiceDelegate {
+class ForestScene: BaseGameScene {
     
     // MARK: - Room System (Internal - accessible to extensions)
     internal var currentRoom: Int = 1 // Rooms 1-5
     internal let roomEmojis = ["", "🍄", "⛰️", "⭐", "💎", "🌳"] // Index 0 unused, rooms 1-5
-    
-    // MARK: - Initializers
-    override init(size: CGSize) {
-        super.init(size: size)
-        self.scaleMode = .aspectFill
-    }
-    
-    required init?(coder aDecoder: NSCoder) {
-        super.init(coder: aDecoder)
-        self.scaleMode = .aspectFill
-    }
-    
-    // MARK: - Camera System (Reuse from GameScene)
-    private var gameCamera: SKCameraNode!
-    private let cameraLerpSpeed: CGFloat = 2.0
-    private var cameraScale: CGFloat = 1.0
-    private let minZoom: CGFloat = 0.3
-    private let maxZoom: CGFloat = 1.5
-    private var lastPinchScale: CGFloat = 1.0
-    
-    // MARK: - World Settings (Internal - accessible to extensions)
-    internal let worldWidth: CGFloat = 2000
-    internal let worldHeight: CGFloat = 1500
-    
-    // MARK: - Dependencies (Internal - accessible to extensions)
-    internal lazy var serviceContainer: GameServiceContainer = ServiceSetup.createGameServices()
-    internal lazy var gridService: GridService = serviceContainer.resolve(GridService.self)
-    internal lazy var transitionService: SceneTransitionService = serviceContainer.resolve(SceneTransitionService.self)
-    internal lazy var animationService: AnimationService = serviceContainer.resolve(AnimationService.self)
-    
-    // MARK: - Game Objects
-    private var character: Character!
     
     // MARK: - Room Elements (Internal - accessible to extensions)
     internal var roomIdentifier: SKLabelNode! // Big emoji in center
@@ -63,41 +31,15 @@ class ForestScene: SKScene, InputServiceDelegate {
     internal var leftHintEmoji: SKLabelNode!
     internal var rightHintEmoji: SKLabelNode!
     
-    // MARK: - Touch Handling
-    private var longPressTimer: Timer?
-    private var longPressTarget: SKNode?
-    private let longPressDuration: TimeInterval = 0.8
-    private var isHandlingPinch = false
+
     
-    // MARK: - Scene Setup
-    override func didMove(to view: SKView) {
-        print("🌲 Forest Scene starting setup with size: \(self.size)")
-        
-        // Validate scene size before proceeding
-        guard self.size.width > 0 && self.size.height > 0 else {
-            print("❌ CRITICAL ERROR: ForestScene has invalid size: \(self.size)")
-            print("❌ This will cause crashes when creating sprites")
-            return
-        }
-        
-        setupCamera()
-        setupWorld()
-        setupCharacter()
-        setupCurrentRoom()
-        setupGestures()
-        
-        print("🌲 Forest Scene initialized - Room \(currentRoom): \(roomEmojis[currentRoom])")
-    }
-    
-    private func setupCamera() {
-        gameCamera = SKCameraNode()
-        camera = gameCamera
-        addChild(gameCamera)
-    }
-    
-    private func setupWorld() {
+    // MARK: - BaseGameScene Template Method Implementation
+    override open func setupWorld() {
         // Forest atmosphere - darker than shop
         backgroundColor = SKColor(red: 0.2, green: 0.3, blue: 0.2, alpha: 1.0)
+        
+        // Call base implementation for validation
+        super.setupWorld()
         
         // Validate world dimensions before creating sprites
         guard worldWidth > 0 && worldHeight > 0 else {
@@ -154,19 +96,11 @@ class ForestScene: SKScene, InputServiceDelegate {
         addChild(wallRight)
     }
     
-    private func setupCharacter() {
-        character = Character(gridService: gridService, animationService: animationService)
+    
+    override open func setupSpecificContent() {
+        setupCurrentRoom()
         
-        // Start character in center-bottom of room
-        let startCell = GridCoordinate(x: 16, y: 8) // Bottom center
-        character.position = gridService.gridToWorld(startCell)
-        addChild(character)
-        
-        // Center camera on character
-        gameCamera.position = character.position
-        gameCamera.setScale(cameraScale)
-        
-        print("👤 Character positioned at forest entrance")
+        print("🌲 Forest Scene initialized - Room \(currentRoom): \(roomEmojis[currentRoom])")
     }
     
     private func setupCurrentRoom() {
@@ -270,50 +204,44 @@ class ForestScene: SKScene, InputServiceDelegate {
         print("👁️ Hint emojis added: \(previousRoomEmoji) ←→ \(nextRoomEmoji)")
     }
     
-    private func setupGestures() {
-        guard let view = view else { return }
-        
-        // Use InputService for gesture setup with delegate pattern
-        let inputService = serviceContainer.resolve(InputService.self)
-        inputService.setupGestures(for: view, context: .forestScene, config: nil, delegate: self)
-        
-        print("🎮 Forest gestures setup using InputService delegate pattern")
-    }
+
     
-    // MARK: - Touch Handling
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard !isHandlingPinch else { return }
-        guard let touch = touches.first else { return }
+    // MARK: - BaseGameScene Template Method Implementation
+    override open func handleSceneSpecificTouch(_ touches: Set<UITouch>, with event: UIEvent?) -> Bool {
+        guard let touch = touches.first else { return false }
         let location = touch.location(in: self)
         let touchedNode = atPoint(location)
         
         // Check for door interaction (only in Room 1)
         if currentRoom == 1 && touchedNode.name == "back_door" {
             startLongPress(for: touchedNode, at: location)
-            return
+            return true
         }
         
         // Regular movement with subtle haptic feedback
         let targetCell = gridService.worldToGrid(location)
         if gridService.isCellAvailable(targetCell) {
             // Very light haptic for footsteps
-            transitionService.triggerHapticFeedback(type: .selection)
+            triggerMovementFeedback()
             
             character.moveToGridCell(targetCell)
             print("👤 Character moving to forest cell \(targetCell)")
+            return true
+        }
+        
+        return false // Let base class handle
+    }
+    
+    override open func handleSceneSpecificLongPress(on node: SKNode, at location: CGPoint) {
+        if node.name == "back_door" {
+            // Haptic feedback for door interaction
+            triggerSuccessFeedback()
+            returnToShop()
         }
     }
     
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        cancelLongPress()
-    }
-    
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        cancelLongPress()
-    }
-    
     // MARK: - Long Press System (For Door)
-    private func startLongPress(for node: SKNode, at location: CGPoint) {
+    internal override func startLongPress(for node: SKNode, at location: CGPoint) {
         longPressTarget = node
         longPressTimer = Timer.scheduledTimer(withTimeInterval: longPressDuration, repeats: false) { [weak self] _ in
             self?.handleLongPress(on: node, at: location)
@@ -322,7 +250,7 @@ class ForestScene: SKScene, InputServiceDelegate {
         print("🚪 Long press started on door")
     }
     
-    private func cancelLongPress() {
+    internal override func cancelLongPress() {
         longPressTimer?.invalidate()
         longPressTimer = nil
         longPressTarget = nil
@@ -396,71 +324,7 @@ class ForestScene: SKScene, InputServiceDelegate {
         }
     }
     
-    // MARK: - InputServiceDelegate Methods
-    func inputService(_ service: InputService, didReceivePinch gesture: UIPinchGestureRecognizer) {
-        isHandlingPinch = true
-        
-        switch gesture.state {
-        case .began:
-            lastPinchScale = cameraScale
-        case .changed:
-            let newScale = lastPinchScale / gesture.scale
-            cameraScale = max(minZoom, min(maxZoom, newScale))
-            gameCamera.setScale(cameraScale)
-        case .ended, .cancelled:
-            isHandlingPinch = false
-        default:
-            break
-        }
-    }
-    
-    func inputService(_ service: InputService, didReceiveRotation gesture: UIRotationGestureRecognizer) {
-        // ForestScene doesn't handle rotation - do nothing
-        print("🎮 ForestScene: Ignoring rotation gesture")
-    }
-    
-    func inputService(_ service: InputService, didReceiveTwoFingerTap gesture: UITapGestureRecognizer) {
-        // Reset camera zoom
-        cameraScale = 1.0
-        let zoomAction = SKAction.scale(to: cameraScale, duration: 0.3)
-        gameCamera.run(zoomAction)
-        
-        print("🎮 ForestScene: Camera zoom reset through delegate")
-    }
-    
-    // MARK: - Camera Update (Reused from GameScene)
-    private func updateCamera() {
-        let targetPosition = character.position
-        let currentPosition = gameCamera.position
-        
-        let deltaX = targetPosition.x - currentPosition.x
-        let deltaY = targetPosition.y - currentPosition.y
-        
-        let newX = currentPosition.x + deltaX * cameraLerpSpeed * 0.016
-        let newY = currentPosition.y + deltaY * cameraLerpSpeed * 0.016
-        
-        let effectiveViewWidth = size.width * cameraScale
-        let effectiveViewHeight = size.height * cameraScale
-        
-        let halfViewWidth = effectiveViewWidth / 2
-        let halfViewHeight = effectiveViewHeight / 2
-        
-        let forestLeft = -worldWidth/2 + 80
-        let forestRight = worldWidth/2 - 80
-        let forestBottom = -worldHeight/2 + 80
-        let forestTop = worldHeight/2 - 80
-        
-        let clampedX = max(forestLeft + halfViewWidth, min(forestRight - halfViewWidth, newX))
-        let clampedY = max(forestBottom + halfViewHeight, min(forestTop - halfViewHeight, newY))
-        
-        gameCamera.position = CGPoint(x: clampedX, y: clampedY)
-    }
-    
-    // MARK: - Update Loop
-    override func update(_ currentTime: TimeInterval) {
-        updateCamera()
-        character.update()
-        
+    override open func updateSpecificContent(_ currentTime: TimeInterval) {
         // Update transition cooldown
         if transitionCooldown > 0 {
             transitionCooldown -= 1.0/60.0 // Approximate frame time

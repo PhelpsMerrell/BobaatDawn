@@ -8,46 +8,13 @@
 import SpriteKit
 
 // MARK: - Main Game Scene
-class GameScene: SKScene, InputServiceDelegate {
+class GameScene: BaseGameScene {
     
-    // MARK: - Initializers
-    override init(size: CGSize) {
-        super.init(size: size)
-        self.scaleMode = .aspectFill
-    }
-    
-    required init?(coder aDecoder: NSCoder) {
-        super.init(coder: aDecoder)
-        self.scaleMode = .aspectFill
-    }
-    
-    // MARK: - Dependency Injection (Internal - accessible to extensions)
-    internal lazy var serviceContainer: GameServiceContainer = ServiceSetup.createGameServices()
-    private lazy var configService: ConfigurationService = serviceContainer.resolve(ConfigurationService.self)
-    internal lazy var gridService: GridService = serviceContainer.resolve(GridService.self)
+    // MARK: - Game-Specific Services
     private lazy var npcService: NPCService = serviceContainer.resolve(NPCService.self)
     private lazy var timeService: TimeService = serviceContainer.resolve(TimeService.self)
-    private lazy var transitionService: SceneTransitionService = serviceContainer.resolve(SceneTransitionService.self)
-    private lazy var inputService: InputService = serviceContainer.resolve(InputService.self)
-    private lazy var animationService: AnimationService = serviceContainer.resolve(AnimationService.self)
-    
-    // MARK: - Camera System
-    private var gameCamera: SKCameraNode!
-    private lazy var cameraLerpSpeed: CGFloat = configService.cameraLerpSpeed
-    private lazy var cameraState = CameraState(
-        defaultScale: configService.cameraDefaultScale,
-        minZoom: configService.cameraMinZoom,
-        maxZoom: configService.cameraMaxZoom
-    )
-    private var lastPinchScale: CGFloat = 1.0
-    private var isHandlingPinch = false
-    
-    // MARK: - World Settings
-    private lazy var worldWidth: CGFloat = configService.worldWidth
-    private lazy var worldHeight: CGFloat = configService.worldHeight
     
     // MARK: - Game Objects (Internal - accessible to extensions)
-    internal var character: Character!
     internal var ingredientStations: [IngredientStation] = []
     private var drinkCreator: DrinkCreator!
     
@@ -68,15 +35,11 @@ class GameScene: SKScene, InputServiceDelegate {
     private lazy var maxNPCs = configService.npcMaxCount
     private var sceneTime: TimeInterval = 0 // Track scene time consistently
     
-    // MARK: - Scene Setup
-    override func didMove(to view: SKView) {
-        setupCamera()
-        setupWorld()
-        setupCharacter()
+    // MARK: - BaseGameScene Template Method Implementation
+    override open func setupSpecificContent() {
         setupIngredientStations()
         convertExistingObjectsToGrid()
         setupTimeSystem()
-        setupGestures()
         
         // Optional grid overlay for development
         if showGridOverlay {
@@ -97,17 +60,12 @@ class GameScene: SKScene, InputServiceDelegate {
         }
     }
     
-    private func setupCamera() {
-        gameCamera = SKCameraNode()
-        camera = gameCamera
-        addChild(gameCamera)
-    }
-    
-    private func setupWorld() {
+    override open func setupWorld() {
         print("🌍 GameScene.setupWorld() starting with world dimensions: \(worldWidth) x \(worldHeight)")
         print("🌍 Scene size: \(self.size)")
         
-        backgroundColor = configService.backgroundColor
+        // Call base implementation
+        super.setupWorld()
         
         // CRITICAL: Add size validation before creating sprites
         guard worldWidth > 0 && worldHeight > 0 else {
@@ -224,14 +182,7 @@ class GameScene: SKScene, InputServiceDelegate {
         print("🏠 Shop floor added: grid area \(GameConfig.World.shopFloorArea) = world rect \(shopFloorRect)")
     }
     
-    private func setupCharacter() {
-        character = Character(gridService: gridService, animationService: animationService)
-        addChild(character)
-        
-        // Center camera on character
-        gameCamera.position = character.position
-        gameCamera.setScale(cameraState.scale)
-    }
+
     
     private func setupIngredientStations() {
         // PRESERVED: 5-station boba creation system (adjusted for 60pt grid)
@@ -352,13 +303,7 @@ class GameScene: SKScene, InputServiceDelegate {
         print("🌅 Time system positioned: breaker at grid \(GameConfig.Time.breakerGridPosition), window at grid \(GameConfig.Time.windowGridPosition)")
     }
     
-    private func setupGestures() {
-        guard let view = view else { return }
-        
-        // Use InputService for gesture setup with delegate pattern
-        inputService.setupGestures(for: view, context: .gameScene, config: nil, delegate: self)
-        print("🎮 Gestures setup using InputService with delegate pattern")
-    }
+
     
     // MARK: - Grid Visual Debug (Optional)
     private func addGridOverlay() {
@@ -385,53 +330,13 @@ class GameScene: SKScene, InputServiceDelegate {
     }
 
     
-    // MARK: - Touch Handling (Using InputService)
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        // Don't handle touches during pinch
-        guard !isHandlingPinch else { return }
-        
-        let result = inputService.handleTouchBegan(touches, with: event, in: self, gridService: gridService, context: .gameScene)
-        
-        switch result {
-        case .handled:
-            break // Already handled by service
-            
-        case .notHandled:
-            break // Not handled, ignore
-            
-        case .longPress(let node, let location):
-            let gameNodes = [
-                "timeBreaker": timeBreaker as SKNode,
-                "carriedItem": character.carriedItem as SKNode? ?? SKNode() // Fallback to avoid optionals
-            ].compactMapValues { $0 != SKNode() ? $0 : nil }
-            
-            if let interactable = inputService.findInteractableNode(node, context: .gameScene, gameSpecificNodes: gameNodes) {
-                inputService.startLongPress(for: interactable, at: location) { [weak self] node, location in
-                    self?.handleLongPress(on: node, at: location)
-                }
-                print("🔍 Long press started on \(node) using InputService")
-            }
-            
-        case .movement(let targetCell):
-            character.moveToGridCell(targetCell)
-            print("🎯 Character moving to available cell \(targetCell) using InputService")
-            
-        case .occupiedCell(let cell):
-            inputService.showOccupiedCellFeedback(at: cell, in: self, gridService: gridService)
-            print("❌ Cell \(cell) is occupied")
-        }
-    }
-    
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        inputService.handleTouchEnded(touches, with: event)
-    }
-    
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        inputService.handleTouchCancelled(touches, with: event)
+    // MARK: - BaseGameScene Template Method Implementation
+    override open func handleSceneSpecificLongPress(on node: SKNode, at location: CGPoint) {
+        handleGameSceneLongPress(on: node, at: location)
     }
 
     
-    private func handleLongPress(on node: SKNode, at location: CGPoint) {
+    private func handleGameSceneLongPress(on node: SKNode, at location: CGPoint) {
         print("🔍 Long press on: \(node.name ?? "unnamed") - \(type(of: node))")
         
         // 1. Drop carried item if long pressing it
@@ -454,7 +359,7 @@ class GameScene: SKScene, InputServiceDelegate {
             
             station.interact()
             drinkCreator.updateDrink(from: ingredientStations)
-            print("🧋 Updated drink display with AnimationService feedback")
+            print("🧋 ✅ Updated drink display after station interaction")
             
         // 4. Forest door - enter woods
         } else if node.name == "front_door" {
@@ -465,12 +370,18 @@ class GameScene: SKScene, InputServiceDelegate {
             
         // 5. Pick up completed drink
         } else if node.name == "completed_drink_pickup" {
-            print("🧋 Attempting to pick up completed drink")
+            print("🧋 🎨 ATTEMPTING TO PICK UP COMPLETED DRINK")
             if character.carriedItem == nil {
                 if let completedDrink = drinkCreator.createCompletedDrink(from: ingredientStations) {
                     character.pickupItem(completedDrink)
+                    print("🧋 🎆 RESETTING STATIONS AFTER PICKUP...")
                     drinkCreator.resetStations(ingredientStations)
-                    print("🧋 Picked up completed drink and reset stations")
+                    print("🧋 ✅ Picked up completed drink and reset stations")
+                    
+                    // NEW: Show recipe system debug info
+                    debugRecipeSystem()
+                } else {
+                    print("🧋 ❌ Failed to create completed drink!")
                 }
             } else {
                 print("❌ Already carrying something")
@@ -513,84 +424,16 @@ class GameScene: SKScene, InputServiceDelegate {
     }
 
     
-    // MARK: - InputServiceDelegate Methods
-    func inputService(_ service: InputService, didReceivePinch gesture: UIPinchGestureRecognizer) {
-        isHandlingPinch = true
-        
-        switch gesture.state {
-        case .began:
-            cameraState.lastPinchScale = cameraState.scale
-        case .changed:
-            let newScale = cameraState.lastPinchScale / gesture.scale
-            cameraState.scale = max(cameraState.minZoom, min(cameraState.maxZoom, newScale))
-            gameCamera.setScale(cameraState.scale)
-        case .ended, .cancelled:
-            isHandlingPinch = false
-        default:
-            break
-        }
-        
-        print("🎮 GameScene: Handled pinch gesture through delegate")
-    }
+
     
-    func inputService(_ service: InputService, didReceiveRotation gesture: UIRotationGestureRecognizer) {
-        guard gesture.state == .ended else { return }
-        
-        // Rotate carried items if character is carrying something
-        if character.isCarrying {
-            character.rotateCarriedItem()
-            print("🎮 GameScene: Rotated carried item through delegate")
-        }
-    }
-    
-    func inputService(_ service: InputService, didReceiveTwoFingerTap gesture: UITapGestureRecognizer) {
-        // Reset camera zoom to default
-        cameraState.scale = configService.cameraDefaultScale
-        let zoomAction = SKAction.scale(to: cameraState.scale, duration: configService.cameraZoomResetDuration)
-        gameCamera.run(zoomAction)
-        
-        print("🎮 GameScene: Camera zoom reset through delegate")
-    }
-    
-    // MARK: - Camera Update
-    private func updateCamera() {
-        let targetPosition = character.position
-        let currentPosition = gameCamera.position
-        
-        let deltaX = targetPosition.x - currentPosition.x
-        let deltaY = targetPosition.y - currentPosition.y
-        
-        let newX = currentPosition.x + deltaX * cameraLerpSpeed * 0.016
-        let newY = currentPosition.y + deltaY * cameraLerpSpeed * 0.016
-        
-        let effectiveViewWidth = size.width * cameraState.scale
-        let effectiveViewHeight = size.height * cameraState.scale
-        
-        let halfViewWidth = effectiveViewWidth / 2
-        let halfViewHeight = effectiveViewHeight / 2
-        
-        let restaurantLeft = -worldWidth/2 + 80
-        let restaurantRight = worldWidth/2 - 80
-        let restaurantBottom = -worldHeight/2 + 80
-        let restaurantTop = worldHeight/2 - 80
-        
-        let clampedX = max(restaurantLeft + halfViewWidth, min(restaurantRight - halfViewWidth, newX))
-        let clampedY = max(restaurantBottom + halfViewHeight, min(restaurantTop - halfViewHeight, newY))
-        
-        gameCamera.position = CGPoint(x: clampedX, y: clampedY)
-    }
-    
-    // MARK: - Update Loop
-    override func update(_ currentTime: TimeInterval) {
+    // MARK: - BaseGameScene Template Method Implementation
+    override open func updateSpecificContent(_ currentTime: TimeInterval) {
         // Update scene time consistently
         if sceneTime == 0 {
             sceneTime = currentTime // Initialize on first frame
         }
         let deltaTime = currentTime - sceneTime
         sceneTime = currentTime
-        
-        updateCamera()
-        character.update()
         
         // Update time system
         timeService.update()
@@ -785,6 +628,39 @@ class GameScene: SKScene, InputServiceDelegate {
         }
         
         return tableDrink
+    }
+    
+    // MARK: - Recipe System Debug
+    private func debugRecipeSystem() {
+        let ingredients = RecipeConverter.convertToIngredients(from: ingredientStations)
+        let evaluation = RecipeConverter.evaluateRecipe(from: ingredientStations)
+        
+        print("🧋 === Recipe System Debug ===")
+        print("🧋 Current Ingredients:")
+        for ingredient in ingredients {
+            if ingredient.isPresent {
+                print("🧋   ✅ \(ingredient.type.displayName): \(ingredient.level.displayName)")
+            }
+        }
+        
+        if let recipe = evaluation.recipe {
+            print("🧋 📖 Recipe: \(recipe.name)")
+            print("🧋 ⭐ Quality: \(evaluation.quality.displayName) \(evaluation.quality.emoji)")
+            print("🧋 📝 Description: \(recipe.description)")
+        } else {
+            print("🧋 ❌ No recipe match found")
+        }
+        
+        // Show improvement hint
+        if let hint = RecipeManager.getInstance().getImprovementHint(for: ingredients) {
+            print("🧋 💡 Hint: \(hint)")
+        }
+        
+        // Show statistics
+        let stats = RecipeManager.getInstance().getRecipeStatistics()
+        print("🧋 📈 Stats: \(stats.discoveredRecipes) recipes discovered, \(String(format: "%.1f", stats.averageQuality)) avg quality")
+        
+        print("🧋 =============================")
     }
     
     // MARK: - Forest Transition

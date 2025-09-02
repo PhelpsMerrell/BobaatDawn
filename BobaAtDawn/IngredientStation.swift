@@ -41,26 +41,34 @@ class IngredientStation: RotatableObject {
     }
     
     func interact() {
+        print("🧋 💆 Interacting with \(stationType) station (current state: \(currentState))")
+        
         switch stationType {
         case .ice:
             var iceLevel = currentState as! Int
+            let oldLevel = iceLevel
             iceLevel = (iceLevel + 1) % 3 // 0, 1, 2, back to 0
             currentState = iceLevel
+            print("🧏 Ice level changed: \(oldLevel) -> \(iceLevel) (0=full, 1=light, 2=none)")
             
         case .boba, .foam, .tea, .lid:
             var toggle = currentState as! Bool
+            let oldState = toggle
             toggle.toggle()
             currentState = toggle
+            print("🍵 \(stationType) toggled: \(oldState) -> \(toggle)")
         }
         
         updateVisuals()
         
-        // Visual feedback
+        // Enhanced visual feedback
         let pulseAction = SKAction.sequence([
             SKAction.scale(to: GameConfig.IngredientStations.interactionScaleAmount, duration: GameConfig.IngredientStations.interactionDuration),
             SKAction.scale(to: 1.0, duration: GameConfig.IngredientStations.interactionDuration)
         ])
         run(pulseAction)
+        
+        print("🧋 ✅ \(stationType) interaction complete - new state: \(currentState)")
     }
     
     private func updateVisuals() {
@@ -84,12 +92,25 @@ class IngredientStation: RotatableObject {
     var hasLid: Bool { return stationType == .lid ? currentState as! Bool : false }
     
     func resetToDefault() {
+        print("🧋 🔄 Resetting \(stationType) station from state \(currentState)")
+        
         switch stationType {
         case .ice:
             currentState = 0
         case .boba, .foam, .tea, .lid:
             currentState = false
         }
+        
         updateVisuals()
+        
+        // Add visual feedback for reset
+        let resetFeedback = SKAction.sequence([
+            SKAction.colorize(with: .red, colorBlendFactor: 0.5, duration: 0.1),
+            SKAction.colorize(with: .white, colorBlendFactor: 0.0, duration: 0.2),
+            SKAction.colorize(withColorBlendFactor: 0.0, duration: 0.1)
+        ])
+        run(resetFeedback)
+        
+        print("🧋 ✅ \(stationType) reset to state \(currentState)")
     }
 }

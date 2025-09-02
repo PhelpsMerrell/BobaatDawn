@@ -167,18 +167,21 @@ class StandardInputService: InputService {
     
     /// Legacy method for scenes that haven't been updated to delegate pattern
     func handlePinch(_ gesture: UIPinchGestureRecognizer,
-                    cameraState: inout CameraState,
-                    camera: SKCameraNode) -> Bool {
+                    camera: SKCameraNode,
+                    lastPinchScale: inout CGFloat,
+                    currentScale: inout CGFloat,
+                    minZoom: CGFloat,
+                    maxZoom: CGFloat) -> Bool {
         
         isHandlingPinch = true
         
         switch gesture.state {
         case .began:
-            cameraState.lastPinchScale = cameraState.scale
+            lastPinchScale = currentScale
         case .changed:
-            let newScale = cameraState.lastPinchScale / gesture.scale
-            cameraState.scale = max(cameraState.minZoom, min(cameraState.maxZoom, newScale))
-            camera.setScale(cameraState.scale)
+            let newScale = lastPinchScale / gesture.scale
+            currentScale = max(minZoom, min(maxZoom, newScale))
+            camera.setScale(currentScale)
         case .ended, .cancelled:
             isHandlingPinch = false
         default:
@@ -201,12 +204,13 @@ class StandardInputService: InputService {
     
     /// Legacy method for scenes that haven't been updated to delegate pattern
     func handleTwoFingerTap(_ gesture: UITapGestureRecognizer,
-                           cameraState: inout CameraState,
-                           camera: SKCameraNode) {
+                           camera: SKCameraNode,
+                           currentScale: inout CGFloat,
+                           defaultScale: CGFloat) {
         
         // Reset camera zoom to default
-        cameraState.scale = configService.cameraDefaultScale
-        let zoomAction = SKAction.scale(to: cameraState.scale, duration: configService.cameraZoomResetDuration)
+        currentScale = defaultScale
+        let zoomAction = SKAction.scale(to: currentScale, duration: configService.cameraZoomResetDuration)
         camera.run(zoomAction)
         
         print("🎮 Camera zoom reset to default")
