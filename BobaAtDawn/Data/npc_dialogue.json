@@ -1,0 +1,356 @@
+{
+  "npcs": [
+    {
+      "id": "qari_deer",
+      "name": "Qari",
+      "animal": "Deer",
+      "cause_of_death": "Car crash",
+      "dialogue": {
+        "day": [
+          "I could sip boba all day, it's like sunshine in a cup!",
+          "The forest feels brighter with sweet tea in hand.",
+          "Do you think boba pearls grow on trees here?",
+          "I always get extra sweetness—it makes life sweeter too.",
+          "Drinking boba makes me feel like I can run free forever!"
+        ],
+        "night": [
+          "My head feels heavy... almost like it was struck.",
+          "I get flashes of blinding lights... strange, isn't it?",
+          "Sometimes I feel frozen in place, like I can't move.",
+          "Do you ever hear screeching tires in the distance?",
+          "I feel like a deer caught in headlights..."
+        ]
+      }
+    },
+    {
+      "id": "timothy_rabbit",
+      "name": "Timothy",
+      "animal": "Rabbit",
+      "cause_of_death": "Starvation",
+      "dialogue": {
+        "day": [
+          "Carrots are good, but boba is divine!",
+          "I hop for joy every time I get a new flavor.",
+          "This forest is my burrow, and boba keeps me cozy.",
+          "Sweet tea gives me the energy to hop around all day.",
+          "I could nibble pearls forever, they never run out!"
+        ],
+        "night": [
+          "My stomach growls even after I drink...",
+          "No matter how much I sip, I feel empty inside.",
+          "It's strange, but sometimes the boba tastes like dust.",
+          "My paws tremble like I haven't eaten in days.",
+          "I know the feeling of hunger too well..."
+        ]
+      }
+    },
+    {
+      "id": "gertrude_wolf",
+      "name": "Gertrude",
+      "animal": "Wolf",
+      "cause_of_death": "Poisoning",
+      "dialogue": {
+        "day": [
+          "Sweet boba for a sweet old lady!",
+          "I've lived many moons, but never tasted anything so good.",
+          "The forest gives me strength, and boba gives me joy.",
+          "Dearie, have you tried taro? It's simply heavenly.",
+          "A cup of boba keeps me young at heart."
+        ],
+        "night": [
+          "Some drinks taste... bitter, don't they?",
+          "I can't help but wonder what was slipped into my cup.",
+          "My throat burns at night, though I only sip tea.",
+          "I feel faint, like something is coursing through me.",
+          "Poison has a way of making one wary of sweetness..."
+        ]
+      }
+    },
+    {
+      "id": "stanuel_mule",
+      "name": "Stanuel",
+      "animal": "Mule",
+      "cause_of_death": "Overwork",
+      "dialogue": {
+        "day": [
+          "Another cup... maybe it'll make me feel lighter.",
+          "Work's easier when there's boba to look forward to.",
+          "I carry burdens, but sweet drinks lift my spirit.",
+          "Pearls in a cup, like stepping stones in a river.",
+          "I drink boba to forget how heavy life feels."
+        ],
+        "night": [
+          "My back aches more at night...",
+          "I feel like I've been pulling a cart that never stops.",
+          "Even boba can't ease this weight I carry.",
+          "Sometimes I dream of resting, but never wake refreshed.",
+          "Overworked... over and over, until I collapse."
+        ]
+      }
+    },
+    {
+      "id": "bb_james_pufferfish",
+      "name": "BB James",
+      "animal": "Pufferfish",
+      "cause_of_death": "Choking",
+      "dialogue": {
+        "day": [
+          "Boba pearls are the best part! Big, chewy, fun!",
+          "I puff up with happiness every time I sip.",
+          "If I could, I'd drink boba until I burst!",
+          "Sweet tea calms me down when I get mad.",
+          "Nothing makes me happier than a full cup of pearls."
+        ],
+        "night": [
+          "Sometimes the pearls feel stuck in my throat...",
+          "I can't quite swallow this feeling away.",
+          "My breaths come short and sharp in the dark.",
+          "Do you ever choke on joy? I think I did once.",
+          "Boba is sweet... until it isn't."
+        ]
+      }
+    },
+    {
+      "id": "luna_owl",
+      "name": "Luna",
+      "animal": "Owl",
+      "cause_of_death": "Fell from a tree",
+      "dialogue": {
+        "day": [
+          "Night or day, boba is my wisdom drink.",
+          "I watch over the forest with sweet tea in hand.",
+          "Owls are supposed to like mice, but I prefer pearls.",
+          "Every flavor has a secret to share if you listen.",
+          "Boba keeps me awake through long nights."
+        ],
+        "night": [
+          "Sometimes I dream of falling... wings frozen midair.",
+          "The ground rushes up, faster than I can fly.",
+          "Even trees whisper about broken branches.",
+          "My head spins, as if the world tilts under me.",
+          "I see the ground in flashes—closer, closer..."
+        ]
+      }
+    },
+    {
+      "id": "finn_fox",
+      "name": "Finn",
+      "animal": "Fox",
+      "cause_of_death": "Hunting trap",
+      "dialogue": {
+        "day": [
+          "Boba hunting is the only hunting I like to do.",
+          "Sweet drinks make sly days brighter.",
+          "I'd trade my cunning for a second cup any day.",
+          "This forest has tricks, but none sweeter than boba.",
+          "Life is a game, and boba is the prize!"
+        ],
+        "night": [
+          "My leg feels caught at times... like it's snared.",
+          "The snap of metal echoes in my dreams.",
+          "I can't run as fast when the moon is up.",
+          "Even freedom tastes bitter if you've been trapped.",
+          "Some wounds never heal, even if you limp on..."
+        ]
+      }
+    },
+    {
+      "id": "ivy_songbird",
+      "name": "Ivy",
+      "animal": "Songbird",
+      "cause_of_death": "Window strike",
+      "dialogue": {
+        "day": [
+          "I sing while sipping sweet boba songs.",
+          "Every flavor is music to my wings.",
+          "The pearls dance like notes in a melody.",
+          "I chirp for joy when the tea is sweet.",
+          "This forest is my stage, and boba my partner."
+        ],
+        "night": [
+          "Sometimes I see glass where there should be sky...",
+          "I fly straight into barriers I can't see.",
+          "My wings ache, even when I sit still.",
+          "The night feels like an endless pane of glass.",
+          "I hear the sound of shattering every evening..."
+        ]
+      }
+    },
+    {
+      "id": "oscar_bear",
+      "name": "Oscar",
+      "animal": "Bear",
+      "cause_of_death": "Forest fire",
+      "dialogue": {
+        "day": [
+          "Boba warms me up almost as much as honey.",
+          "The forest is home, but boba is comfort.",
+          "Every sip feels like a feast in my paws.",
+          "I lumber less when my belly is full of tea.",
+          "Sweet drinks bring sweet dreams."
+        ],
+        "night": [
+          "I smell smoke, even when there's none around.",
+          "The heat never fades in the back of my mind.",
+          "My fur feels scorched under the moon.",
+          "The forest crackles with flames in my dreams.",
+          "Ash lingers in my throat with every sip..."
+        ]
+      }
+    },
+    {
+      "id": "mira_mouse",
+      "name": "Mira",
+      "animal": "Mouse",
+      "cause_of_death": "Drowning",
+      "dialogue": {
+        "day": [
+          "The pearls are so big! I can barely finish them.",
+          "Boba makes even the smallest feel grand.",
+          "I squeak with joy every time I drink!",
+          "Tiny paws, big cup—worth the effort.",
+          "Every drop is a treasure in this forest."
+        ],
+        "night": [
+          "The drink feels deep... too deep sometimes.",
+          "I hear rushing water in the silence.",
+          "My whiskers twitch at the memory of sinking.",
+          "The night swirls like a cup too full.",
+          "I can't quite catch my breath after sipping..."
+        ]
+      }
+    },
+    {
+      "id": "hazel_hedgehog",
+      "name": "Hazel",
+      "animal": "Hedgehog",
+      "cause_of_death": "Hit by lawnmower",
+      "dialogue": {
+        "day": [
+          "Boba pearls remind me of little berries in the grass!",
+          "I roll up happily with a cup of tea in my paws.",
+          "The forest feels safer with something sweet to sip.",
+          "Every flavor is a new discovery under the leaves.",
+          "Boba keeps my quills from feeling so prickly."
+        ],
+        "night": [
+          "The sound of blades spinning makes me shiver.",
+          "Sometimes I curl up too tightly, afraid of what's coming.",
+          "I hear the roar of machines when the forest is quiet.",
+          "It feels like I was cut short... in more ways than one.",
+          "Even in the dark, I sense sharp things closing in."
+        ]
+      }
+    },
+    {
+      "id": "rivet_frog",
+      "name": "Rivet",
+      "animal": "Frog",
+      "cause_of_death": "Dried out in the sun",
+      "dialogue": {
+        "day": [
+          "Slurp, slurp! Just like a juicy fly, but sweeter!",
+          "The pearls sink like pebbles at the bottom of a pond.",
+          "I croak happily when I taste something fruity.",
+          "This forest pond feels brighter with boba in hand.",
+          "My tongue's quick, but never quick enough for tea!"
+        ],
+        "night": [
+          "My throat feels dry, even after I drink...",
+          "The sun's heat lingers on my skin, though it's night.",
+          "I dream of ponds that have all but vanished.",
+          "Do you ever feel your skin cracking in silence?",
+          "I croak, but no sound comes out anymore."
+        ]
+      }
+    },
+    {
+      "id": "della_duck",
+      "name": "Della",
+      "animal": "Duck",
+      "cause_of_death": "Oil spill",
+      "dialogue": {
+        "day": [
+          "Boba floats as nicely as I do on the pond!",
+          "Every sip is like a ripple of joy in the water.",
+          "Sweet tea makes my feathers feel fluffy.",
+          "I quack with delight when I get extra pearls!",
+          "This forest lake pairs perfectly with milk tea."
+        ],
+        "night": [
+          "My feathers feel heavy... like they're coated in tar.",
+          "I flap, but I can't quite lift myself anymore.",
+          "The water feels darker, sticky, unforgiving.",
+          "I cough sometimes, like I swallowed something foul.",
+          "Quack... quack... the sound fades under black water."
+        ]
+      }
+    },
+    {
+      "id": "rascal_raccoon",
+      "name": "Rascal",
+      "animal": "Raccoon",
+      "cause_of_death": "Garbage truck accident",
+      "dialogue": {
+        "day": [
+          "Sweet drinks taste even better than raiding a trash can!",
+          "I'd trade shiny things for a full cup any day.",
+          "Boba pearls glisten like little treasures.",
+          "This forest is a feast, but boba is the prize.",
+          "I sip and sip, like I'll never run out of sweetness."
+        ],
+        "night": [
+          "The crushing sound still rings in my ears.",
+          "I dig and dig, but find nothing but metal walls.",
+          "Sometimes I feel flattened, like I'm paper thin.",
+          "The night smells like oil and garbage mixed.",
+          "I can't get rid of the weight pressing down on me."
+        ]
+      }
+    },
+    {
+      "id": "nixie_squirrel",
+      "name": "Nixie",
+      "animal": "Squirrel",
+      "cause_of_death": "Electrocution on power lines",
+      "dialogue": {
+        "day": [
+          "I chatter happily while sipping boba pearls!",
+          "Sweet drinks keep me buzzing with energy.",
+          "Every flavor feels like storing nuts for winter.",
+          "I scurry tree to tree, cup in paw, tail waving!",
+          "Life is short, so I drink fast and laugh often!"
+        ],
+        "night": [
+          "A jolt runs through me sometimes... quick as lightning.",
+          "I smell burning when the night is still.",
+          "My paws twitch like they're holding onto something hot.",
+          "The forest hums with wires strung too close.",
+          "One spark was all it took to end my climb."
+        ]
+      }
+    },
+    {
+      "id": "echo_bat",
+      "name": "Echo",
+      "animal": "Bat",
+      "cause_of_death": "Cave collapse",
+      "dialogue": {
+        "day": [
+          "Sweet tea keeps my wings strong for night flights.",
+          "I hang upside down with pearls rolling in my mouth!",
+          "The forest hums with joy when I sip something fruity.",
+          "Boba makes the night sky seem brighter than ever.",
+          "Even bats need sweetness to keep soaring!"
+        ],
+        "night": [
+          "The ceiling feels closer every night...",
+          "I hear rocks shifting, ready to fall again.",
+          "My wings ache like they were pinned by stone.",
+          "Darkness isn't scary—it's the weight above me that is.",
+          "When I close my eyes, I'm buried all over again."
+        ]
+      }
+    }
+  ]
+}

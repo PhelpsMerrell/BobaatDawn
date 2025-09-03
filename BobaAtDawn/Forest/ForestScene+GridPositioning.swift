@@ -33,11 +33,7 @@ struct ForestRoomConfig {
                 backDoorPosition: GridCoordinate(x: 16, y: 20),
                 leftHintPosition: GridCoordinate(x: 3, y: 12),
                 rightHintPosition: GridCoordinate(x: 29, y: 12),
-                specialObjects: [
-                    "small_mushroom_1": GridCoordinate(x: 8, y: 15),
-                    "small_mushroom_2": GridCoordinate(x: 24, y: 9),
-                    "fairy_ring": GridCoordinate(x: 12, y: 18)
-                ]
+                specialObjects: [:] // No special objects - clean look
             )
             
         case 2: // Mountain Room
@@ -48,11 +44,7 @@ struct ForestRoomConfig {
                 backDoorPosition: nil,
                 leftHintPosition: GridCoordinate(x: 3, y: 12),
                 rightHintPosition: GridCoordinate(x: 29, y: 12),
-                specialObjects: [
-                    "small_rock_1": GridCoordinate(x: 10, y: 16),
-                    "small_rock_2": GridCoordinate(x: 22, y: 8),
-                    "cave_entrance": GridCoordinate(x: 16, y: 18)
-                ]
+                specialObjects: [:] // No special objects - clean look
             )
             
         case 3: // Star Room
@@ -63,11 +55,7 @@ struct ForestRoomConfig {
                 backDoorPosition: nil,
                 leftHintPosition: GridCoordinate(x: 3, y: 12),
                 rightHintPosition: GridCoordinate(x: 29, y: 12),
-                specialObjects: [
-                    "star_fragment_1": GridCoordinate(x: 12, y: 16),
-                    "star_fragment_2": GridCoordinate(x: 20, y: 8),
-                    "crystal_pool": GridCoordinate(x: 16, y: 6)
-                ]
+                specialObjects: [:] // No special objects - clean look
             )
             
         case 4: // Diamond Room  
@@ -78,11 +66,7 @@ struct ForestRoomConfig {
                 backDoorPosition: nil,
                 leftHintPosition: GridCoordinate(x: 3, y: 12),
                 rightHintPosition: GridCoordinate(x: 29, y: 12),
-                specialObjects: [
-                    "gem_1": GridCoordinate(x: 14, y: 18),
-                    "gem_2": GridCoordinate(x: 18, y: 6),
-                    "treasure_chest": GridCoordinate(x: 25, y: 15)
-                ]
+                specialObjects: [:] // No special objects - clean look
             )
             
         case 5: // Tree Room
@@ -93,11 +77,7 @@ struct ForestRoomConfig {
                 backDoorPosition: nil,
                 leftHintPosition: GridCoordinate(x: 3, y: 12),
                 rightHintPosition: GridCoordinate(x: 29, y: 12),
-                specialObjects: [
-                    "ancient_tree": GridCoordinate(x: 16, y: 16),
-                    "tree_hollow": GridCoordinate(x: 8, y: 18),
-                    "wisdom_stone": GridCoordinate(x: 24, y: 8)
-                ]
+                specialObjects: [:] // No special objects - clean look
             )
             
         default:
@@ -171,12 +151,12 @@ extension ForestScene {
         rightHintEmoji!.zPosition = 3
         addChild(rightHintEmoji!)
         
-        // Add special objects for this room
-        addSpecialObjects(config.specialObjects)
+        // Clean forest look - no special objects added
+        // addSpecialObjects(config.specialObjects) - REMOVED for cleaner look
         
-        print("🌲 Room \\(roomNumber) (\\(config.emoji)) setup with grid positioning")
+        print("🌲 Room \\(roomNumber) (\\(config.emoji)) setup with clean grid positioning")
         print("   Room center: \\(config.roomIdentifierPosition)")
-        print("   Special objects: \\(config.specialObjects.count)")
+        print("   Clean look: no special objects")
     }
     
     /// Add special objects to the current room

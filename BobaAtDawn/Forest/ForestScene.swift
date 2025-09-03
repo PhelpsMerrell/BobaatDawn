@@ -31,7 +31,8 @@ class ForestScene: BaseGameScene {
     internal var leftHintEmoji: SKLabelNode!
     internal var rightHintEmoji: SKLabelNode!
     
-
+    // MARK: - NPC System (Internal - accessible to extensions)
+    internal var roomNPCs: [ForestNPC] = [] // NPCs in current room
     
     // MARK: - BaseGameScene Template Method Implementation
     override open func setupWorld() {
@@ -43,14 +44,14 @@ class ForestScene: BaseGameScene {
         
         // Validate world dimensions before creating sprites
         guard worldWidth > 0 && worldHeight > 0 else {
-            print("❌ ERROR: Invalid world dimensions: \(worldWidth) x \(worldHeight)")
+            print("❌ ERROR: Invalid world dimensions: \\(worldWidth) x \\(worldHeight)")
             return
         }
         
         // Forest floor - FIXED: ensure positive size
         let floorSize = CGSize(width: worldWidth, height: worldHeight)
         guard floorSize.width > 0 && floorSize.height > 0 else {
-            print("❌ ERROR: Invalid floor size: \(floorSize)")
+            print("❌ ERROR: Invalid floor size: \\(floorSize)")
             return
         }
         
@@ -96,30 +97,74 @@ class ForestScene: BaseGameScene {
         addChild(wallRight)
     }
     
-    
     override open func setupSpecificContent() {
         setupCurrentRoom()
         
-        print("🌲 Forest Scene initialized - Room \(currentRoom): \(roomEmojis[currentRoom])")
+        print("🌲 Forest Scene initialized - Room \\(currentRoom): \\(roomEmojis[currentRoom])")
     }
     
     private func setupCurrentRoom() {
+        // Clear existing NPCs
+        clearRoomNPCs()
+        
         // Use the new grid positioning system
         setupRoomWithGrid(currentRoom)
         
-        // Add misty transition effects (keep existing system for now)
+        // Add misty transition effects
         setupMistyEffects()
         
-        print("🌲 Room \(currentRoom) setup complete: \(roomEmojis[currentRoom])")
+        // Spawn NPCs for this room
+        spawnRoomNPCs()
+        
+        print("🌲 Room \\(currentRoom) setup complete: \\(roomEmojis[currentRoom])")
+    }
+    
+    // MARK: - NPC Management
+    private func spawnRoomNPCs() {
+        // Get 1-2 random NPCs for this room
+        let npcCount = Int.random(in: 1...2)
+        let selectedNPCs = DialogueService.shared.getRandomNPCs(count: npcCount)
+        
+        for (index, npcData) in selectedNPCs.enumerated() {
+            // Generate random position within forest bounds (avoid edges)
+            let margin: CGFloat = 150
+            let xRange = (-worldWidth/2 + margin)...(worldWidth/2 - margin)
+            let yRange = (-worldHeight/2 + margin)...(worldHeight/2 - margin)
+            
+            let randomX = CGFloat.random(in: xRange)
+            let randomY = CGFloat.random(in: yRange)
+            let position = CGPoint(x: randomX, y: randomY)
+            
+            // Create and add NPC
+            let npc = ForestNPC(npcData: npcData, at: position)
+            roomNPCs.append(npc)
+            addChild(npc)
+            
+            print("🎭 Spawned \\(npcData.name) (\\(npcData.emoji)) in room \\(currentRoom)")
+        }
+    }
+    
+    private func clearRoomNPCs() {
+        // Remove existing NPCs
+        for npc in roomNPCs {
+            npc.removeFromParent()
+        }
+        roomNPCs.removeAll()
     }
     
     // MARK: - Misty Visual Effects
     private func setupMistyEffects() {
-        print("🌫️ Setting up misty effects with world dimensions: \(worldWidth) x \(worldHeight)")
+        print("🌫️ Setting up misty effects with world dimensions: \\(worldWidth) x \\(worldHeight)")
+        
+        // Remove existing mist if present
+        leftMist?.removeFromParent()
+        rightMist?.removeFromParent()
+        leftHintEmoji?.removeFromParent()
+        rightHintEmoji?.removeFromParent()
         
         // Validate world dimensions before creating misty sprites
         guard worldWidth > 0 && worldHeight > 0 else {
-            print("❌ ERROR: Invalid world dimensions for mist: \(worldWidth) x \(worldHeight)")
+            print("❌ ERROR: Invalid world dimensions for mist: \\(worldWidth) x \\(worldHeight)")
             return
         }
         
@@ -129,7 +174,7 @@ class ForestScene: BaseGameScene {
         // FIXED: Validate mist sizes before creating sprites
         let mistSize = CGSize(width: 133, height: worldHeight)
         guard mistSize.width > 0 && mistSize.height > 0 else {
-            print("❌ ERROR: Invalid mist size: \(mistSize)")
+            print("❌ ERROR: Invalid mist size: \\(mistSize)")
             return
         }
         
@@ -145,7 +190,7 @@ class ForestScene: BaseGameScene {
         rightMist.zPosition = -8 // Below character but above floor
         addChild(rightMist)
         
-        print("🌫️ Created mist sprites successfully with size: \(mistSize)")
+        print("🌫️ Created mist sprites successfully with size: \\(mistSize)")
         
         // Start the pulsing animation immediately
         startPulsingAnimation()
@@ -201,10 +246,8 @@ class ForestScene: BaseGameScene {
         rightHintEmoji.zPosition = 3
         addChild(rightHintEmoji)
         
-        print("👁️ Hint emojis added: \(previousRoomEmoji) ←→ \(nextRoomEmoji)")
+        print("👁️ Hint emojis added: \\(previousRoomEmoji) ←→ \\(nextRoomEmoji)")
     }
-    
-
     
     // MARK: - BaseGameScene Template Method Implementation
     override open func handleSceneSpecificTouch(_ touches: Set<UITouch>, with event: UIEvent?) -> Bool {
@@ -225,7 +268,7 @@ class ForestScene: BaseGameScene {
             triggerMovementFeedback()
             
             character.moveToGridCell(targetCell)
-            print("👤 Character moving to forest cell \(targetCell)")
+            print("👤 Character moving to forest cell \\(targetCell)")
             return true
         }
         
@@ -290,6 +333,9 @@ class ForestScene: BaseGameScene {
         isTransitioning = true
         transitionCooldown = transitionCooldownDuration
         
+        // Dismiss any active dialogue before transitioning
+        DialogueService.shared.dismissDialogue()
+        
         // Store previous room for character repositioning logic
         let previousRoom = currentRoom
         currentRoom = newRoom
@@ -317,6 +363,9 @@ class ForestScene: BaseGameScene {
     
     private func returnToShop() {
         print("🏠 Returning to boba shop")
+        
+        // Dismiss any active dialogue before leaving
+        DialogueService.shared.dismissDialogue()
         
         // Use transition service for returning to game
         transitionService.transitionToGame(from: self) {
