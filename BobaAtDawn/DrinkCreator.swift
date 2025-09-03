@@ -75,92 +75,75 @@ class DrinkCreator: SKNode {
         }
     }
     
-    private func updateDrinkVisuals(iceLevel: Int, hasBoba: Bool, hasFoam: Bool, hasTea: Bool, hasLid: Bool, quality: RecipeQuality) {
-        // Clear existing children
+    private func updateDrinkVisuals(
+        iceLevel: Int,
+        hasBoba: Bool,
+        hasFoam: Bool,
+        hasTea: Bool,
+        hasLid: Bool,
+        quality: RecipeQuality
+    ) {
+        // Reset container
         drinkDisplay.removeAllChildren()
-        
-        // FIXED: Load from sprite atlas instead of individual imageNamed
-        let bobaAtlas = SKTextureAtlas(named: "Boba")
-        
-        // ALWAYS show base cup
-        print("🧋 Loading cup from sprite atlas...")
-        let cupTexture = bobaAtlas.textureNamed("cup_empty")
-        let cup = SKSpriteNode(texture: cupTexture)
-        // Calculate scale based on texture size to get ~35px width
-        let cupScale = 35.0 / cupTexture.size().width
-        cup.setScale(cupScale)
-        cup.position = CGPoint.zero
-        cup.zPosition = 0
+
+        // Load once
+        let atlas = SKTextureAtlas(named: "Boba")
+
+        // We'll scale everything to the same on-screen width using the cup as reference.
+        let cupTexture = atlas.textureNamed("cup_empty")
+        cupTexture.filteringMode = .nearest
+        let desiredWidth: CGFloat = 35.0
+        let commonScale = desiredWidth / cupTexture.size().width
+
+        // helper: create a layer with identical geometry for all sprites
+        func makeLayer(_ name: String, z: CGFloat, visible: Bool = true, alpha: CGFloat = 1.0) -> SKSpriteNode {
+            let tex = atlas.textureNamed(name)
+            tex.filteringMode = .nearest
+            let node = SKSpriteNode(texture: tex)
+            node.anchorPoint = CGPoint(x: 0.5, y: 0.5)   // identical for all
+            node.position = .zero                         // identical for all
+            node.setScale(commonScale)                    // identical for all
+            node.zPosition = z
+            node.isHidden = !visible
+            node.alpha = alpha
+            node.blendMode = .alpha
+            node.name = name
+            return node
+        }
+
+        // Draw order: back -> front. All share the same position/scale.
+        // 0) Base cup (always)
+        let cup = makeLayer("cup_empty", z: 0, visible: true)
         drinkDisplay.addChild(cup)
-        print("🧋 ✅ Cup loaded: \(cupTexture.size()) scaled by \(cupScale) to \(cup.size)")
-        
-        // Tea layer (if present)
-        if hasTea {
-            print("🧋 Loading tea from atlas...")
-            let teaTexture = bobaAtlas.textureNamed("tea_black")
-            let tea = SKSpriteNode(texture: teaTexture)
-            let teaScale = 30.0 / teaTexture.size().width // Slightly smaller than cup
-            tea.setScale(teaScale)
-            tea.position = CGPoint(x: 0, y: -2)
-            tea.zPosition = 1
-            drinkDisplay.addChild(tea)
-            print("🧋 ✅ Tea loaded: \(teaTexture.size()) scaled by \(teaScale)")
-        }
-        
-        // Ice (if present and ice level < 2)
-        if hasTea && iceLevel < 2 {
-            print("🧋 Loading ice from atlas...")
-            let iceTexture = bobaAtlas.textureNamed("ice_cubes")
-            let ice = SKSpriteNode(texture: iceTexture)
-            let iceScale = 28.0 / iceTexture.size().width
-            ice.setScale(iceScale)
-            ice.position = CGPoint(x: 0, y: 5)
-            ice.zPosition = 2
-            ice.alpha = iceLevel == 0 ? 1.0 : 0.6
-            drinkDisplay.addChild(ice)
-            print("🧋 ✅ Ice loaded: \(iceTexture.size()) scaled by \(iceScale)")
-        }
-        
-        // Boba pearls (if present)
-        if hasBoba {
-            print("🧋 Loading boba from atlas...")
-            let bobaTexture = bobaAtlas.textureNamed("topping_tapioca")
-            let boba = SKSpriteNode(texture: bobaTexture)
-            let bobaScale = 25.0 / bobaTexture.size().width
-            boba.setScale(bobaScale)
-            boba.position = CGPoint(x: 0, y: -15)
-            boba.zPosition = 3
-            drinkDisplay.addChild(boba)
-            print("🧋 ✅ Boba loaded: \(bobaTexture.size()) scaled by \(bobaScale)")
-        }
-        
-        // Cheese foam (if present)
-        if hasFoam {
-            print("🧋 Loading foam from atlas...")
-            let foamTexture = bobaAtlas.textureNamed("foam_cheese")
-            let foam = SKSpriteNode(texture: foamTexture)
-            let foamScale = 32.0 / foamTexture.size().width
-            foam.setScale(foamScale)
-            foam.position = CGPoint(x: 0, y: 18)
-            foam.zPosition = 4
-            drinkDisplay.addChild(foam)
-            print("🧋 ✅ Foam loaded: \(foamTexture.size()) scaled by \(foamScale)")
-        }
-        
-        // Lid with straw (if present)
-        if hasLid {
-            print("🧋 Loading lid from atlas...")
-            let lidTexture = bobaAtlas.textureNamed("lid_straw")
-            let lid = SKSpriteNode(texture: lidTexture)
-            let lidScale = 38.0 / lidTexture.size().width
-            lid.setScale(lidScale)
-            lid.position = CGPoint(x: 0, y: 22)
-            lid.zPosition = 5
-            drinkDisplay.addChild(lid)
-            print("🧋 ✅ Lid loaded: \(lidTexture.size()) scaled by \(lidScale)")
-        }
+        print("🧋 Cup loaded \(cupTexture.size()) → commonScale \(commonScale)")
+
+        // 1) Tea
+        let tea = makeLayer("tea_black", z: 1, visible: hasTea)
+        drinkDisplay.addChild(tea)
+        if hasTea { print("🧋 Tea on (aligned, no per-layer scaling/offset)") }
+
+        // 2) Ice (visible only if tea present and iceLevel < 2); adjust opacity by ice level
+        let iceVisible = hasTea && iceLevel < 2
+        let iceAlpha: CGFloat = (iceLevel == 0) ? 1.0 : 0.6
+        let ice = makeLayer("ice_cubes", z: 2, visible: iceVisible, alpha: iceAlpha)
+        drinkDisplay.addChild(ice)
+        if iceVisible { print("🧊 Ice on (alpha \(iceAlpha))") }
+
+        // 3) Boba
+        let boba = makeLayer("topping_tapioca", z: 3, visible: hasBoba)
+        drinkDisplay.addChild(boba)
+        if hasBoba { print("🟤 Boba on") }
+
+        // 4) Foam
+        let foam = makeLayer("foam_cheese", z: 4, visible: hasFoam)
+        drinkDisplay.addChild(foam)
+        if hasFoam { print("🫧 Foam on") }
+
+        // 5) Lid
+        let lid = makeLayer("lid_straw", z: 5, visible: hasLid)
+        drinkDisplay.addChild(lid)
+        if hasLid { print("🧢 Lid on") }
     }
-    
     private func updateShaking() {
         drinkDisplay.removeAction(forKey: "shake")
         
