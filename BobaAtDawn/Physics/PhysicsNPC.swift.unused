@@ -1,206 +1,153 @@
 //
-//  NPC.swift
+//  PhysicsNPC.swift
 //  BobaAtDawn
 //
-//  Physics-enhanced NPC with dependency injection and smooth movement
+//  Physics-enhanced NPC class that uses SpriteKit physics for smooth movement
+//  while maintaining the existing NPC behavior and state machine
 //
 
 import SpriteKit
 
-// MARK: - NPC State Machine with Associated Values
-enum NPCState: Equatable {
-    case entering
-    case wandering
-    case sitting(table: RotatableObject?)
-    case drinking(timeStarted: TimeInterval)
-    case leaving(satisfied: Bool)
-
-    var displayName: String {
-        switch self {
-        case .entering: return "Entering"
-        case .wandering: return "Wandering"
-        case .sitting: return "Sitting"
-        case .drinking: return "Drinking"
-        case .leaving(let satisfied): return satisfied ? "Leaving Happy" : "Leaving"
-        }
-    }
-
-    var isExiting: Bool {
-        if case .leaving = self { return true }
-        return false
-    }
-}
-
-// MARK: - Forest Animals
-enum AnimalType: String, CaseIterable {
-    case fox = "🦊"
-    case rabbit = "🐰"
-    case hedgehog = "🦔"
-    case frog = "🐸"
-    case duck = "🦆"
-    case bear = "🐻"
-    case raccoon = "🦝"
-    case squirrel = "🐿️"
-
-    // Night visitors (rare)
-    case owl = "🦉"
-    case bat = "🦇"
-    case wolf = "🐺"
-
-    static var dayAnimals: [AnimalType] {
-        [.fox, .rabbit, .hedgehog, .frog, .duck, .bear, .raccoon, .squirrel]
-    }
-
-    static var nightAnimals: [AnimalType] {
-        [.owl, .bat, .wolf]
-    }
-
-    static func random(isNight: Bool = false) -> AnimalType {
-        let pool = isNight ? nightAnimals : dayAnimals
-        return pool.randomElement() ?? .fox
-    }
-}
-
-// MARK: - NPC Class with Dependency Injection
-class NPC: SKLabelNode {
-
+// MARK: - Physics-Enhanced NPC
+class PhysicsNPC: SKLabelNode {
+    
     // MARK: - Dependencies
     private let gridService: GridService
     private let npcService: NPCService
-
-    // MARK: - Physics Movement Controller
-    // Lazy so it can safely use self.physicsBody AFTER setupPhysicsBody() runs,
-    // and so we don't need it initialized before super.init().
-    private lazy var movementController: NPCMovementController = { [unowned self] in
-        guard let body = self.physicsBody else {
-            fatalError("NPC physics body is nil; call setupPhysicsBody() before accessing movementController.")
-        }
-        return NPCMovementController(
-            physicsBody: body,
-            gridService: gridService,
-            homePosition: gridPosition
-        )
-    }()
-
-    // MARK: - Properties (preserved)
+    private let movementController: NPCMovementController
+    
+    // MARK: - NPC Properties (unchanged from original)
     private(set) var state: NPCState = .entering
     private(set) var animalType: AnimalType
     private(set) var gridPosition: GridCoordinate
-
+    
     // Timers
     private var stateTimer: TimeInterval = 0
     private var totalLifetime: TimeInterval = 0
-
+    
     // Behavior
     private var currentTable: RotatableObject?
     private var carriedDrink: RotatableObject?
     private var targetCell: GridCoordinate?
-
-    // Movement
-    private let moveSpeed: TimeInterval = GameConfig.NPC.moveSpeed
-    private var isMoving: Bool = false
-
-    // MARK: - Physics Properties
-    var currentSpeed: CGFloat { movementController.getCurrentSpeed() }
-    var physicsVelocity: CGVector { physicsBody?.velocity ?? .zero }
-
-    // MARK: - Initialization with Dependency Injection
-    init(
-        animal: AnimalType? = nil,
-        startPosition: GridCoordinate? = nil,
-        gridService: GridService,
-        npcService: NPCService
-    ) {
-        // Inject dependencies
+    
+    // Physics Integration
+    private var lastPhysicsUpdate: TimeInterval = 0
+    
+    // MARK: - Initialization
+    init(animal: AnimalType? = nil, 
+         startPosition: GridCoordinate? = nil,
+         gridService: GridService,
+         npcService: NPCService) {
+        
+        // Store dependencies
         self.gridService = gridService
         self.npcService = npcService
-
+        
         // Choose random animal if not specified
         self.animalType = animal ?? AnimalType.random()
-
+        
         // Default start position (at front door)
         let doorPosition = GameConfig.World.doorGridPosition
         self.gridPosition = startPosition ?? doorPosition
-
-        // All subclass properties are now initialized; safe to call super.init()
+        
+        // Initialize visual representation
         super.init()
-
-        // Setup visual
+        
+        // Set up visual properties
         text = animalType.rawValue
         fontSize = GameConfig.NPC.fontSize
         fontName = GameConfig.NPC.fontName
         horizontalAlignmentMode = .center
         verticalAlignmentMode = .center
         zPosition = GameConfig.NPC.zPosition
-
-        // Set up physics body BEFORE any movementController use
+        
+        // Set up physics body
         setupPhysicsBody()
-
-        // Position in world using injected grid service
+        
+        // Initialize movement controller
+        self.movementController = NPCMovementController(
+            physicsBody: self.physicsBody!,
+            gridService: gridService,
+            homePosition: gridPosition
+        )
+        
+        // Position in world
         position = gridService.gridToWorld(gridPosition)
-
-        // Reserve grid cell using injected grid service
+        
+        // Reserve grid cell
         gridService.reserveCell(gridPosition)
-
+        
         print("🦊 PhysicsNPC \(animalType.rawValue) spawned at grid \(gridPosition), world \(position)")
     }
-
+    
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
+    
     // MARK: - Physics Setup
+    
     private func setupPhysicsBody() {
-        let body = PhysicsBodyFactory.createNPCBody()
-        self.physicsBody = body // SK sets body.node automatically
+        physicsBody = PhysicsBodyFactory.createNPCBody()
+        physicsBody?.node = self
+        
         print("⚡ NPC \(animalType.rawValue) physics body created")
     }
-
+    
     // MARK: - Update Loop (Physics-Enhanced)
+    
     func update(deltaTime: TimeInterval) {
+        // Update timers
         stateTimer += deltaTime
         totalLifetime += deltaTime
-
+        
         // Update movement controller
         movementController.update(deltaTime: deltaTime)
-
+        
         // Update grid position tracking
         updateGridPositionTracking()
-
-        // State machine progression
+        
+        // State machine progression (unchanged logic)
         switch state {
-        case .entering:  updateEntering()
-        case .wandering: updateWandering()
-        case .sitting(let table): updateSitting(table: table)
-        case .drinking(let timeStarted): updateDrinking(timeStarted: timeStarted)
-        case .leaving(let satisfied): updateLeaving(satisfied: satisfied)
+        case .entering:
+            updateEntering()
+        case .wandering:
+            updateWandering()
+        case .sitting(let table):
+            updateSitting(table: table)
+        case .drinking(let timeStarted):
+            updateDrinking(timeStarted: timeStarted)
+        case .leaving(let satisfied):
+            updateLeaving(satisfied: satisfied)
         }
-
+        
         // Safety timeout
         if totalLifetime > GameConfig.NPC.maxLifetime {
             transitionToLeaving(satisfied: false)
         }
     }
-
-    // MARK: - Grid Position Tracking
+    
     private func updateGridPositionTracking() {
+        // Update grid position based on physics position
         let currentWorldPos = position
         let newGridPos = gridService.worldToGrid(currentWorldPos)
-
+        
         if newGridPos != gridPosition && newGridPos.isValid() {
+            // Free old cell and reserve new cell
             gridService.freeCell(gridPosition)
-
+            
             if gridService.isCellAvailable(newGridPos) {
                 gridService.reserveCell(newGridPos)
                 gridPosition = newGridPos
                 print("🦊 \(animalType.rawValue) moved to grid \(newGridPos)")
             } else {
+                // Cell is occupied, keep old position reserved
                 gridService.reserveCell(gridPosition)
             }
         }
     }
-
-    // MARK: - State Updates
+    
+    // MARK: - State Updates (Physics-Enhanced)
+    
     private func updateEntering() {
         let enteringDuration = Double.random(in: GameConfig.NPC.enteringDuration.min...GameConfig.NPC.enteringDuration.max)
         if stateTimer > enteringDuration {
@@ -209,7 +156,7 @@ class NPC: SKLabelNode {
             moveToRandomNearbyCell()
         }
     }
-
+    
     private func updateWandering() {
         let wanderingDuration = Double.random(in: GameConfig.NPC.wanderingDuration.min...GameConfig.NPC.wanderingDuration.max)
         if stateTimer > wanderingDuration {
@@ -225,13 +172,13 @@ class NPC: SKLabelNode {
             }
         }
     }
-
+    
     private func updateSitting(table: RotatableObject?) {
         guard let table = table else {
             transitionToWandering()
             return
         }
-
+        
         // Check for drink periodically
         if Int(stateTimer * 2) % 4 == 0 {
             if checkForDrinkOnTable(table: table) {
@@ -239,21 +186,21 @@ class NPC: SKLabelNode {
                 return
             }
         }
-
+        
         // Timeout if sitting too long without service
         let sittingTimeout = Double.random(in: GameConfig.NPC.sittingTimeout.min...GameConfig.NPC.sittingTimeout.max)
         if stateTimer > sittingTimeout {
             transitionToLeaving(satisfied: false)
         }
     }
-
+    
     private func updateDrinking(timeStarted: TimeInterval) {
         let enjoymentTime = Double.random(in: GameConfig.NPC.drinkEnjoymentTime.min...GameConfig.NPC.drinkEnjoymentTime.max)
         if stateTimer > timeStarted + enjoymentTime {
             transitionToLeaving(satisfied: true)
         }
     }
-
+    
     private func updateLeaving(satisfied: Bool) {
         if Int(stateTimer * 10) % 15 == 0 {
             if npcService.isNearExit(gridPosition) {
@@ -263,49 +210,57 @@ class NPC: SKLabelNode {
             }
         }
     }
-
+    
     // MARK: - Physics Movement System
+    
     private func moveToCell(_ targetCell: GridCoordinate) {
         guard targetCell.isValid() else { return }
         guard gridService.isCellAvailable(targetCell) else { return }
         guard !movementController.isMoving else { return }
-
+        
+        self.targetCell = targetCell
+        
+        // Use physics-based movement
         movementController.moveToGrid(targetCell) { [weak self] in
             self?.handleCellArrival(targetCell)
         }
-
+        
         print("🦊 \(animalType.rawValue) moving to cell \(targetCell)")
     }
-
+    
     private func handleCellArrival(_ cell: GridCoordinate) {
+        self.targetCell = nil
         print("🦊 \(animalType.rawValue) arrived at cell \(cell)")
     }
-
+    
     private func moveToRandomNearbyCell() {
         let radius = Int.random(in: 1...GameConfig.NPC.wanderRadius)
         let candidates = npcService.generateCandidateCells(from: gridPosition, radius: radius)
-
+        
         if let randomCell = candidates.randomElement() {
             moveToCell(randomCell)
         } else {
+            // Use physics-based wandering if no valid grid cells
             movementController.wanderRandomly()
         }
     }
-
-    // MARK: - Table System
+    
+    // MARK: - Table System (Physics-Enhanced)
+    
     private func findAndMoveToTable() -> Bool {
         guard let scene = parent as? SKScene else { return false }
-
+        
         let availableTables = npcService.findAvailableTables(in: scene)
+        
         if availableTables.isEmpty {
             print("🦊 No tables found in scene")
             return false
         }
-
+        
         if let chosenTable = availableTables.randomElement() {
             let tableGridPos = gridService.worldToGrid(chosenTable.position)
             let adjacentCells = gridService.getAvailableAdjacentCells(to: tableGridPos)
-
+            
             if let sittingSpot = adjacentCells.randomElement() {
                 currentTable = chosenTable
                 moveToCell(sittingSpot)
@@ -313,14 +268,14 @@ class NPC: SKLabelNode {
                 return true
             }
         }
-
+        
         print("🦊 \(animalType.rawValue) couldn't find available seating")
         return false
     }
-
+    
     private func checkForDrinkOnTable(table: RotatableObject) -> Bool {
         let drinksOnTable = table.children.filter { $0.name == "drink_on_table" }
-
+        
         if let drink = drinksOnTable.first {
             print("🦊 ✨ \(animalType.rawValue) found drink on table!")
             pickupDrinkFromTable(drink)
@@ -328,15 +283,15 @@ class NPC: SKLabelNode {
         }
         return false
     }
-
+    
     private func pickupDrinkFromTable(_ drink: SKNode) {
         drink.removeFromParent()
-
+        
         let carriedDrink = createCarriedDrink(from: drink)
         carriedDrink.position = GameConfig.NPC.CarriedDrink.carryOffset
         carriedDrink.zPosition = 1
         addChild(carriedDrink)
-
+        
         let floatAction = SKAction.repeatForever(
             SKAction.sequence([
                 SKAction.moveBy(x: 0, y: GameConfig.NPC.CarriedDrink.floatDistance, duration: GameConfig.NPC.CarriedDrink.floatDuration),
@@ -344,63 +299,66 @@ class NPC: SKLabelNode {
             ])
         )
         carriedDrink.run(floatAction, withKey: "floating")
-
+        
         self.carriedDrink = carriedDrink as? RotatableObject
-
+        
         print("🦊 ✨ \(animalType.rawValue) picked up drink from table!")
     }
-
+    
     private func createCarriedDrink(from tableDrink: SKNode) -> SKNode {
         let carriedVersion = SKSpriteNode(color: .brown, size: GameConfig.NPC.CarriedDrink.size)
-
+        
         let lid = SKSpriteNode(color: .lightGray, size: GameConfig.NPC.CarriedDrink.lidSize)
         lid.position = GameConfig.NPC.CarriedDrink.lidOffset
         carriedVersion.addChild(lid)
-
+        
         let straw = SKSpriteNode(color: .white, size: GameConfig.NPC.CarriedDrink.strawSize)
         straw.position = GameConfig.NPC.CarriedDrink.strawOffset
         carriedVersion.addChild(straw)
-
+        
         return carriedVersion
     }
-
+    
     // MARK: - Exit System (Physics-Enhanced)
+    
     private func moveTowardExit() {
         if let targetCell = npcService.findPathToExit(from: gridPosition) {
             moveToCell(targetCell)
             print("🦊 \(animalType.rawValue) (\(state.displayName)) moving toward exit from \(gridPosition)")
         } else {
-            // Direct physics movement toward door if pathfinding fails
+            // Use direct physics movement toward door if pathfinding fails
             let doorWorldPos = GameConfig.doorWorldPosition()
-            _ = movementController.beginMovement(to: doorWorldPos)
-            print("🦊 \(animalType.rawValue) using direct physics movement to exit")
+            movementController.currentTarget = doorWorldPos
+            movementController.isMoving = true
+            print("🦊 \(animalType.rawValue) using direct movement to exit")
         }
     }
-
-    // MARK: - State Transitions
+    
+    // MARK: - State Transitions (unchanged)
+    
     private func transitionToWandering() {
         state = .wandering
         stateTimer = 0
         currentTable = nil
         print("🦊 \(animalType.rawValue) started wandering")
     }
-
+    
     private func transitionToSitting() {
         state = .sitting(table: currentTable)
         stateTimer = 0
         print("🦊 \(animalType.rawValue) sat down at table and is browsing peacefully")
     }
-
+    
     private func transitionToDrinking() {
         state = .drinking(timeStarted: stateTimer)
         print("🦊 \(animalType.rawValue) started drinking! Will enjoy for 5-10 seconds")
     }
-
+    
     private func transitionToLeaving(satisfied: Bool) {
         state = .leaving(satisfied: satisfied)
         stateTimer = 0
         currentTable = nil
-
+        
         if satisfied {
             startHappyAnimation()
             print("🦊 \(animalType.rawValue) leaving satisfied! ✨")
@@ -409,17 +367,19 @@ class NPC: SKLabelNode {
             print("🦊 \(animalType.rawValue) leaving neutral")
         }
     }
-
-    // Public method for external triggers
+    
+    // Public method for external triggers (compatibility)
     func startLeaving(satisfied: Bool) {
         transitionToLeaving(satisfied: satisfied)
     }
-
+    
+    // MARK: - Animation System (unchanged)
+    
     private func startHappyAnimation() {
         removeAction(forKey: "happy_shimmer")
         removeAction(forKey: "happy_shake")
         removeAction(forKey: "happy_scale")
-
+        
         let shimmer = SKAction.repeatForever(
             SKAction.sequence([
                 SKAction.scale(to: GameConfig.NPC.Animations.shimmerScaleAmount, duration: GameConfig.NPC.Animations.shimmerDuration),
@@ -427,7 +387,7 @@ class NPC: SKLabelNode {
             ])
         )
         run(shimmer, withKey: "happy_shimmer")
-
+        
         let shake = SKAction.repeatForever(
             SKAction.sequence([
                 SKAction.moveBy(x: -GameConfig.NPC.Animations.shakeDistance, y: 0, duration: GameConfig.NPC.Animations.shakeDuration),
@@ -437,7 +397,7 @@ class NPC: SKLabelNode {
             ])
         )
         run(shake, withKey: "happy_shake")
-
+        
         let colorFlash = SKAction.repeatForever(
             SKAction.sequence([
                 SKAction.colorize(with: .yellow, colorBlendFactor: 0.3, duration: GameConfig.NPC.Animations.colorFlashDuration),
@@ -447,13 +407,13 @@ class NPC: SKLabelNode {
             ])
         )
         run(colorFlash, withKey: "happy_flash")
-
+        
         print("✨ \(animalType.rawValue) is VERY HAPPY with shimmer + shake + flash effects!")
     }
-
+    
     private func startNeutralAnimation() {
         removeAction(forKey: "neutral_sigh")
-
+        
         let sigh = SKAction.repeatForever(
             SKAction.sequence([
                 SKAction.scale(to: GameConfig.NPC.Animations.neutralScaleAmount, duration: GameConfig.NPC.Animations.neutralSighDuration),
@@ -461,18 +421,18 @@ class NPC: SKLabelNode {
             ])
         )
         run(sigh, withKey: "neutral_sigh")
-
+        
         let grayTint = SKAction.colorize(with: .gray, colorBlendFactor: GameConfig.NPC.Animations.neutralGrayBlend, duration: GameConfig.NPC.Animations.neutralFadeDuration)
         run(grayTint, withKey: "neutral_tint")
-
+        
         print("😐 \(animalType.rawValue) is leaving disappointed (no drink)")
     }
-
+    
     private func stopHappyAnimation() {
         removeAction(forKey: "happy_shimmer")
         removeAction(forKey: "happy_shake")
         removeAction(forKey: "happy_flash")
-
+        
         let resetAction = SKAction.group([
             SKAction.scale(to: 1.0, duration: GameConfig.NPC.Animations.resetDuration),
             SKAction.move(to: position, duration: GameConfig.NPC.Animations.resetDuration),
@@ -480,42 +440,108 @@ class NPC: SKLabelNode {
         ])
         run(resetAction)
     }
-
-    private func stopHappyAnimationAndProceedToExit() {
-        stopHappyAnimation()
-        print("✨ \(animalType.rawValue) finished celebrating, now proceeding to exit normally")
-        moveTowardExit()
-    }
-
+    
     private func stopNeutralAnimation() {
         removeAction(forKey: "neutral_sigh")
         removeAction(forKey: "neutral_tint")
-
+        
         let resetAction = SKAction.group([
             SKAction.scale(to: 1.0, duration: GameConfig.NPC.Animations.resetDuration),
             SKAction.colorize(withColorBlendFactor: 0.0, duration: GameConfig.NPC.Animations.resetDuration)
         ])
         run(resetAction)
     }
-
-    // MARK: - Lifecycle (Using Injected Services)
+    
+    // MARK: - Lifecycle (Physics-Enhanced)
+    
     private func removeSelf() {
+        // Stop animations based on state
         switch state {
         case .leaving(let satisfied):
-            if satisfied { stopHappyAnimation() } else { stopNeutralAnimation() }
-        default: break
+            if satisfied {
+                stopHappyAnimation()
+            } else {
+                stopNeutralAnimation()
+            }
+        default:
+            break
         }
-
-        if let drink = carriedDrink { drink.removeFromParent() }
-
+        
+        // Remove carried drink
+        if let drink = carriedDrink {
+            drink.removeFromParent()
+        }
+        
+        // Free grid cell
         gridService.freeCell(gridPosition)
+        
+        // Stop physics movement
+        movementController.stop()
+        
+        // Remove from scene
         removeFromParent()
-
+        
         print("🦊 \(animalType.rawValue) left the shop")
     }
-
-    // MARK: - Debug
+    
+    // MARK: - Physics Interaction Methods
+    
+    func handlePhysicsContact(with other: SKNode) {
+        // Handle physics-based collisions/contacts
+        if other.name == "front_door" {
+            print("🦊 \(animalType.rawValue) contacted door via physics")
+            // Could trigger exit behavior here
+        } else if other.physicsBody?.categoryBitMask == PhysicsCategory.character {
+            print("🦊 \(animalType.rawValue) bumped into character")
+            // Could trigger dialogue or reaction
+        }
+    }
+    
+    func applyPhysicsForce(_ force: CGVector) {
+        physicsBody?.applyForce(force)
+        print("🦊 Applied force to \(animalType.rawValue): \(force)")
+    }
+    
+    func getCurrentPhysicsVelocity() -> CGVector {
+        return physicsBody?.velocity ?? CGVector.zero
+    }
+    
+    // MARK: - Debug (Enhanced)
+    
     func getStateInfo() -> String {
-        "\(animalType.rawValue) - \(state.displayName) - \(Int(stateTimer))s"
+        let physicsVel = getCurrentPhysicsVelocity()
+        let speed = movementController.getCurrentSpeed()
+        
+        return """
+        \(animalType.rawValue) - \(state.displayName) - \(Int(stateTimer))s
+        Grid: \(gridPosition), World: (\(Int(position.x)), \(Int(position.y)))
+        Physics: (\(String(format: "%.1f", physicsVel.dx)), \(String(format: "%.1f", physicsVel.dy))) Speed: \(String(format: "%.1f", speed))
+        Moving: \(movementController.isMoving)
+        """
+    }
+    
+    func printDetailedDebugInfo() {
+        print("🔍 NPC Debug Info:")
+        print("🔍 " + getStateInfo().replacingOccurrences(of: "\n", with: "\n🔍 "))
+        print("🔍 Movement Controller:")
+        print("🔍 " + movementController.getDebugInfo().replacingOccurrences(of: "\n", with: "\n🔍 "))
+    }
+}
+
+// MARK: - Backward Compatibility
+extension PhysicsNPC {
+    
+    /// Compatibility for existing code that expects old NPC interface
+    func getGridPosition() -> GridCoordinate {
+        return gridPosition
+    }
+    
+    func setGridPosition(_ position: GridCoordinate) {
+        moveToCell(position)
+    }
+    
+    /// Compatibility property
+    var isMoving: Bool {
+        return movementController.isMoving
     }
 }

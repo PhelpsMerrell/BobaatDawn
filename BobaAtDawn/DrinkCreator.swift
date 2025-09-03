@@ -79,125 +79,85 @@ class DrinkCreator: SKNode {
         // Clear existing children
         drinkDisplay.removeAllChildren()
         
+        // FIXED: Load from sprite atlas instead of individual imageNamed
+        let bobaAtlas = SKTextureAtlas(named: "Boba")
+        
         // ALWAYS show base cup
-        print("🧋 Loading cup...")
-        let cupTexture = SKTexture(imageNamed: "cup_empty")
-        if cupTexture.size().width > 0 {
-            let cup = SKSpriteNode(texture: cupTexture)
-            // Try smaller scale first
-            cup.setScale(0.07) // Scale down 512px to ~35px
-            cup.position = CGPoint.zero
-            cup.zPosition = 0
-            drinkDisplay.addChild(cup)
-            print("🧋 ✅ Cup: \(cupTexture.size()) scaled to \(cup.size)")
-        } else {
-            let cup = SKSpriteNode(color: .white, size: CGSize(width: 35, height: 50))
-            cup.position = CGPoint.zero
-            cup.zPosition = 0
-            drinkDisplay.addChild(cup)
-            print("🧋 ❌ Cup fallback used")
-        }
+        print("🧋 Loading cup from sprite atlas...")
+        let cupTexture = bobaAtlas.textureNamed("cup_empty")
+        let cup = SKSpriteNode(texture: cupTexture)
+        // Calculate scale based on texture size to get ~35px width
+        let cupScale = 35.0 / cupTexture.size().width
+        cup.setScale(cupScale)
+        cup.position = CGPoint.zero
+        cup.zPosition = 0
+        drinkDisplay.addChild(cup)
+        print("🧋 ✅ Cup loaded: \(cupTexture.size()) scaled by \(cupScale) to \(cup.size)")
         
         // Tea layer (if present)
         if hasTea {
-            print("🧋 Loading tea...")
-            let teaTexture = SKTexture(imageNamed: "tea_black")
-            if teaTexture.size().width > 0 {
-                let tea = SKSpriteNode(texture: teaTexture)
-                tea.setScale(0.06) // Slightly smaller than cup
-                tea.position = CGPoint(x: 0, y: -2)
-                tea.zPosition = 1
-                drinkDisplay.addChild(tea)
-                print("🧋 ✅ Tea: \(teaTexture.size()) scaled to \(tea.size)")
-            } else {
-                let tea = SKSpriteNode(color: .brown, size: CGSize(width: 30, height: 35))
-                tea.position = CGPoint(x: 0, y: -2)
-                tea.zPosition = 1
-                drinkDisplay.addChild(tea)
-                print("🧋 ❌ Tea fallback used")
-            }
+            print("🧋 Loading tea from atlas...")
+            let teaTexture = bobaAtlas.textureNamed("tea_black")
+            let tea = SKSpriteNode(texture: teaTexture)
+            let teaScale = 30.0 / teaTexture.size().width // Slightly smaller than cup
+            tea.setScale(teaScale)
+            tea.position = CGPoint(x: 0, y: -2)
+            tea.zPosition = 1
+            drinkDisplay.addChild(tea)
+            print("🧋 ✅ Tea loaded: \(teaTexture.size()) scaled by \(teaScale)")
         }
         
         // Ice (if present and ice level < 2)
         if hasTea && iceLevel < 2 {
-            print("🧋 Loading ice...")
-            let iceTexture = SKTexture(imageNamed: "ice_cubes")
-            if iceTexture.size().width > 0 {
-                let ice = SKSpriteNode(texture: iceTexture)
-                ice.setScale(0.05) // Smaller for ice
-                ice.position = CGPoint(x: 0, y: 5)
-                ice.zPosition = 2
-                ice.alpha = iceLevel == 0 ? 1.0 : 0.6
-                drinkDisplay.addChild(ice)
-                print("🧋 ✅ Ice: \(iceTexture.size()) scaled to \(ice.size)")
-            } else {
-                let ice = SKSpriteNode(color: .cyan, size: CGSize(width: 28, height: 15))
-                ice.position = CGPoint(x: 0, y: 5)
-                ice.zPosition = 2
-                ice.alpha = iceLevel == 0 ? 1.0 : 0.6
-                drinkDisplay.addChild(ice)
-                print("🧋 ❌ Ice fallback used")
-            }
+            print("🧋 Loading ice from atlas...")
+            let iceTexture = bobaAtlas.textureNamed("ice_cubes")
+            let ice = SKSpriteNode(texture: iceTexture)
+            let iceScale = 28.0 / iceTexture.size().width
+            ice.setScale(iceScale)
+            ice.position = CGPoint(x: 0, y: 5)
+            ice.zPosition = 2
+            ice.alpha = iceLevel == 0 ? 1.0 : 0.6
+            drinkDisplay.addChild(ice)
+            print("🧋 ✅ Ice loaded: \(iceTexture.size()) scaled by \(iceScale)")
         }
         
         // Boba pearls (if present)
         if hasBoba {
-            print("🧋 Loading boba...")
-            let bobaTexture = SKTexture(imageNamed: "topping_tapioca")
-            if bobaTexture.size().width > 0 {
-                let boba = SKSpriteNode(texture: bobaTexture)
-                boba.setScale(0.05)
-                boba.position = CGPoint(x: 0, y: -15)
-                boba.zPosition = 3
-                drinkDisplay.addChild(boba)
-                print("🧋 ✅ Boba: \(bobaTexture.size()) scaled to \(boba.size)")
-            } else {
-                let boba = SKSpriteNode(color: .black, size: CGSize(width: 25, height: 12))
-                boba.position = CGPoint(x: 0, y: -15)
-                boba.zPosition = 3
-                drinkDisplay.addChild(boba)
-                print("🧋 ❌ Boba fallback used")
-            }
+            print("🧋 Loading boba from atlas...")
+            let bobaTexture = bobaAtlas.textureNamed("topping_tapioca")
+            let boba = SKSpriteNode(texture: bobaTexture)
+            let bobaScale = 25.0 / bobaTexture.size().width
+            boba.setScale(bobaScale)
+            boba.position = CGPoint(x: 0, y: -15)
+            boba.zPosition = 3
+            drinkDisplay.addChild(boba)
+            print("🧋 ✅ Boba loaded: \(bobaTexture.size()) scaled by \(bobaScale)")
         }
         
         // Cheese foam (if present)
         if hasFoam {
-            print("🧋 Loading foam...")
-            let foamTexture = SKTexture(imageNamed: "foam_cheese")
-            if foamTexture.size().width > 0 {
-                let foam = SKSpriteNode(texture: foamTexture)
-                foam.setScale(0.06)
-                foam.position = CGPoint(x: 0, y: 18)
-                foam.zPosition = 4
-                drinkDisplay.addChild(foam)
-                print("🧋 ✅ Foam: \(foamTexture.size()) scaled to \(foam.size)")
-            } else {
-                let foam = SKSpriteNode(color: .yellow, size: CGSize(width: 32, height: 10))
-                foam.position = CGPoint(x: 0, y: 18)
-                foam.zPosition = 4
-                drinkDisplay.addChild(foam)
-                print("🧋 ❌ Foam fallback used")
-            }
+            print("🧋 Loading foam from atlas...")
+            let foamTexture = bobaAtlas.textureNamed("foam_cheese")
+            let foam = SKSpriteNode(texture: foamTexture)
+            let foamScale = 32.0 / foamTexture.size().width
+            foam.setScale(foamScale)
+            foam.position = CGPoint(x: 0, y: 18)
+            foam.zPosition = 4
+            drinkDisplay.addChild(foam)
+            print("🧋 ✅ Foam loaded: \(foamTexture.size()) scaled by \(foamScale)")
         }
         
         // Lid with straw (if present)
         if hasLid {
-            print("🧋 Loading lid...")
-            let lidTexture = SKTexture(imageNamed: "lid_straw")
-            if lidTexture.size().width > 0 {
-                let lid = SKSpriteNode(texture: lidTexture)
-                lid.setScale(0.07)
-                lid.position = CGPoint(x: 0, y: 22)
-                lid.zPosition = 5
-                drinkDisplay.addChild(lid)
-                print("🧋 ✅ Lid: \(lidTexture.size()) scaled to \(lid.size)")
-            } else {
-                let lid = SKSpriteNode(color: .gray, size: CGSize(width: 38, height: 20))
-                lid.position = CGPoint(x: 0, y: 22)
-                lid.zPosition = 5
-                drinkDisplay.addChild(lid)
-                print("🧋 ❌ Lid fallback used")
-            }
+            print("🧋 Loading lid from atlas...")
+            let lidTexture = bobaAtlas.textureNamed("lid_straw")
+            let lid = SKSpriteNode(texture: lidTexture)
+            let lidScale = 38.0 / lidTexture.size().width
+            lid.setScale(lidScale)
+            lid.position = CGPoint(x: 0, y: 22)
+            lid.zPosition = 5
+            drinkDisplay.addChild(lid)
+            print("🧋 ✅ Lid loaded: \(lidTexture.size()) scaled by \(lidScale)")
         }
     }
     
@@ -265,33 +225,33 @@ class DrinkCreator: SKNode {
         
         completedDrink.size = CGSize(width: 30, height: 45)
         
-        // Add layers using same scaling approach but smaller
-        let cupTexture = SKTexture(imageNamed: "cup_empty")
-        let cup = cupTexture.size().width > 0 ? 
-            SKSpriteNode(texture: cupTexture) : 
-            SKSpriteNode(color: .white, size: CGSize(width: 25, height: 35))
-        cup.setScale(0.05) // Even smaller for carried version
+        // FIXED: Use sprite atlas for completed drink too
+        let bobaAtlas = SKTextureAtlas(named: "Boba")
+        
+        // Add layers using sprite atlas with smaller scaling for carried version
+        let cupTexture = bobaAtlas.textureNamed("cup_empty")
+        let cup = SKSpriteNode(texture: cupTexture)
+        let cupScale = 25.0 / cupTexture.size().width // Even smaller for carried version
+        cup.setScale(cupScale)
         cup.position = CGPoint.zero
         cup.zPosition = 0
         completedDrink.addChild(cup)
         
         if hasTea {
-            let teaTexture = SKTexture(imageNamed: "tea_black")
-            let tea = teaTexture.size().width > 0 ? 
-                SKSpriteNode(texture: teaTexture) : 
-                SKSpriteNode(color: .brown, size: CGSize(width: 22, height: 25))
-            tea.setScale(0.04)
+            let teaTexture = bobaAtlas.textureNamed("tea_black")
+            let tea = SKSpriteNode(texture: teaTexture)
+            let teaScale = 22.0 / teaTexture.size().width
+            tea.setScale(teaScale)
             tea.position = CGPoint(x: 0, y: -1)
             tea.zPosition = 1
             completedDrink.addChild(tea)
         }
         
         if hasTea && iceLevel < 2 {
-            let iceTexture = SKTexture(imageNamed: "ice_cubes")
-            let ice = iceTexture.size().width > 0 ? 
-                SKSpriteNode(texture: iceTexture) : 
-                SKSpriteNode(color: .cyan, size: CGSize(width: 20, height: 10))
-            ice.setScale(0.03)
+            let iceTexture = bobaAtlas.textureNamed("ice_cubes")
+            let ice = SKSpriteNode(texture: iceTexture)
+            let iceScale = 20.0 / iceTexture.size().width
+            ice.setScale(iceScale)
             ice.position = CGPoint(x: 0, y: 3)
             ice.zPosition = 2
             ice.alpha = iceLevel == 0 ? 1.0 : 0.6
@@ -299,33 +259,30 @@ class DrinkCreator: SKNode {
         }
         
         if hasBoba {
-            let bobaTexture = SKTexture(imageNamed: "topping_tapioca")
-            let boba = bobaTexture.size().width > 0 ? 
-                SKSpriteNode(texture: bobaTexture) : 
-                SKSpriteNode(color: .black, size: CGSize(width: 18, height: 8))
-            boba.setScale(0.03)
+            let bobaTexture = bobaAtlas.textureNamed("topping_tapioca")
+            let boba = SKSpriteNode(texture: bobaTexture)
+            let bobaScale = 18.0 / bobaTexture.size().width
+            boba.setScale(bobaScale)
             boba.position = CGPoint(x: 0, y: -10)
             boba.zPosition = 3
             completedDrink.addChild(boba)
         }
         
         if hasFoam {
-            let foamTexture = SKTexture(imageNamed: "foam_cheese")
-            let foam = foamTexture.size().width > 0 ? 
-                SKSpriteNode(texture: foamTexture) : 
-                SKSpriteNode(color: .yellow, size: CGSize(width: 23, height: 7))
-            foam.setScale(0.04)
+            let foamTexture = bobaAtlas.textureNamed("foam_cheese")
+            let foam = SKSpriteNode(texture: foamTexture)
+            let foamScale = 23.0 / foamTexture.size().width
+            foam.setScale(foamScale)
             foam.position = CGPoint(x: 0, y: 12)
             foam.zPosition = 4
             completedDrink.addChild(foam)
         }
         
         if hasLid {
-            let lidTexture = SKTexture(imageNamed: "lid_straw")
-            let lid = lidTexture.size().width > 0 ? 
-                SKSpriteNode(texture: lidTexture) : 
-                SKSpriteNode(color: .gray, size: CGSize(width: 27, height: 15))
-            lid.setScale(0.05)
+            let lidTexture = bobaAtlas.textureNamed("lid_straw")
+            let lid = SKSpriteNode(texture: lidTexture)
+            let lidScale = 27.0 / lidTexture.size().width
+            lid.setScale(lidScale)
             lid.position = CGPoint(x: 0, y: 15)
             lid.zPosition = 5
             completedDrink.addChild(lid)

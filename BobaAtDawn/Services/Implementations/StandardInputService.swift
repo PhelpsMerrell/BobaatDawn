@@ -133,16 +133,12 @@ class StandardInputService: InputService {
             self?.triggerLongPress(on: node, at: location)
         }
         
-        // Visual feedback for long press start
-        if let rotatable = node as? RotatableObject {
-            let pulseAction = SKAction.sequence([
-                SKAction.scale(to: 1.05, duration: 0.1),
-                SKAction.scale(to: 1.0, duration: 0.1)
-            ])
-            rotatable.run(pulseAction)
-        }
+        // REMOVED: Visual pulse feedback for immersion
+        // Objects will show feedback through their own interactions
         
-        print("🎮 Long press started on \(node.name ?? "unnamed")")
+        if MovementConfig.debugMovement {
+            print("🎮 Long press started on \(node.name ?? "unnamed")")
+        }
     }
     
     func cancelLongPress() {
@@ -253,27 +249,8 @@ class StandardInputService: InputService {
     func showOccupiedCellFeedback(at cell: GridCoordinate,
                                  in scene: SKScene,
                                  gridService: GridService) {
-        
-        let worldPos = gridService.gridToWorld(cell)
-        
-        // Create feedback using configuration
-        let feedback = SKShapeNode(circleOfRadius: configService.touchOccupiedCellFeedbackRadius)
-        feedback.fillColor = SKColor.clear
-        feedback.strokeColor = configService.touchFeedbackColor
-        feedback.lineWidth = configService.touchFeedbackLineWidth
-        feedback.position = worldPos
-        feedback.zPosition = configService.touchFeedbackZPosition
-        scene.addChild(feedback)
-        
-        // Animate feedback
-        let pulseAction = SKAction.sequence([
-            SKAction.scale(to: configService.touchFeedbackScaleAmount, duration: configService.touchFeedbackScaleDuration),
-            SKAction.scale(to: 1.0, duration: configService.touchFeedbackScaleDuration),
-            SKAction.wait(forDuration: configService.touchFeedbackWaitDuration),
-            SKAction.fadeOut(withDuration: configService.touchFeedbackFadeDuration),
-            SKAction.removeFromParent()
-        ])
-        feedback.run(pulseAction)
+        // REMOVED: No UI feedback circles for immersion
+        // The character now handles collision feedback through subtle shakes
     }
     
     // MARK: - Private Helper Methods

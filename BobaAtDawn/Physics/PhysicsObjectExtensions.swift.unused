@@ -1,0 +1,314 @@
+//
+//  PhysicsObjectExtensions.swift
+//  BobaAtDawn
+//
+//  Extensions to existing game objects to add physics body support
+//  Maintains backward compatibility while adding physics capabilities
+//
+
+import SpriteKit
+
+// MARK: - RotatableObject Physics Extension
+extension RotatableObject {
+    
+    /// Add physics body to existing RotatableObject
+    func addPhysicsBody() {
+        guard physicsBody == nil else { return } // Don't add if already has physics
+        
+        switch objectType {
+        case .furniture:
+            physicsBody = PhysicsBodyFactory.createFurnitureBody(size: size)
+            print("⚡ Added furniture physics body to \(objectType)")
+            
+        case .drink, .completedDrink:
+            physicsBody = PhysicsBodyFactory.createItemBody(radius: min(size.width, size.height) / 2)
+            print("⚡ Added item physics body to \(objectType)")
+            
+        case .ingredient:
+            physicsBody = PhysicsBodyFactory.createItemBody(radius: min(size.width, size.height) / 2)
+            print("⚡ Added ingredient physics body to \(objectType)")
+            
+        case .decoration:
+            physicsBody = PhysicsBodyFactory.createFurnitureBody(size: size)
+            physicsBody?.isDynamic = false // Decorations don't move
+            print("⚡ Added decoration physics body to \(objectType)")
+            
+        case .tool:
+            physicsBody = PhysicsBodyFactory.createItemBody(radius: min(size.width, size.height) / 2)
+            print("⚡ Added tool physics body to \(objectType)")
+        }
+        
+        // Set node reference
+        physicsBody?.node = self
+    }
+    
+    /// Remove physics body
+    func removePhysicsBody() {
+        physicsBody = nil
+        print("⚡ Removed physics body from \(objectType)")
+    }
+    
+    /// Update physics properties for current object type
+    func updatePhysicsProperties() {
+        guard let body = physicsBody else { return }
+        
+        switch objectType {
+        case .furniture:
+            body.mass = PhysicsConfig.Furniture.mass
+            body.friction = PhysicsConfig.Furniture.friction
+            body.restitution = PhysicsConfig.Furniture.restitution
+            body.allowsRotation = PhysicsConfig.Furniture.allowsRotation
+            
+        case .drink, .completedDrink, .ingredient, .tool:
+            body.mass = PhysicsConfig.Item.mass
+            body.friction = PhysicsConfig.Item.friction
+            body.restitution = PhysicsConfig.Item.restitution
+            body.allowsRotation = PhysicsConfig.Item.allowsRotation
+            
+        case .decoration:
+            body.isDynamic = false // Decorations are static
+            body.allowsRotation = false
+            
+        default:
+            break
+        }
+        
+        print("⚡ Updated physics properties for \(objectType)")
+    }
+    
+    /// Check if object should have physics
+    var shouldHavePhysics: Bool {
+        return true // Most objects should have physics for collision detection
+    }
+    
+    /// Apply physics force (for interactions)
+    func applyForce(_ force: CGVector) {
+        physicsBody?.applyForce(force)
+    }
+    
+    /// Apply impulse (for quick interactions)
+    func applyImpulse(_ impulse: CGVector) {
+        physicsBody?.applyImpulse(impulse)
+    }
+}
+
+// MARK: - IngredientStation Physics Extension
+extension IngredientStation {
+    
+    /// Add physics body to ingredient station
+    func addPhysicsBody() {
+        guard physicsBody == nil else { return }
+        
+        physicsBody = PhysicsBodyFactory.createStationBody(size: size)
+        physicsBody?.node = self
+        
+        print("⚡ Added station physics body to \(stationType) station")
+    }
+    
+    /// Handle physics-based interaction
+    func handlePhysicsInteraction(with other: SKNode) {
+        print("⚡ Station \(stationType) physics interaction with \(other.name ?? "unnamed")")
+        
+        // Could trigger interaction effects here
+        // For example, proximity-based highlighting
+    }
+}
+
+// MARK: - DrinkCreator Physics Extension  
+extension DrinkCreator {
+    
+    /// Add physics body to drink creator
+    func addPhysicsBody() {
+        guard physicsBody == nil else { return }
+        
+        physicsBody = PhysicsBodyFactory.createStationBody(size: size)
+        physicsBody?.node = self
+        
+        print("⚡ Added station physics body to DrinkCreator")
+    }
+}
+
+// MARK: - PowerBreaker Physics Extension
+extension PowerBreaker {
+    
+    /// Add physics body for interaction detection
+    func addPhysicsBody() {
+        guard physicsBody == nil else { return }
+        
+        // Power breaker is a special interaction object
+        let body = SKPhysicsBody(rectangleOf: size)
+        body.categoryBitMask = PhysicsCategory.station
+        body.collisionBitMask = PhysicsCategory.none // Pass-through for character
+        body.contactTestBitMask = PhysicsCategory.character
+        body.isDynamic = false
+        body.node = self
+        
+        physicsBody = body
+        print("⚡ Added interaction physics body to PowerBreaker")
+    }
+}
+
+// MARK: - Window Physics Extension
+extension Window {
+    
+    /// Add physics body for interaction detection  
+    func addPhysicsBody() {
+        guard physicsBody == nil else { return }
+        
+        // Window is visual only, but could have interaction detection
+        let body = SKPhysicsBody(rectangleOf: size)
+        body.categoryBitMask = PhysicsCategory.furniture
+        body.collisionBitMask = PhysicsCategory.none // Pass-through
+        body.contactTestBitMask = PhysicsCategory.character
+        body.isDynamic = false
+        body.node = self
+        
+        physicsBody = body
+        print("⚡ Added interaction physics body to Window")
+    }
+}
+
+// MARK: - Physics Scene Extension
+extension SKScene {
+    
+    /// Convert all existing objects in scene to physics objects
+    func convertToPhysicsObjects() {
+        print("⚡ Converting scene objects to physics objects...")
+        
+        var convertedCount = 0
+        
+        // Convert all RotatableObjects
+        enumerateChildNodes(withName: "//*") { node, _ in
+            if let rotatable = node as? RotatableObject {
+                rotatable.addPhysicsBody()
+                convertedCount += 1
+            } else if let station = node as? IngredientStation {
+                station.addPhysicsBody()
+                convertedCount += 1
+            } else if let drinkCreator = node as? DrinkCreator {
+                drinkCreator.addPhysicsBody()
+                convertedCount += 1
+            } else if let powerBreaker = node as? PowerBreaker {
+                powerBreaker.addPhysicsBody()
+                convertedCount += 1
+            } else if let window = node as? Window {
+                window.addPhysicsBody()
+                convertedCount += 1
+            }
+        }
+        
+        print("⚡ Converted \(convertedCount) objects to physics objects")
+    }
+    
+    /// Add physics bodies to walls
+    func addWallPhysicsBodies() {
+        print("⚡ Adding physics bodies to walls...")
+        
+        var wallCount = 0
+        
+        // Find wall nodes and add physics
+        enumerateChildNodes(withName: "//*") { node, _ in
+            if let spriteNode = node as? SKSpriteNode {
+                // Check if this looks like a wall (by size or position)
+                if spriteNode.size.width > 500 || spriteNode.size.height > 500 {
+                    if spriteNode.physicsBody == nil {
+                        spriteNode.physicsBody = PhysicsBodyFactory.createWallBody(size: spriteNode.size)
+                        spriteNode.physicsBody?.node = spriteNode
+                        wallCount += 1
+                        print("⚡ Added wall physics body to node at \(spriteNode.position)")
+                    }
+                }
+            }
+        }
+        
+        print("⚡ Added physics bodies to \(wallCount) walls")
+    }
+    
+    /// Add door physics body
+    func addDoorPhysicsBody() {
+        if let door = childNode(withName: "front_door") {
+            if door.physicsBody == nil {
+                door.physicsBody = PhysicsBodyFactory.createDoorBody(size: CGSize(width: 60, height: 60))
+                door.physicsBody?.node = door
+                print("⚡ Added door physics body")
+            }
+        }
+    }
+    
+    /// Set up complete physics world
+    func setupPhysicsWorld() {
+        // Configure physics world
+        PhysicsWorldSetup.setupPhysicsWorld(self)
+        
+        // Add world boundaries
+        let worldSize = CGSize(width: GameConfig.World.width, height: GameConfig.World.height)
+        PhysicsWorldSetup.setupWorldBoundaries(self, worldSize: worldSize)
+        
+        // Convert existing objects
+        convertToPhysicsObjects()
+        addWallPhysicsBodies()
+        addDoorPhysicsBody()
+        
+        print("⚡ Complete physics world setup finished")
+    }
+    
+    /// Get the contact handler for this scene
+    var physicsContactHandler: PhysicsContactHandler? {
+        return PhysicsWorldSetup.getContactHandler(from: self)
+    }
+}
+
+// MARK: - Character Integration Helper
+extension Character {
+    
+    /// Convert existing Character to PhysicsCharacter
+    func convertToPhysicsCharacter(gridService: GridService) -> PhysicsCharacter {
+        let currentPos = gridService.worldToGrid(position)
+        let physicsChar = PhysicsCharacter(startPosition: currentPos, gridService: gridService)
+        
+        // Transfer carried item if any
+        if let carried = carriedItem {
+            // Remove from old character
+            carried.removeFromParent()
+            // Add to new character
+            physicsChar.pickupItem(carried)
+        }
+        
+        // Transfer position and visual state
+        physicsChar.position = position
+        physicsChar.zPosition = zPosition
+        
+        print("🔄 Converted Character to PhysicsCharacter at \(currentPos)")
+        return physicsChar
+    }
+}
+
+// MARK: - NPC Integration Helper  
+extension NPC {
+    
+    /// Convert existing NPC to PhysicsNPC
+    func convertToPhysicsNPC(gridService: GridService, npcService: NPCService) -> PhysicsNPC {
+        let physicsNPC = PhysicsNPC(
+            animal: animalType,
+            startPosition: gridPosition,
+            gridService: gridService,
+            npcService: npcService
+        )
+        
+        // Transfer state
+        physicsNPC.state = state
+        
+        // Transfer position
+        physicsNPC.position = position
+        physicsNPC.zPosition = zPosition
+        
+        // Transfer any carried items or table assignments
+        if let table = currentTable {
+            // Note: This would need to be implemented based on your current NPC structure
+            print("🔄 Transferring table assignment to PhysicsNPC")
+        }
+        
+        print("🔄 Converted NPC \(animalType.rawValue) to PhysicsNPC")
+        return physicsNPC
+    }
+}

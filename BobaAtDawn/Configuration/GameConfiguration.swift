@@ -347,35 +347,48 @@ extension GameConfig {
     
     /// Get shop floor rectangle in world coordinates - FIXED
     static func shopFloorRect() -> (position: CGPoint, size: CGSize) {
-        let topLeft = gridToWorld(World.shopFloorArea.topLeft)
-        let bottomRight = gridToWorld(World.shopFloorArea.bottomRight)
+        // Calculate the rectangle more carefully
+        let topLeftGrid = World.shopFloorArea.topLeft
+        let bottomRightGrid = World.shopFloorArea.bottomRight
         
         print("🔍 shopFloorRect debug:")
-        print("   topLeft grid: \(World.shopFloorArea.topLeft) -> world: \(topLeft)")
-        print("   bottomRight grid: \(World.shopFloorArea.bottomRight) -> world: \(bottomRight)")
+        print("   topLeft grid: \(topLeftGrid)")
+        print("   bottomRight grid: \(bottomRightGrid)")
         
-        // Calculate width and height using absolute values to prevent negative sizes
-        let width = abs(bottomRight.x - topLeft.x) + Grid.cellSize
-        let height = abs(bottomRight.y - topLeft.y) + Grid.cellSize
-        let centerX = (topLeft.x + bottomRight.x) / 2
-        let centerY = (topLeft.y + bottomRight.y) / 2
+        // Calculate grid dimensions
+        let gridWidth = bottomRightGrid.x - topLeftGrid.x + 1  // +1 to include both endpoints
+        let gridHeight = bottomRightGrid.y - topLeftGrid.y + 1
+        
+        print("   grid dimensions: \(gridWidth) x \(gridHeight) cells")
+        
+        // Convert to world dimensions
+        let width = CGFloat(gridWidth) * Grid.cellSize
+        let height = CGFloat(gridHeight) * Grid.cellSize
+        
+        print("   world dimensions: \(width) x \(height)")
+        
+        // Calculate center position
+        let centerGridX = (topLeftGrid.x + bottomRightGrid.x) / 2
+        let centerGridY = (topLeftGrid.y + bottomRightGrid.y) / 2
+        let centerGrid = GridCoordinate(x: centerGridX, y: centerGridY)
+        let centerWorld = gridToWorld(centerGrid)
         
         let calculatedSize = CGSize(width: width, height: height)
-        print("   calculated width: \(width), height: \(height)")
         print("   final size: \(calculatedSize)")
+        print("   final position: \(centerWorld)")
         
-        // Extra validation
+        // Validation
         guard calculatedSize.width > 0 && calculatedSize.height > 0 else {
             print("❌ CRITICAL: shopFloorRect calculated invalid size: \(calculatedSize)")
             // Return a safe fallback size
             return (
                 position: CGPoint(x: 0, y: 0),
-                size: CGSize(width: 100, height: 100)
+                size: CGSize(width: 780, height: 600)  // Reasonable fallback
             )
         }
         
         return (
-            position: CGPoint(x: centerX, y: centerY),
+            position: centerWorld,
             size: calculatedSize
         )
     }

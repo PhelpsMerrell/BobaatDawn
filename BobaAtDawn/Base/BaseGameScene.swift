@@ -214,8 +214,9 @@ class BaseGameScene: SKScene, InputServiceDelegate {
             startLongPress(for: node, at: location)
             
         case .movement(let targetCell):
-            character.moveToGridCell(targetCell)
-            print("🎯 Character moving to available cell \(targetCell)")
+            // Use physics-based movement (NEW)
+            character.handleTouchMovement(to: gridService.gridToWorld(targetCell))
+            print("🎯 Character moving with physics to cell \(targetCell)")
             
         case .occupiedCell(let cell):
             inputService.showOccupiedCellFeedback(at: cell, in: self, gridService: gridService)
@@ -300,11 +301,17 @@ class BaseGameScene: SKScene, InputServiceDelegate {
     // MARK: - Update Loop (Template Method)
     override func update(_ currentTime: TimeInterval) {
         updateCamera()
-        character?.update()
+        
+        // Update character with deltaTime for physics (NEW)
+        let deltaTime = currentTime - (lastUpdateTime ?? currentTime)
+        lastUpdateTime = currentTime
+        character?.update(deltaTime: deltaTime)
         
         // Allow subclasses to add specific update logic
         updateSpecificContent(currentTime)
     }
+    
+    private var lastUpdateTime: TimeInterval?
     
     /// Override this method in subclasses for scene-specific update logic
     open func updateSpecificContent(_ currentTime: TimeInterval) {

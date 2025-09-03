@@ -1,0 +1,387 @@
+//
+//  PhysicsCharacter.swift
+//  BobaAtDawn
+//
+//  Physics-enhanced Character class that uses SpriteKit physics for smooth movement
+//  while maintaining grid-based game logic integration
+//
+
+import SpriteKit
+
+// MARK: - Physics-Enhanced Character
+class PhysicsCharacter: SKSpriteNode {
+    
+    // MARK: - Dependencies
+    private let gridService: GridService
+    private let movementController: PhysicsMovementController
+    
+    // MARK: - Character State
+    var carriedItem: RotatableObject?
+    private(set) var currentGridPosition: GridCoordinate
+    
+    // MARK: - Visual Components
+    private var carriedItemContainer: SKNode!
+    
+    // MARK: - Physics Properties
+    var isMoving: Bool {
+        return movementController.isMoving
+    }
+    
+    var currentSpeed: CGFloat {
+        return movementController.getCurrentSpeed()
+    }
+    
+    // MARK: - Initialization
+    init(startPosition: GridCoordinate, gridService: GridService) {
+        self.gridService = gridService
+        self.currentGridPosition = startPosition
+        
+        // Initialize visual representation
+        super.init(texture: nil, color: GameConfig.Character.color, size: GameConfig.Character.size)
+        
+        // Set up physics body
+        setupPhysicsBody()
+        
+        // Initialize movement controller
+        self.movementController = PhysicsMovementController(
+            physicsBody: self.physicsBody!,
+            gridService: gridService
+        )
+        
+        // Set up visual components
+        setupVisualComponents()
+        
+        // Position character
+        let worldPosition = gridService.gridToWorld(startPosition)
+        self.position = worldPosition
+        self.zPosition = GameConfig.Character.zPosition
+        
+        print("🏃‍♂️ PhysicsCharacter created at grid \(startPosition) = world \(worldPosition)")
+    }
+    
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    // MARK: - Setup
+    
+    private func setupPhysicsBody() {
+        physicsBody = PhysicsBodyFactory.createCharacterBody()
+        physicsBody?.node = self
+        
+        print("⚡ Character physics body created")
+        print("   - Category: \(physicsBody?.categoryBitMask ?? 0)")
+        print("   - Collision: \(physicsBody?.collisionBitMask ?? 0)")
+        print("   - Contact: \(physicsBody?.contactTestBitMask ?? 0)")
+    }
+    
+    private func setupVisualComponents() {
+        // Container for carried items
+        carriedItemContainer = SKNode()
+        carriedItemContainer.position = CGPoint(x: 0, y: GameConfig.Character.carryOffset)
+        carriedItemContainer.zPosition = 1 // Above character
+        addChild(carriedItemContainer)
+        
+        // Character visual indicator (optional)
+        let centerDot = SKShapeNode(circleOfRadius: 3)
+        centerDot.fillColor = .white
+        centerDot.strokeColor = .black
+        centerDot.lineWidth = 1
+        centerDot.zPosition = 0.5
+        addChild(centerDot)
+        
+        print("🎨 Character visual components set up")
+    }
+    
+    // MARK: - Movement Interface
+    
+    /// Move to a specific grid coordinate with physics-based movement
+    func moveToGrid(_ gridPosition: GridCoordinate, completion: (() -> Void)? = nil) {
+        guard gridPosition.isValid() else {
+            print("❌ Invalid grid position: \(gridPosition)")
+            completion?()
+            return
+        }
+        
+        // Check if destination is available (for collision avoidance)
+        if !gridService.isCellAvailable(gridPosition) {
+            print("⚠️ Grid position \(gridPosition) is occupied, finding alternative")
+            if let alternative = findNearestAvailableCell(to: gridPosition) {
+                moveToGrid(alternative, completion: completion)
+                return
+            } else {
+                print("❌ No alternative position found near \(gridPosition)")
+                completion?()
+                return
+            }
+        }
+        
+        // Update grid tracking
+        gridService.freeCell(currentGridPosition)
+        gridService.reserveCell(gridPosition)
+        currentGridPosition = gridPosition
+        
+        // Start physics-based movement
+        movementController.moveToGrid(gridPosition) { [weak self] in
+            self?.handleGridArrival(gridPosition)
+            completion?()
+        }
+        
+        print("🎯 Character moving to grid \(gridPosition)")
+    }
+    
+    /// Move toward a world position (for free movement)
+    func moveToward(_ worldPosition: CGPoint) {
+        movementController.currentTarget = worldPosition
+        movementController.isMoving = true
+        
+        print("🏃‍♂️ Character moving toward world position \(worldPosition)")
+    }
+    
+    /// Stop all movement
+    func stop() {
+        movementController.stop()
+        print("🛑 Character stopped")
+    }
+    
+    /// Get the nearest available cell to a target position
+    private func findNearestAvailableCell(to target: GridCoordinate, maxRadius: Int = 3) -> GridCoordinate? {
+        for radius in 1...maxRadius {
+            for dx in -radius...radius {
+                for dy in -radius...radius {
+                    // Only check cells on the perimeter of the current radius
+                    if abs(dx) == radius || abs(dy) == radius {
+                        let candidate = GridCoordinate(x: target.x + dx, y: target.y + dy)
+                        if candidate.isValid() && gridService.isCellAvailable(candidate) {
+                            return candidate
+                        }
+                    }
+                }
+            }
+        }
+        return nil
+    }
+    
+    // MARK: - Grid Integration
+    
+    private func handleGridArrival(_ gridPosition: GridCoordinate) {
+        print("✅ Character arrived at grid \(gridPosition)")
+        
+        // Update carried item position if needed
+        updateCarriedItemPosition()
+        
+        // Trigger any grid-based game logic here
+        // (e.g., proximity detection, interaction availability)
+    }
+    
+    func getCurrentGridPosition() -> GridCoordinate {
+        return movementController.getCurrentGridPosition() ?? currentGridPosition
+    }
+    
+    func syncGridPosition() {
+        // Update tracked grid position to match actual world position
+        let actualGridPos = gridService.worldToGrid(position)
+        if actualGridPos != currentGridPosition {
+            gridService.freeCell(currentGridPosition)
+            gridService.reserveCell(actualGridPos)
+            currentGridPosition = actualGridPos
+            
+            print("📍 Character grid position synced: \(actualGridPos)")
+        }
+    }
+    
+    // MARK: - Item Management
+    
+    func pickupItem(_ item: RotatableObject) {
+        guard carriedItem == nil else {
+            print("❌ Already carrying an item")
+            return
+        }
+        
+        // Remove item from scene
+        item.removeFromParent()
+        
+        // Add to carried item container
+        carriedItemContainer.addChild(item)
+        item.position = CGPoint.zero
+        item.zRotation = 0 // Reset rotation
+        item.zPosition = 0
+        
+        // Set carried item reference
+        carriedItem = item
+        
+        // Start floating animation
+        startCarriedItemAnimation()
+        
+        print("📦 Character picked up \(item.objectType) item")
+    }
+    
+    func dropItem() {
+        guard let item = carriedItem else {
+            print("❌ No item to drop")
+            return
+        }
+        
+        // Stop floating animation
+        stopCarriedItemAnimation()
+        
+        // Remove from carried container
+        item.removeFromParent()
+        
+        // Add back to scene at character's position
+        if let scene = scene {
+            scene.addChild(item)
+            item.position = position
+            item.zPosition = GameConfig.Objects.defaultZPosition
+            
+            // Add physics body to dropped item
+            if item.physicsBody == nil {
+                item.physicsBody = PhysicsBodyFactory.createItemBody()
+                print("⚡ Added physics body to dropped item")
+            }
+        }
+        
+        // Clear carried item reference
+        carriedItem = nil
+        
+        print("📦 Character dropped \(item.objectType) item")
+    }
+    
+    func dropItemSilently() {
+        // Drop without adding back to scene (used for table placement, etc.)
+        guard let item = carriedItem else { return }
+        
+        stopCarriedItemAnimation()
+        item.removeFromParent()
+        carriedItem = nil
+        
+        print("📦 Character silently dropped item")
+    }
+    
+    // MARK: - Item Animation
+    
+    private func startCarriedItemAnimation() {
+        guard carriedItem != nil else { return }
+        
+        let floatAction = SKAction.repeatForever(
+            SKAction.sequence([
+                SKAction.moveBy(x: 0, y: GameConfig.Character.floatDistance, 
+                              duration: GameConfig.Character.floatDuration),
+                SKAction.moveBy(x: 0, y: -GameConfig.Character.floatDistance, 
+                              duration: GameConfig.Character.floatDuration)
+            ])
+        )
+        
+        carriedItemContainer.run(floatAction, withKey: "floating")
+        print("✨ Started carried item floating animation")
+    }
+    
+    private func stopCarriedItemAnimation() {
+        carriedItemContainer.removeAction(forKey: "floating")
+        
+        // Reset position
+        let resetAction = SKAction.moveTo(y: GameConfig.Character.carryOffset, duration: 0.1)
+        carriedItemContainer.run(resetAction)
+        
+        print("✨ Stopped carried item floating animation")
+    }
+    
+    private func updateCarriedItemPosition() {
+        // Called when character moves to ensure carried item stays in correct relative position
+        // The floating animation handles this automatically, but this could be used for other effects
+    }
+    
+    // MARK: - Update Loop
+    
+    func update(deltaTime: TimeInterval) {
+        // Update movement controller
+        movementController.update(deltaTime: deltaTime)
+        
+        // Sync grid position if character is not actively moving to a specific grid
+        if !isMoving {
+            syncGridPosition()
+        }
+    }
+    
+    // MARK: - Physics Integration
+    
+    func setMaxSpeed(_ speed: CGFloat) {
+        movementController.setMaxSpeed(speed)
+    }
+    
+    func getPhysicsVelocity() -> CGVector {
+        return physicsBody?.velocity ?? CGVector.zero
+    }
+    
+    func applyImpulse(_ impulse: CGVector) {
+        physicsBody?.applyImpulse(impulse)
+        print("💥 Applied impulse to character: \(impulse)")
+    }
+    
+    // MARK: - Touch/Input Handling
+    
+    func handleTouchMovement(to worldPosition: CGPoint) {
+        // Convert world position to grid and move there
+        let gridPosition = gridService.worldToGrid(worldPosition)
+        
+        if gridPosition.isValid() {
+            moveToGrid(gridPosition)
+        } else {
+            // For out-of-bounds touches, move toward the position using free movement
+            moveToward(worldPosition)
+        }
+    }
+    
+    // MARK: - Debug Information
+    
+    func getDebugInfo() -> String {
+        let physicsVelocity = getPhysicsVelocity()
+        let gridPos = getCurrentGridPosition()
+        let worldPos = position
+        
+        return """
+        PhysicsCharacter Debug:
+        - Grid Position: \(gridPos)
+        - World Position: (\(String(format: "%.1f", worldPos.x)), \(String(format: "%.1f", worldPos.y)))
+        - Physics Velocity: (\(String(format: "%.1f", physicsVelocity.dx)), \(String(format: "%.1f", physicsVelocity.dy)))
+        - Current Speed: \(String(format: "%.1f", currentSpeed))
+        - Is Moving: \(isMoving)
+        - Carried Item: \(carriedItem?.objectType.rawValue ?? "none")
+        - Movement Controller: 
+        \(movementController.getDebugInfo())
+        """
+    }
+    
+    func printDebugInfo() {
+        print("🔍 " + getDebugInfo().replacingOccurrences(of: "\n", with: "\n🔍 "))
+    }
+}
+
+// MARK: - Backward Compatibility Extensions
+extension PhysicsCharacter {
+    
+    /// Compatibility method for existing grid-based code
+    @objc func moveToGrid(_ gridPosition: GridCoordinate) {
+        moveToGrid(gridPosition, completion: nil)
+    }
+    
+    /// Compatibility property for existing code
+    var gridPosition: GridCoordinate {
+        get { return currentGridPosition }
+        set { moveToGrid(newValue) }
+    }
+}
+
+// MARK: - Integration with GameStateService
+extension PhysicsCharacter {
+    
+    func reportMovementToGameState(gameStateService: GameStateService?) {
+        gameStateService?.updateCharacterPosition(getCurrentGridPosition())
+    }
+    
+    func reportItemPickupToGameState(gameStateService: GameStateService?, item: RotatableObject) {
+        // Convert RotatableObject to GameObject for GameStateService
+        // This would need to be implemented based on your existing GameObject structure
+        print("📊 Would report item pickup to game state: \(item.objectType)")
+    }
+}

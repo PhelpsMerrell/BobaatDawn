@@ -22,7 +22,8 @@ class GameScene: BaseGameScene {
     internal var timeBreaker: PowerBreaker!
     internal var timeWindow: Window!
     internal var timeLabel: SKLabelNode!
-    
+    //MARK: - Physics 
+    private var physicsContactHandler: PhysicsContactHandler!
     // MARK: - World Areas
     private var shopFloor: SKSpriteNode!
     
@@ -37,27 +38,68 @@ class GameScene: BaseGameScene {
     
     // MARK: - BaseGameScene Template Method Implementation
     override open func setupSpecificContent() {
-        setupIngredientStations()
-        convertExistingObjectsToGrid()
-        setupTimeSystem()
+        print("🔧 GameScene.setupSpecificContent() starting...")
         
-        // Optional grid overlay for development
-        if showGridOverlay {
-            addGridOverlay()
+        do {
+            // NEW: Set up physics world first
+            setupPhysicsWorld()
+            print("✅ Physics world setup complete")
+            
+            setupIngredientStations()
+            print("✅ Ingredient stations setup complete")
+            
+            convertExistingObjectsToGrid()
+            print("✅ Objects converted to grid")
+            
+            setupTimeSystem()
+            print("✅ Time system setup complete")
+            
+            // Optional grid overlay for development
+            if showGridOverlay {
+                addGridOverlay()
+                print("✅ Grid overlay added")
+            }
+            
+            print("🍯 Physics-enabled game initialized with DI!")
+            gridService.printGridState()
+            
+            // Initialize NPC system
+            lastNPCSpawnTime = 0 // Use scene time instead of absolute time
+            
+            print("🦊 NPC system initialized, first spawn in ~1 second")
+            
+            // IMMEDIATE DEBUG: Force spawn one animal right now
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                self.forceSpawnDebugNPC()
+            }
+            
+            print("🔧 GameScene.setupSpecificContent() completed successfully")
+            
+        } catch {
+            print("❌ CRITICAL ERROR in setupSpecificContent(): \(error)")
+            // Try to continue with minimal setup
+            setupTimeSystem()
         }
+    }
+    
+    // MARK: - Physics Setup (NEW)
+    private func setupPhysicsWorld() {
+        // Set up complete physics system
+        physicsWorld.gravity = PhysicsConfig.World.gravity
+        physicsWorld.speed = PhysicsConfig.World.speed
         
-        print("🍯 Grid-based game initialized with DI!")
-        gridService.printGridState()
+        // Set up physics contact handling
+        physicsContactHandler = PhysicsContactHandler()
+        physicsWorld.contactDelegate = physicsContactHandler
         
-        // Initialize NPC system
-        lastNPCSpawnTime = 0 // Use scene time instead of absolute time
+        setupPhysicsContactHandling()
         
-        print("🦊 NPC system initialized, first spawn in ~1 second")
-        
-        // IMMEDIATE DEBUG: Force spawn one animal right now
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.forceSpawnDebugNPC()
-        }
+        print("⚡ Physics world enabled")
+    }
+    
+    private func setupPhysicsContactHandling() {
+        physicsContactHandler?.contactDelegate = self
+        print("⚡ Physics contact handler delegate set")
     }
     
     override open func setupWorld() {
@@ -169,15 +211,29 @@ class GameScene: BaseGameScene {
         // CRITICAL: Validate the calculated size
         guard shopFloorRect.size.width > 0 && shopFloorRect.size.height > 0 else {
             print("❌ ERROR: Invalid shop floor rect size: \(shopFloorRect.size)")
-            print("❌ This is likely where the {840, -540} crash occurs!")
+            print("❌ This is likely where the crash occurs! Skipping shop floor bounds.")
             return
         }
         
-        let shopFloorBounds = SKSpriteNode(color: configService.shopFloorColor, 
-                                          size: shopFloorRect.size)
-        shopFloorBounds.position = shopFloorRect.position
-        shopFloorBounds.zPosition = -8
-        addChild(shopFloorBounds)
+        // Additional size sanity check
+        guard shopFloorRect.size.width < 10000 && shopFloorRect.size.height < 10000 else {
+            print("❌ ERROR: Shop floor rect size too large: \(shopFloorRect.size)")
+            print("❌ This could cause memory issues! Skipping shop floor bounds.")
+            return
+        }
+        
+        let shopFloorBounds = createValidatedSprite(color: configService.shopFloorColor, 
+                                                   size: shopFloorRect.size, 
+                                                   name: "shop floor bounds")
+        
+        guard let validFloorBounds = shopFloorBounds else {
+            print("❌ ERROR: Failed to create shop floor bounds sprite")
+            return
+        }
+        
+        validFloorBounds.position = shopFloorRect.position
+        validFloorBounds.zPosition = -8
+        addChild(validFloorBounds)
         
         print("🏠 Shop floor added: grid area \(GameConfig.World.shopFloorArea) = world rect \(shopFloorRect)")
     }
@@ -435,6 +491,9 @@ class GameScene: BaseGameScene {
         let deltaTime = currentTime - sceneTime
         sceneTime = currentTime
         
+        // Update character with physics (NEW)
+        character.update(deltaTime: deltaTime)
+        
         // Update time system
         timeService.update()
         
@@ -671,5 +730,49 @@ class GameScene: BaseGameScene {
         transitionService.transitionToForest(from: self) {
             print("🌲 Successfully transitioned to forest")
         }
+    }
+}
+
+// MARK: - Physics Contact Delegate (NEW)
+extension GameScene: PhysicsContactDelegate {
+    
+    func characterContactedStation(_ station: SKNode) {
+        if let ingredientStation = station as? IngredientStation {
+            print("⚡ Character contacted \(ingredientStation.stationType) station via physics")
+            // Could trigger proximity-based highlighting or interaction hints
+        }
+    }
+    
+    func characterContactedDoor(_ door: SKNode) {
+        if door.name == "front_door" {
+            print("⚡ Character contacted forest door via physics")
+            // Could show "Press to enter forest" hint
+        }
+    }
+    
+    func characterContactedItem(_ item: SKNode) {
+        if let rotatable = item as? RotatableObject {
+            print("⚡ Character contacted item \(rotatable.objectType) via physics")
+            // Could show "Press to pickup" hint
+        }
+    }
+    
+    func characterContactedNPC(_ npc: SKNode) {
+        if let npcNode = npc as? NPC {
+            print("💬 Character contacted \(npcNode.animalType.rawValue) via physics")
+            // Could trigger dialogue or interaction hints
+        }
+    }
+    
+    func npcContactedDoor(_ npc: SKNode, door: SKNode) {
+        if let npcNode = npc as? NPC, door.name == "front_door" {
+            print("🦊 \(npcNode.animalType.rawValue) contacted exit door - should leave")
+            npcNode.startLeaving(satisfied: true)
+        }
+    }
+    
+    func itemContactedFurniture(_ item: SKNode, furniture: SKNode) {
+        print("📦 Item contacted furniture via physics")
+        // Could handle automatic item placement
     }
 }

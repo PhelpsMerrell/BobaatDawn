@@ -47,7 +47,10 @@ class ServiceSetup {
             return StandardNPCService(gridService: gridService, timeService: timeService)
         }
         
-        print("🎯 Game services registered successfully")
+
+       
+        
+        print("🎯 Game services registered successfully (including GameState)")
         return container
     }
 }
