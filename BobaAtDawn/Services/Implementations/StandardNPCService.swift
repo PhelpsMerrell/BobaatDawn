@@ -210,8 +210,18 @@ class StandardNPCService: NPCService {
     }
     
     func isNearExit(_ position: GridCoordinate) -> Bool {
-        return position.x <= GameConfig.NPC.exitThreshold && 
-               abs(position.y - GameConfig.World.doorGridPosition.y) <= GameConfig.NPC.exitYTolerance  // FIXED: Use new property name
+        // FIXED: More forgiving exit detection
+        let doorPosition = GameConfig.World.doorGridPosition
+        let distanceToExit = sqrt(pow(Float(position.x - doorPosition.x), 2) + pow(Float(position.y - doorPosition.y), 2))
+        
+        // NPCs are "near exit" if within 3 grid cells of the door
+        let isNear = distanceToExit <= 3.0
+        
+        if isNear {
+            print("🚺 NPC at \(position) is near exit (distance: \(String(format: "%.1f", distanceToExit)) from door \(doorPosition))")
+        }
+        
+        return isNear
     }
     
     // MARK: - Animations

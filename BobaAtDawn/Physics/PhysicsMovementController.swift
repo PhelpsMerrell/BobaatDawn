@@ -57,8 +57,10 @@ class PhysicsMovementController: MovementController {
             return 
         }
         
+        // Don't move if we're not supposed to be moving
+        guard isMoving else { return }
+        
         currentTarget = target
-        isMoving = true
         
         let currentPos = node.position
         let direction = CGPoint(
@@ -67,8 +69,12 @@ class PhysicsMovementController: MovementController {
         )
         let distance = sqrt(direction.x * direction.x + direction.y * direction.y)
         
-        if distance < 2.0 {
-            stop()
+        // FIXED: Clean arrival check - stop completely when close
+        if distance < 8.0 {
+            physicsBody.velocity = CGVector.zero
+            currentTarget = nil
+            isMoving = false
+            print("🎯 Arrived at destination, distance: \(String(format: "%.1f", distance))")
             return
         }
         
@@ -97,7 +103,10 @@ class PhysicsMovementController: MovementController {
         physicsBody.applyForce(force)
         limitMaximumSpeed()
         
-        print("🏃‍♂️ Moving toward \(target), distance: \(String(format: "%.1f", distance))")
+        // Reduced logging frequency
+        if Int(distance) % 20 == 0 {
+            print("🏃‍♂️ Moving toward \(target), distance: \(String(format: "%.1f", distance))")
+        }
     }
     
     func moveToGrid(_ gridPosition: GridCoordinate, completion: (() -> Void)? = nil) {
@@ -125,18 +134,13 @@ class PhysicsMovementController: MovementController {
             return
         }
         
-        let currentVelocity = physicsBody.velocity
-        let dampingForce = CGVector(
-            dx: -currentVelocity.dx * physicsBody.linearDamping,
-            dy: -currentVelocity.dy * physicsBody.linearDamping
-        )
-        
-        physicsBody.applyForce(dampingForce)
+        // FIXED: Complete stop - zero velocity and clear all forces
+        physicsBody.velocity = CGVector.zero
         
         // Use stopInternal to avoid calling handleGridArrival again
         stopInternal()
         
-        print("🛑 Movement stopped")
+        print("🛑 Movement stopped with complete velocity reset")
     }
     
     func setMaxSpeed(_ speed: CGFloat) {
@@ -334,8 +338,9 @@ class NPCMovementController: PhysicsMovementController {
             y: homeWorldPos.y + sin(CGFloat(angle)) * distance
         )
         
+        // FIXED: Use proper movement initialization like character does
         currentTarget = randomTarget
-        isMoving = true
+        setMoving(true)  // Ensure movement state is properly set
         
         print("🦊 NPC wandering to \(randomTarget)")
     }

@@ -105,15 +105,8 @@ class Character: SKSpriteNode {
     // MARK: - Touch/Input Handling
     func handleTouchMovement(to worldPosition: CGPoint) {
         if MovementConfig.usePhysicsMovement {
-            // Physics-based movement
-            let gridPosition = gridService.worldToGrid(worldPosition)
-            
-            if gridPosition.isValid() {
-                moveToGrid(gridPosition)
-            } else {
-                // For out-of-bounds touches, move toward the position using free movement
-                moveToward(worldPosition)
-            }
+            // Physics-based movement - smooth, no grid constraints
+            moveToward(worldPosition)
         } else {
             // FIXED: Smart pathfinding for SKAction-based movement
             let gridPosition = gridService.worldToGrid(worldPosition)
@@ -273,6 +266,7 @@ class Character: SKSpriteNode {
     // MARK: - Physics Movement Methods
     func moveToward(_ worldPosition: CGPoint) {
         targetWorldPosition = worldPosition
+        movementController.setMoving(true)  // FIXED: Ensure movement state is set
         print("🏃‍♂️ Character moving toward world position \(worldPosition)")
     }
     
@@ -457,12 +451,20 @@ class Character: SKSpriteNode {
     }
     
     private func updateGridPositionTracking() {
+        // Only update grid position when character stops moving (for physics mode)
         if !isMoving {
             let currentWorldPos = position
             let newGridPos = gridService.worldToGrid(currentWorldPos)
             if newGridPos != lastGridPosition && newGridPos.isValid() {
-                lastGridPosition = newGridPos
-                // gridService updates happen via moveToGrid() calls to avoid conflicts
+                // Only update if significantly different to avoid jitter
+                let distance = sqrt(pow(Float(newGridPos.x - lastGridPosition.x), 2) + pow(Float(newGridPos.y - lastGridPosition.y), 2))
+                if distance >= 1.0 {
+                    lastGridPosition = newGridPos
+                    // Don't constantly update gridService in physics mode - let physics handle position
+                    if !MovementConfig.usePhysicsMovement {
+                        gridService.moveCharacterTo(newGridPos)
+                    }
+                }
             }
         }
     }

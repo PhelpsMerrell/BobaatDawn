@@ -367,8 +367,10 @@ class NPC: SKLabelNode {
     }
 
     private func updateLeaving(satisfied: Bool) {
-        if Int(stateTimer * 10) % 15 == 0 {
+        // More frequent movement attempts when leaving
+        if Int(stateTimer * 20) % 10 == 0 {
             if npcService.isNearExit(gridPosition) {
+                print("🚺 \(animalType.rawValue) reached exit, removing from scene")
                 removeSelf()
             } else {
                 moveTowardExit()
@@ -385,6 +387,12 @@ class NPC: SKLabelNode {
         movementController.moveToGrid(targetCell) { [weak self] in
             self?.handleCellArrival(targetCell)
         }
+    }
+    
+    private func moveTowardWorldPosition(_ worldPosition: CGPoint) {
+        // FIXED: For NPCs moving to world positions (not grid-constrained)
+        movementController.currentTarget = worldPosition
+        movementController.setMoving(true)
     }
 
     private func handleCellArrival(_ cell: GridCoordinate) {
@@ -455,16 +463,38 @@ class NPC: SKLabelNode {
     }
 
     private func createCarriedDrink(from tableDrink: SKNode) -> SKNode {
-        let carriedVersion = SKSpriteNode(color: .brown, size: GameConfig.NPC.CarriedDrink.size)
-
-        let lid = SKSpriteNode(color: .lightGray, size: GameConfig.NPC.CarriedDrink.lidSize)
-        lid.position = GameConfig.NPC.CarriedDrink.lidOffset
-        carriedVersion.addChild(lid)
-
-        let straw = SKSpriteNode(color: .white, size: GameConfig.NPC.CarriedDrink.strawSize)
-        straw.position = GameConfig.NPC.CarriedDrink.strawOffset
-        carriedVersion.addChild(straw)
-
+        // Create carried drink using actual sprites (same as player drinks)
+        let carriedVersion = SKNode()
+        
+        // Copy all sprite children from the table drink to preserve your artwork
+        for child in tableDrink.children {
+            if let spriteChild = child as? SKSpriteNode {
+                let copiedSprite = spriteChild.copy() as! SKSpriteNode
+                // Scale up slightly for NPC carried version (from 60% table size to ~80% of original)
+                copiedSprite.setScale(spriteChild.xScale * 1.33) // 60% -> 80%
+                copiedSprite.position = spriteChild.position
+                copiedSprite.zPosition = spriteChild.zPosition
+                copiedSprite.alpha = spriteChild.alpha
+                carriedVersion.addChild(copiedSprite)
+            }
+        }
+        
+        // If no sprites were found, create a fallback using actual sprite assets
+        if carriedVersion.children.isEmpty {
+            let bobaAtlas = SKTextureAtlas(named: "Boba")
+            let cupTexture = bobaAtlas.textureNamed("cup_empty")
+            let cup = SKSpriteNode(texture: cupTexture)
+            let cupScale = 20.0 / cupTexture.size().width // Small scale for NPC
+            cup.setScale(cupScale)
+            cup.position = CGPoint.zero
+            cup.zPosition = 0
+            carriedVersion.addChild(cup)
+            
+            print("🧋 NPC created fallback drink with actual cup sprite")
+        } else {
+            print("🧋 NPC copied \(carriedVersion.children.count) sprite layers from table drink")
+        }
+        
         return carriedVersion
     }
 
@@ -474,7 +504,8 @@ class NPC: SKLabelNode {
             moveToCell(targetCell)
         } else {
             let doorWorldPos = GameConfig.doorWorldPosition()
-            _ = movementController.beginMovement(to: doorWorldPos)
+            // FIXED: Use proper movement initialization for exit movement
+            moveTowardWorldPosition(doorWorldPos)
         }
     }
 
@@ -569,15 +600,34 @@ class NPC: SKLabelNode {
 
     // MARK: - Lifecycle
     private func removeSelf() {
+        print("🚺 ✅ \(animalType.rawValue) leaving scene - cleaning up")
+        
         switch state {
         case .leaving(let satisfied):
-            if satisfied { stopHappyAnimation() } else { stopNeutralAnimation() }
-        default: break
+            if satisfied { 
+                stopHappyAnimation() 
+                print("🚺 \(animalType.rawValue) left satisfied 😊")
+            } else { 
+                stopNeutralAnimation() 
+                print("🚺 \(animalType.rawValue) left disappointed 😔")
+            }
+        default: 
+            print("🚺 \(animalType.rawValue) left in \(state.displayName) state")
         }
 
-        if let drink = carriedDrink { drink.removeFromParent() }
+        // Clean up carried drink
+        if let drink = carriedDrink { 
+            drink.removeFromParent() 
+            print("🧋 Removed carried drink from \(animalType.rawValue)")
+        }
+        
+        // Free up grid space
         gridService.freeCell(gridPosition)
+        print("🗺 Freed grid cell \(gridPosition) for \(animalType.rawValue)")
+        
+        // Remove from scene
         removeFromParent()
+        print("🎆 \(animalType.rawValue) successfully removed from scene")
     }
 
     // MARK: - Debug

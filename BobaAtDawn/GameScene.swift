@@ -257,7 +257,7 @@ class GameScene: BaseGameScene {
             let worldPos = gridService.gridToWorld(cell)
             
             station.position = worldPos
-            station.zPosition = 50  // Same high z as working red markers
+            station.zPosition = 15  // Lower z-position so ground touches work
             addChild(station)
             ingredientStations.append(station)
             
