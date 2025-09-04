@@ -13,6 +13,7 @@ class ForestScene: BaseGameScene {
     // MARK: - Room System (Internal - accessible to extensions)
     internal var currentRoom: Int = 1 // Rooms 1-5
     internal let roomEmojis = ["", "🍄", "⛰️", "⭐", "💎", "🌳"] // Index 0 unused, rooms 1-5
+    private let residentManager = NPCResidentManager.shared
     
     // MARK: - Room Elements (Internal - accessible to extensions)
     internal var roomIdentifier: SKLabelNode! // Big emoji in center
@@ -98,6 +99,9 @@ class ForestScene: BaseGameScene {
     }
     
     override open func setupSpecificContent() {
+        // Register with resident manager
+        residentManager.registerForestScene(self)
+        
         setupCurrentRoom()
         
         print("🌲 Forest Scene initialized - Room \\(currentRoom): \\(roomEmojis[currentRoom])")
@@ -113,36 +117,14 @@ class ForestScene: BaseGameScene {
         // Add misty transition effects
         setupMistyEffects()
         
-        // Spawn NPCs for this room
-        spawnRoomNPCs()
+        // Notify resident manager of room change
+        residentManager.forestRoomChanged(to: currentRoom, scene: self)
         
         print("🌲 Room \\(currentRoom) setup complete: \\(roomEmojis[currentRoom])")
     }
     
-    // MARK: - NPC Management
-    private func spawnRoomNPCs() {
-        // Get 1-2 random NPCs for this room
-        let npcCount = Int.random(in: 1...2)
-        let selectedNPCs = DialogueService.shared.getRandomNPCs(count: npcCount)
-        
-        for (index, npcData) in selectedNPCs.enumerated() {
-            // Generate random position within forest bounds (avoid edges)
-            let margin: CGFloat = 150
-            let xRange = (-worldWidth/2 + margin)...(worldWidth/2 - margin)
-            let yRange = (-worldHeight/2 + margin)...(worldHeight/2 - margin)
-            
-            let randomX = CGFloat.random(in: xRange)
-            let randomY = CGFloat.random(in: yRange)
-            let position = CGPoint(x: randomX, y: randomY)
-            
-            // Create and add NPC
-            let npc = ForestNPC(npcData: npcData, at: position)
-            roomNPCs.append(npc)
-            addChild(npc)
-            
-            print("🎭 Spawned \\(npcData.name) (\\(npcData.emoji)) in room \\(currentRoom)")
-        }
-    }
+    // MARK: - NPC Management (Now handled by ResidentManager)
+    // NPCs are now managed by NPCResidentManager for persistent world
     
     private func clearRoomNPCs() {
         // Remove existing NPCs

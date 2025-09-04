@@ -161,7 +161,7 @@ class NPC: SKLabelNode {
         fontName = GameConfig.NPC.fontName
         horizontalAlignmentMode = .center
         verticalAlignmentMode = .center
-        zPosition = GameConfig.NPC.zPosition
+        zPosition = ZLayers.npcs
 
         // Set up physics body BEFORE any movementController use
         setupPhysicsBody()
@@ -448,7 +448,7 @@ class NPC: SKLabelNode {
 
         let carriedDrink = createCarriedDrink(from: drink)
         carriedDrink.position = GameConfig.NPC.CarriedDrink.carryOffset
-        carriedDrink.zPosition = 1
+        carriedDrink.zPosition = ZLayers.childLayer(for: ZLayers.npcs)
         addChild(carriedDrink)
 
         let floatAction = SKAction.repeatForever(

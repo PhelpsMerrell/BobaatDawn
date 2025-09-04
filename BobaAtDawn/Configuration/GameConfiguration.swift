@@ -65,7 +65,6 @@ struct GameConfig {
         static let size = CGSize(width: 40, height: 60)
         static let color = SKColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1.0)
         static let carryOffset: CGFloat = 80
-        static let zPosition: CGFloat = 10
         
         // Movement configuration
         static let baseMovementSpeed: CGFloat = 300 // Points per second
@@ -123,7 +122,6 @@ struct GameConfig {
     struct NPC {
         static let fontSize: CGFloat = 36
         static let fontName = "Arial"
-        static let zPosition: CGFloat = 12
         static let maxNPCs = 3
         
         // Movement configuration
@@ -199,7 +197,6 @@ struct GameConfig {
         static let occupiedCellFeedbackRadius: CGFloat = 18 // 30% of cell size
         static let feedbackColor = SKColor.orange.withAlphaComponent(0.4)
         static let feedbackLineWidth: CGFloat = 2
-        static let feedbackZPosition: CGFloat = 5
         
         // Feedback animation timing
         static let feedbackScaleAmount: CGFloat = 1.2
@@ -224,7 +221,6 @@ struct GameConfig {
         // Time display configuration
         static let labelFontSize: CGFloat = 24
         static let labelFontName = "Arial-Bold"
-        static let labelZPosition: CGFloat = 11
         
         // Phase colors
         static let dawnColor = SKColor.systemPink
@@ -237,7 +233,6 @@ struct GameConfig {
     struct TableService {
         // Table drink positioning
         static let drinkOnTableOffset = CGPoint(x: 0, y: 25)
-        static let drinkOnTableZPosition: CGFloat = 1
         static let drinkOnTableSize = CGSize(width: 20, height: 30)
         
         // Table drink components
@@ -261,8 +256,6 @@ struct GameConfig {
     // MARK: - Object Configuration
     struct Objects {
         static let defaultSize = CGSize(width: 60, height: 60)
-        static let defaultZPosition: CGFloat = 3
-        static let carryZPosition: CGFloat = 15
         
         // Rotation configuration
         static let rotationDuration: TimeInterval = 0.3
@@ -314,7 +307,6 @@ struct GameConfig {
     struct Debug {
         static let showGridOverlay = false
         static let gridOverlayAlpha: CGFloat = 0.1
-        static let gridOverlayZPosition: CGFloat = -5
         static let logNPCStatusInterval: TimeInterval = 5.0 // Every 5 seconds
     }
 }

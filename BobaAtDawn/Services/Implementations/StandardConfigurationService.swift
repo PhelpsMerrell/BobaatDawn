@@ -36,7 +36,6 @@ class StandardConfigurationService: ConfigurationService {
     var characterSize: CGSize { GameConfig.Character.size }
     var characterColor: SKColor { GameConfig.Character.color }
     var characterCarryOffset: CGFloat { GameConfig.Character.carryOffset }
-    var characterZPosition: CGFloat { GameConfig.Character.zPosition }
     var characterBaseMovementSpeed: CGFloat { GameConfig.Character.baseMovementSpeed }
     var characterMinMovementDuration: TimeInterval { GameConfig.Character.minMovementDuration }
     var characterMaxMovementDuration: TimeInterval { GameConfig.Character.maxMovementDuration }
@@ -72,7 +71,6 @@ class StandardConfigurationService: ConfigurationService {
     // MARK: - NPC Configuration
     var npcFontSize: CGFloat { GameConfig.NPC.fontSize }
     var npcFontName: String { GameConfig.NPC.fontName }
-    var npcZPosition: CGFloat { GameConfig.NPC.zPosition }
     var npcMaxCount: Int { GameConfig.NPC.maxNPCs }
     var npcMoveSpeed: TimeInterval { GameConfig.NPC.moveSpeed }
     var npcWanderRadius: Int { GameConfig.NPC.wanderRadius }
@@ -101,7 +99,6 @@ class StandardConfigurationService: ConfigurationService {
     var touchOccupiedCellFeedbackRadius: CGFloat { GameConfig.Touch.occupiedCellFeedbackRadius }
     var touchFeedbackColor: SKColor { GameConfig.Touch.feedbackColor }
     var touchFeedbackLineWidth: CGFloat { GameConfig.Touch.feedbackLineWidth }
-    var touchFeedbackZPosition: CGFloat { GameConfig.Touch.feedbackZPosition }
     var touchFeedbackScaleAmount: CGFloat { GameConfig.Touch.feedbackScaleAmount }
     var touchFeedbackScaleDuration: TimeInterval { GameConfig.Touch.feedbackScaleDuration }
     var touchFeedbackWaitDuration: TimeInterval { GameConfig.Touch.feedbackWaitDuration }
@@ -114,7 +111,6 @@ class StandardConfigurationService: ConfigurationService {
     var timeNightDuration: TimeInterval { GameConfig.Time.nightDuration }
     var timeLabelFontSize: CGFloat { GameConfig.Time.labelFontSize }
     var timeLabelFontName: String { GameConfig.Time.labelFontName }
-    var timeLabelZPosition: CGFloat { GameConfig.Time.labelZPosition }
     var timeDawnColor: SKColor { GameConfig.Time.dawnColor }
     var timeDayColor: SKColor { GameConfig.Time.dayColor }
     var timeDuskColor: SKColor { GameConfig.Time.duskColor }
@@ -131,8 +127,6 @@ class StandardConfigurationService: ConfigurationService {
     
     // MARK: - Objects Configuration
     var objectDefaultSize: CGSize { GameConfig.Objects.defaultSize }
-    var objectDefaultZPosition: CGFloat { GameConfig.Objects.defaultZPosition }
-    var objectCarryZPosition: CGFloat { GameConfig.Objects.carryZPosition }
     var objectRotationDuration: TimeInterval { GameConfig.Objects.rotationDuration }
     var objectRotationFeedbackScale: CGFloat { GameConfig.Objects.rotationFeedbackScale }
     var objectRotationFeedbackDuration: TimeInterval { GameConfig.Objects.rotationFeedbackDuration }
@@ -146,7 +140,6 @@ class StandardConfigurationService: ConfigurationService {
     
     // MARK: - Table Service Configuration
     var tableDrinkOnTableOffset: CGPoint { GameConfig.TableService.drinkOnTableOffset }
-    var tableDrinkOnTableZPosition: CGFloat { GameConfig.TableService.drinkOnTableZPosition }
     var tableDrinkOnTableSize: CGSize { GameConfig.TableService.drinkOnTableSize }
     var tableLidSize: CGSize { GameConfig.TableService.tableLidSize }
     var tableLidOffset: CGPoint { GameConfig.TableService.tableLidOffset }
@@ -158,7 +151,6 @@ class StandardConfigurationService: ConfigurationService {
     // MARK: - Debug Configuration
     var debugShowGridOverlay: Bool { GameConfig.Debug.showGridOverlay }
     var debugGridOverlayAlpha: CGFloat { GameConfig.Debug.gridOverlayAlpha }
-    var debugGridOverlayZPosition: CGFloat { GameConfig.Debug.gridOverlayZPosition }
     var debugLogNPCStatusInterval: TimeInterval { GameConfig.Debug.logNPCStatusInterval }
     
     // MARK: - Convenience Methods

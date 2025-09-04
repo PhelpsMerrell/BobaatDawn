@@ -105,8 +105,8 @@ class StandardInputService: InputService {
             return .longPress(node: interactable, location: location)
         }
         
-        // Handle movement for available cells
-        if gridService.isCellAvailable(targetCell) {
+        // Handle movement for available cells OR force direct movement
+        if gridService.isCellAvailable(targetCell) || MovementConfig.directMovement {
             return .movement(targetCell: targetCell)
         } else {
             return .occupiedCell(cell: targetCell)

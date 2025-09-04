@@ -48,7 +48,7 @@ class RotatableObject: SKSpriteNode {
         super.init(texture: nil, color: color, size: defaultSize)
         
         name = "rotatable_\(type)_\(shape)"
-        zPosition = GameConfig.Objects.defaultZPosition
+        zPosition = ZLayers.layerFor(objectType: type)
         setupVisualShape(shape)
     }
     

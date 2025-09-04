@@ -214,9 +214,10 @@ class BaseGameScene: SKScene, InputServiceDelegate {
             startLongPress(for: node, at: location)
             
         case .movement(let targetCell):
-            // Use physics-based movement (NEW)
-            character.handleTouchMovement(to: gridService.gridToWorld(targetCell))
-            print("🎯 Character moving with physics to cell \(targetCell)")
+            // Use direct movement for maximum responsiveness
+            let targetWorldPos = gridService.gridToWorld(targetCell)
+            character.handleTouchMovement(to: targetWorldPos)
+            print("🎯 Character moving to tapped location immediately")
             
         case .occupiedCell(let cell):
             inputService.showOccupiedCellFeedback(at: cell, in: self, gridService: gridService)

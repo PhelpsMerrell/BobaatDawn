@@ -13,11 +13,13 @@ struct NPCData: Codable {
     let name: String
     let animal: String
     let causeOfDeath: String
+    let homeRoom: Int
     let dialogue: NPCDialogue
     
     enum CodingKeys: String, CodingKey {
         case id, name, animal, dialogue
         case causeOfDeath = "cause_of_death"
+        case homeRoom = "home_room"
     }
 }
 
@@ -45,6 +47,12 @@ extension NPCData {
         case "songbird": return "🐦"
         case "bear": return "🐻"
         case "mouse": return "🐭"
+        case "hedgehog": return "🦔"
+        case "frog": return "🐸"
+        case "duck": return "🦆"
+        case "raccoon": return "🦝"
+        case "squirrel": return "🐿️"
+        case "bat": return "🦇"
         default: return "🦔" // Default hedgehog for unknown animals
         }
     }
@@ -53,6 +61,28 @@ extension NPCData {
     func getRandomDialogue(isNight: Bool) -> String {
         let lines = isNight ? dialogue.night : dialogue.day
         return lines.randomElement() ?? "..."
+    }
+}
+
+// MARK: - NPC Database Extensions
+extension NPCDatabase {
+    /// Get all NPCs that live in a specific forest room
+    func npcsInRoom(_ room: Int) -> [NPCData] {
+        return npcs.filter { $0.homeRoom == room }
+    }
+    
+    /// Get all forest residents (all NPCs have homes)
+    var allResidents: [NPCData] {
+        return npcs
+    }
+    
+    /// Get residents distributed across all rooms
+    var roomDistribution: [Int: [NPCData]] {
+        var distribution: [Int: [NPCData]] = [:]
+        for room in 1...5 {
+            distribution[room] = npcsInRoom(room)
+        }
+        return distribution
     }
 }
 

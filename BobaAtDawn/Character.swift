@@ -1,7 +1,9 @@
 // MARK: - Movement Configuration
 struct MovementConfig {
-    static let usePhysicsMovement = true  // ENABLE PHYSICS MOVEMENT TO MATCH SHOP
+    static let usePhysicsMovement = false  // DISABLE PHYSICS - use simple SKAction movement
     static let debugMovement = false      // Disabled for immersion
+    static let simplifiedMovement = true  // NEW: Bypass complex pathfinding for responsiveness
+    static let directMovement = true      // NEW: Move directly to tapped location when possible
 }//
 //  Character.swift
 //  BobaAtDawn
@@ -66,7 +68,7 @@ class Character: SKSpriteNode {
         super.init(texture: nil, color: GameConfig.Character.color, size: GameConfig.Character.size)
         
         name = "character"
-        zPosition = GameConfig.Character.zPosition
+        zPosition = ZLayers.character
         
         // Set up physics body BEFORE any movementController access
         setupPhysicsBody()
@@ -104,22 +106,60 @@ class Character: SKSpriteNode {
     
     // MARK: - Touch/Input Handling
     func handleTouchMovement(to worldPosition: CGPoint) {
-        if MovementConfig.usePhysicsMovement {
+        if MovementConfig.directMovement {
+            // DIRECT MOVEMENT: Move immediately to tapped location without grid constraints
+            moveDirectlyTo(worldPosition)
+        } else if MovementConfig.usePhysicsMovement {
             // Physics-based movement - smooth, no grid constraints
             moveToward(worldPosition)
         } else {
-            // FIXED: Smart pathfinding for SKAction-based movement
+            // SIMPLIFIED: Basic grid movement without complex pathfinding
             let gridPosition = gridService.worldToGrid(worldPosition)
             if gridPosition.isValid() {
-                // Try direct path first, then find alternate route if blocked
                 if gridService.isCellAvailable(gridPosition) {
                     moveToGridWithAction(gridPosition)
-                } else {
-                    // SMART PATHFINDING: Find nearest available cell
-                    findAndMoveToNearestAvailable(target: gridPosition)
+                } else if MovementConfig.simplifiedMovement {
+                    // Just try to move to the nearest available cell, no complex pathfinding
+                    if let nearestCell = gridService.findNearestAvailableCell(to: gridPosition, maxRadius: 2) {
+                        moveToGridWithAction(nearestCell)
+                    }
                 }
             }
         }
+    }
+    
+    // MARK: - Direct Movement (NEW - Most Responsive)
+    private func moveDirectlyTo(_ worldPosition: CGPoint) {
+        // Stop any current movement
+        removeAction(forKey: "character_movement")
+        
+        // Calculate movement duration based on distance
+        let distance = sqrt(pow(worldPosition.x - position.x, 2) + pow(worldPosition.y - position.y, 2))
+        let duration = max(0.1, min(0.4, TimeInterval(distance / 400))) // Very fast movement
+        
+        // Create smooth movement action
+        let moveAction = SKAction.move(to: worldPosition, duration: duration)
+        moveAction.timingMode = .easeOut
+        
+        // Add completion action for feedback
+        let completionAction = SKAction.run {
+            // Update carried item position after movement
+            self.updateCarriedItemPosition()
+            
+            // Update grid service with new position
+            let finalGridPos = self.gridService.worldToGrid(self.position)
+            if finalGridPos.isValid() {
+                self.gridService.moveCharacterTo(finalGridPos)
+            }
+            
+            // Very subtle haptic feedback
+            self.triggerArrivalFeedback()
+        }
+        
+        let sequenceAction = SKAction.sequence([moveAction, completionAction])
+        run(sequenceAction, withKey: "character_movement")
+        
+        print("🏃‍♂️ Character moving directly to \(worldPosition) in \(String(format: "%.2f", duration))s")
     }
     
     // MARK: - Haptic Feedback (Immersive)
@@ -340,7 +380,7 @@ class Character: SKSpriteNode {
             )
             item.run(floatAction, withKey: "floating")
         }
-        item.zPosition = GameConfig.Objects.carryZPosition
+        item.zPosition = ZLayers.carriedItems
     }
     
     func dropItem() {
@@ -382,7 +422,7 @@ class Character: SKSpriteNode {
             print("📦 Dropped \(item.objectType) at character position (no grid cells available)")
         }
         
-        item.zPosition = GameConfig.Objects.defaultZPosition
+        item.zPosition = ZLayers.groundObjects
         carriedItem = nil
     }
     

@@ -13,6 +13,7 @@ class GameScene: BaseGameScene {
     // MARK: - Game-Specific Services
     private lazy var npcService: NPCService = serviceContainer.resolve(NPCService.self)
     private lazy var timeService: TimeService = serviceContainer.resolve(TimeService.self)
+    private let residentManager = NPCResidentManager.shared
     
     // MARK: - Game Objects (Internal - accessible to extensions)
     internal var ingredientStations: [IngredientStation] = []
@@ -30,57 +31,49 @@ class GameScene: BaseGameScene {
     // MARK: - Grid Visual Debug (Optional)
     private var showGridOverlay = false  // DISABLED: Grid overlay hidden
     
-    // MARK: - NPC System
-    private var npcs: [NPC] = []
-    private var lastNPCSpawnTime: TimeInterval = 0
-    private lazy var maxNPCs = configService.npcMaxCount
-    private var sceneTime: TimeInterval = 0 // Track scene time consistently
+    // MARK: - NPC System (Now managed by ResidentManager)
+    // NPCs are now managed by NPCResidentManager for persistent world
+    private var npcs: [NPC] = [] // Shop NPCs only
     
     // MARK: - BaseGameScene Template Method Implementation
     override open func setupSpecificContent() {
-        print("🔧 GameScene.setupSpecificContent() starting...")
-        
-        do {
-            // NEW: Set up physics world first
-            setupPhysicsWorld()
-            print("✅ Physics world setup complete")
+            print("🔧 GameScene.setupSpecificContent() starting...")
             
-            setupIngredientStations()
-            print("✅ Ingredient stations setup complete")
-            
-            convertExistingObjectsToGrid()
-            print("✅ Objects converted to grid")
-            
-            setupTimeSystem()
-            print("✅ Time system setup complete")
-            
-            // Optional grid overlay for development
-            if showGridOverlay {
-                addGridOverlay()
-                print("✅ Grid overlay added")
+            do {
+                // NEW: Set up physics world first
+                setupPhysicsWorld()
+                print("✅ Physics world setup complete")
+                
+                setupIngredientStations()
+                print("✅ Ingredient stations setup complete")
+                
+                convertExistingObjectsToGrid()
+                print("✅ Objects converted to grid")
+                
+                setupTimeSystem()
+                print("✅ Time system setup complete")
+                
+                // NEW: Initialize resident manager and living world
+                setupLivingWorld()
+                print("✅ Living world initialized")
+                
+                // Optional grid overlay for development
+                if showGridOverlay {
+                    addGridOverlay()
+                    print("✅ Grid overlay added")
+                }
+                
+                print("🍯 Physics-enabled game initialized with DI!")
+                gridService.printGridState()
+                
+                print("🔧 GameScene.setupSpecificContent() completed successfully")
+                
+            } catch {
+                print("❌ CRITICAL ERROR in setupSpecificContent(): \(error)")
+                // Try to continue with minimal setup
+                setupTimeSystem()
             }
-            
-            print("🍯 Physics-enabled game initialized with DI!")
-            gridService.printGridState()
-            
-            // Initialize NPC system
-            lastNPCSpawnTime = 0 // Use scene time instead of absolute time
-            
-            print("🦊 NPC system initialized, first spawn in ~1 second")
-            
-            // IMMEDIATE DEBUG: Force spawn one animal right now
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self.forceSpawnDebugNPC()
-            }
-            
-            print("🔧 GameScene.setupSpecificContent() completed successfully")
-            
-        } catch {
-            print("❌ CRITICAL ERROR in setupSpecificContent(): \(error)")
-            // Try to continue with minimal setup
-            setupTimeSystem()
         }
-    }
     
     // MARK: - Physics Setup (NEW)
     private func setupPhysicsWorld() {
@@ -124,7 +117,7 @@ class GameScene: BaseGameScene {
         
         shopFloor = SKSpriteNode(color: configService.floorColor, size: shopFloorSize)
         shopFloor.position = CGPoint(x: 0, y: 0)
-        shopFloor.zPosition = -10
+        shopFloor.zPosition = ZLayers.floor
         addChild(shopFloor)
         
         // Add shop floor boundary (visual only)
@@ -146,7 +139,7 @@ class GameScene: BaseGameScene {
         }
         let wallTop = SKSpriteNode(color: wallColor, size: topWallSize)
         wallTop.position = CGPoint(x: 0, y: worldHeight/2 - wallInset)
-        wallTop.zPosition = -5
+        wallTop.zPosition = ZLayers.walls
         addChild(wallTop)
         
         // Bottom wall
@@ -158,7 +151,7 @@ class GameScene: BaseGameScene {
         }
         let wallBottom = SKSpriteNode(color: wallColor, size: bottomWallSize)
         wallBottom.position = CGPoint(x: 0, y: -worldHeight/2 + wallInset)
-        wallBottom.zPosition = -5
+        wallBottom.zPosition = ZLayers.walls
         addChild(wallBottom)
         
         // Left wall
@@ -170,7 +163,7 @@ class GameScene: BaseGameScene {
         }
         let wallLeft = SKSpriteNode(color: wallColor, size: leftWallSize)
         wallLeft.position = CGPoint(x: -worldWidth/2 + wallInset, y: 0)
-        wallLeft.zPosition = -5
+        wallLeft.zPosition = ZLayers.walls
         addChild(wallLeft)
         
         // Add front door using grid positioning
@@ -180,7 +173,7 @@ class GameScene: BaseGameScene {
         frontDoor.horizontalAlignmentMode = .center
         frontDoor.verticalAlignmentMode = .center
         frontDoor.position = GameConfig.doorWorldPosition()  // FIXED: Use grid positioning
-        frontDoor.zPosition = 20 // Very high above everything
+        frontDoor.zPosition = ZLayers.doors
         frontDoor.name = "front_door"
         addChild(frontDoor)
         
@@ -195,7 +188,7 @@ class GameScene: BaseGameScene {
         }
         let wallRight = SKSpriteNode(color: wallColor, size: rightWallSize)
         wallRight.position = CGPoint(x: worldWidth/2 - wallInset, y: 0)
-        wallRight.zPosition = -5
+        wallRight.zPosition = ZLayers.walls
         addChild(wallRight)
         
         print("🌍 GameScene.setupWorld() completed successfully")
@@ -232,7 +225,7 @@ class GameScene: BaseGameScene {
         }
         
         validFloorBounds.position = shopFloorRect.position
-        validFloorBounds.zPosition = -8
+        validFloorBounds.zPosition = ZLayers.shopFloorBounds
         addChild(validFloorBounds)
         
         print("🏠 Shop floor added: grid area \(GameConfig.World.shopFloorArea) = world rect \(shopFloorRect)")
@@ -257,7 +250,7 @@ class GameScene: BaseGameScene {
             let worldPos = gridService.gridToWorld(cell)
             
             station.position = worldPos
-            station.zPosition = 15  // Lower z-position so ground touches work
+            station.zPosition = ZLayers.stations
             addChild(station)
             ingredientStations.append(station)
             
@@ -271,7 +264,7 @@ class GameScene: BaseGameScene {
         drinkCreator = DrinkCreator()
         let displayCell = GridCoordinate(x: 16, y: 13)  // Below tea station center
         drinkCreator.position = gridService.gridToWorld(displayCell)
-        drinkCreator.zPosition = 6
+        drinkCreator.zPosition = ZLayers.drinkCreator
         addChild(drinkCreator)
         gridService.reserveCell(displayCell)
         
@@ -294,7 +287,7 @@ class GameScene: BaseGameScene {
             let obj = RotatableObject(type: config.type, color: config.color, shape: config.shape)
             let worldPos = gridService.gridToWorld(config.gridPos)
             obj.position = worldPos
-            obj.zPosition = 3
+            obj.zPosition = ZLayers.groundObjects
             addChild(obj)
             
             // Register with grid
@@ -319,7 +312,7 @@ class GameScene: BaseGameScene {
             let table = RotatableObject(type: .furniture, color: SKColor(red: 0.4, green: 0.2, blue: 0.1, alpha: 1.0), shape: "table")
             let worldPos = gridService.gridToWorld(gridPos)
             table.position = worldPos
-            table.zPosition = 1
+            table.zPosition = ZLayers.tables
             table.name = "table"
             addChild(table)
             
@@ -337,12 +330,12 @@ class GameScene: BaseGameScene {
         
         timeBreaker = PowerBreaker()
         timeBreaker.position = timePositions.breaker
-        timeBreaker.zPosition = 10
+        timeBreaker.zPosition = ZLayers.timeSystem
         addChild(timeBreaker)
         
         timeWindow = Window()
         timeWindow.position = timePositions.window
-        timeWindow.zPosition = 10
+        timeWindow.zPosition = ZLayers.timeSystem
         addChild(timeWindow)
         
         // Add time phase label
@@ -353,10 +346,53 @@ class GameScene: BaseGameScene {
         timeLabel.horizontalAlignmentMode = .center
         timeLabel.verticalAlignmentMode = .center
         timeLabel.position = timePositions.label
-        timeLabel.zPosition = 11 // Above time window
+        timeLabel.zPosition = ZLayers.timeSystemLabels
         addChild(timeLabel)
         
         print("🌅 Time system positioned: breaker at grid \(GameConfig.Time.breakerGridPosition), window at grid \(GameConfig.Time.windowGridPosition)")
+    }
+    
+    // MARK: - Living World Setup (NEW)
+    private func setupLivingWorld() {
+        // Register this game scene with the resident manager
+        residentManager.registerGameScene(self)
+        
+        // Initialize the world with 3 NPCs in shop and rest in forest
+        residentManager.initializeWorld()
+        
+        print("🌍 Living world initialized with persistent residents")
+    }
+    
+    // MARK: - NPC Creation for Resident Manager
+    func createShopNPC(animalType: AnimalType, resident: NPCResident) -> NPC {
+        // Create NPC with dependencies injected
+        let npc = NPC(animal: animalType, 
+                      startPosition: GameConfig.World.doorGridPosition,
+                      gridService: gridService,
+                      npcService: npcService)
+        
+        // Add to scene and track locally
+        addChild(npc)
+        npcs.append(npc)
+        
+        // Add entrance animation
+        addEntranceAnimation(for: npc)
+        
+        print("🏦 Created shop NPC \(animalType.rawValue) for resident \(resident.npcData.name)")
+        return npc
+    }
+    
+    private func addEntranceAnimation(for npc: NPC) {
+        npc.alpha = 0.0
+        npc.setScale(0.8)
+        
+        let entranceAnimation = SKAction.group([
+            SKAction.fadeIn(withDuration: 0.5),
+            SKAction.scale(to: 1.0, duration: 0.5)
+        ])
+        entranceAnimation.timingMode = .easeOut
+        
+        npc.run(entranceAnimation)
     }
     
 
@@ -369,7 +405,7 @@ class GameScene: BaseGameScene {
                                    size: CGSize(width: 1, height: CGFloat(gridService.rows) * gridService.cellSize))
             line.position = CGPoint(x: gridService.shopOrigin.x + CGFloat(x) * gridService.cellSize, 
                                    y: gridService.shopOrigin.y + CGFloat(gridService.rows) * gridService.cellSize / 2)
-            line.zPosition = -5
+            line.zPosition = ZLayers.gridOverlay
             addChild(line)
         }
         
@@ -378,7 +414,7 @@ class GameScene: BaseGameScene {
                                    size: CGSize(width: CGFloat(gridService.columns) * gridService.cellSize, height: 1))
             line.position = CGPoint(x: gridService.shopOrigin.x + CGFloat(gridService.columns) * gridService.cellSize / 2, 
                                    y: gridService.shopOrigin.y + CGFloat(y) * gridService.cellSize)
-            line.zPosition = -5
+            line.zPosition = ZLayers.gridOverlay
             addChild(line)
         }
         
@@ -507,24 +543,17 @@ class GameScene: BaseGameScene {
     
     // MARK: - BaseGameScene Template Method Implementation
     override open func updateSpecificContent(_ currentTime: TimeInterval) {
-        // Update scene time consistently
-        if sceneTime == 0 {
-            sceneTime = currentTime // Initialize on first frame
-        }
-        let deltaTime = currentTime - sceneTime
-        sceneTime = currentTime
-        
-        // Update character with physics (NEW)
-        character.update(deltaTime: deltaTime)
-        
         // Update time system
         timeService.update()
         
         // Update time display
         updateTimeDisplay()
         
-        // Update NPC system using scene time
-        updateNPCs(sceneTime)
+        // Update resident manager (handles all NPC lifecycle)
+        residentManager.update(deltaTime: 1.0/60.0)
+        
+        // Update shop NPCs
+        updateShopNPCs()
     }
     
     private func updateTimeDisplay() {
@@ -546,30 +575,23 @@ class GameScene: BaseGameScene {
         }
     }
     
-    // MARK: - NPC Management
-    private func updateNPCs(_ currentSceneTime: TimeInterval) {
-        let deltaTime = 1.0/60.0 // Approximate frame time
+    // MARK: - Shop NPC Management (NEW)
+    private func updateShopNPCs() {
+        let deltaTime = 1.0/60.0
         
-        // DEBUG: Print NPC system status every 5 seconds
-        if Int(currentSceneTime) % 5 == 0 && Int(currentSceneTime * 10) % 50 == 0 {
-            let timeSinceLastSpawn = currentSceneTime - lastNPCSpawnTime
-            let nextSpawnIn = getSpawnInterval() - timeSinceLastSpawn
-            let tablesWithDrinks = countTablesWithDrinks()
-            print("🦊 NPC STATUS: \(npcs.count)/\(maxNPCs) NPCs, \(tablesWithDrinks) tables with drinks")
-            print("🦊 SPAWN TIMING: last spawn \(String(format: "%.1f", timeSinceLastSpawn))s ago, next in \(String(format: "%.1f", nextSpawnIn))s")
-            print("🦊 TIME: \(timeService.currentPhase), active: \(timeService.isTimeActive)")
-        }
-        
-        // Update existing NPCs
+        // Update existing shop NPCs
         for npc in npcs {
             npc.update(deltaTime: deltaTime)
         }
         
-        // Remove NPCs that have left (Phase 6: Enhanced cleanup)
+        // Clean up NPCs that have left
         let initialCount = npcs.count
         npcs.removeAll { npc in
             if npc.parent == nil {
-                print("🦊 Cleaned up departed NPC \(npc.animalType.rawValue)")
+                // Notify resident manager when NPC leaves
+                let satisfied = npc.state.isExiting && npc.state.displayName.contains("Happy")
+                residentManager.npcLeftShop(npc, satisfied: satisfied)
+                print("🦊 Cleaned up departed shop NPC \(npc.animalType.rawValue)")
                 return true
             }
             return false
@@ -577,104 +599,8 @@ class GameScene: BaseGameScene {
         
         // Log if NPCs were cleaned up
         if npcs.count < initialCount {
-            print("🦊 NPC cleanup: \(initialCount - npcs.count) NPCs removed, \(npcs.count) remain")
+            print("🦊 Shop NPC cleanup: \(initialCount - npcs.count) NPCs removed, \(npcs.count) remain")
         }
-        
-        // Spawn new NPCs
-        trySpawnNPC(currentSceneTime)
-    }
-    
-    private func trySpawnNPC(_ currentTime: TimeInterval) {
-        // Don't spawn if at capacity
-        guard npcs.count < maxNPCs else {
-            if Int(currentTime) % 10 == 0 && Int(currentTime * 10) % 100 == 0 {
-                print("🦊 Not spawning: at capacity (\(npcs.count)/\(maxNPCs))")
-            }
-            return
-        }
-        
-        // Calculate spawn interval based on time of day
-        let spawnInterval = getSpawnInterval()
-        let timeSinceLastSpawn = currentTime - lastNPCSpawnTime
-        
-        // Check if enough time has passed
-        guard timeSinceLastSpawn > spawnInterval else {
-            if Int(currentTime) % 10 == 0 && Int(currentTime * 10) % 100 == 0 {
-                print("🦊 Not spawning: waiting \(Int(spawnInterval - timeSinceLastSpawn))s more")
-            }
-            return
-        }
-        
-        // Spawn new NPC using DI
-        let isNight = timeService.currentPhase == .night
-        let animal = npcService.selectAnimalForSpawn(isNight: isNight)
-        let npc = npcService.spawnNPC(animal: animal, at: nil as GridCoordinate?)
-        
-        addChild(npc)
-        npcs.append(npc)
-        lastNPCSpawnTime = currentTime
-        
-        print("🦊 ✨ SPAWNED \(animal.rawValue) at \(npc.position) (\(npcs.count)/\(maxNPCs) NPCs)")
-        
-        // No need for entrance animation - already handled in service
-    }
-    
-    private func getSpawnInterval() -> TimeInterval {
-        // PHASE 5: Enhanced spawn rates based on time of day and shop state
-        let baseInterval: TimeInterval
-        
-        switch timeService.currentPhase {
-        case .day:
-            baseInterval = 15.0 // Every 15 seconds during day (was 5s for testing)
-        case .dusk:
-            baseInterval = 25.0 // Every 25 seconds during dusk
-        case .night:
-            baseInterval = 45.0 // Every 45 seconds during night (mysterious visitors)
-        case .dawn:
-            return 999 // No spawning during dawn (prep time)
-        }
-        
-        // PHASE 5: Dynamic adjustments based on shop state
-        let currentOccupancy = Double(npcs.count) / Double(maxNPCs)
-        let occupancyMultiplier = 1.0 + (currentOccupancy * 0.5) // Slower spawning when busy
-        
-        // Check if there are tables with drinks (encourage spawning)
-        let tablesWithDrinks = countTablesWithDrinks()
-        let drinkBonus = tablesWithDrinks > 0 ? 0.7 : 1.0 // 30% faster spawning if drinks available
-        
-        let finalInterval = baseInterval * occupancyMultiplier * drinkBonus
-        
-        print("🦊 Spawn timing: base=\(baseInterval)s, occupancy=\(String(format: "%.1f", occupancyMultiplier))x, drink_bonus=\(String(format: "%.1f", drinkBonus))x, final=\(String(format: "%.1f", finalInterval))s")
-        
-        return finalInterval
-    }
-    
-    private func countTablesWithDrinks() -> Int {
-        var count = 0
-        enumerateChildNodes(withName: "table") { node, _ in
-            if let table = node as? RotatableObject {
-                if table.children.contains(where: { $0.name == "drink_on_table" }) {
-                    count += 1
-                }
-            }
-        }
-        return count
-    }
-    
-    // MARK: - Debug Methods
-    private func forceSpawnDebugNPC() {
-        print("🦊 🚨 FORCE SPAWNING DEBUG NPC NOW!")
-        
-        let npc = npcService.spawnNPC(animal: .fox, at: nil as GridCoordinate?)
-        
-        print("🦊 Created NPC at position: \(npc.position)")
-        
-        addChild(npc)
-        npcs.append(npc)
-        lastNPCSpawnTime = sceneTime
-        
-        print("🦊 ✨ FORCE SPAWNED fox - Total NPCs: \(npcs.count)")
-        print("🦊 NPC added to scene with zPosition: \(npc.zPosition)")
     }
     
     // MARK: - Table Service System (Phase 2)
@@ -685,7 +611,7 @@ class GameScene: BaseGameScene {
         // Create drink sprite as child of table
         let drinkOnTable = createTableDrink(from: drink)
         drinkOnTable.position = configService.tableDrinkOnTableOffset
-        drinkOnTable.zPosition = configService.tableDrinkOnTableZPosition
+        drinkOnTable.zPosition = ZLayers.childLayer(for: ZLayers.tables)
         drinkOnTable.name = "drink_on_table"
         table.addChild(drinkOnTable)
         

@@ -37,7 +37,6 @@ protocol ConfigurationService {
     var characterSize: CGSize { get }
     var characterColor: SKColor { get }
     var characterCarryOffset: CGFloat { get }
-    var characterZPosition: CGFloat { get }
     var characterBaseMovementSpeed: CGFloat { get }
     var characterMinMovementDuration: TimeInterval { get }
     var characterMaxMovementDuration: TimeInterval { get }
@@ -73,7 +72,6 @@ protocol ConfigurationService {
     // MARK: - NPC Configuration
     var npcFontSize: CGFloat { get }
     var npcFontName: String { get }
-    var npcZPosition: CGFloat { get }
     var npcMaxCount: Int { get }
     var npcMoveSpeed: TimeInterval { get }
     var npcWanderRadius: Int { get }
@@ -102,7 +100,6 @@ protocol ConfigurationService {
     var touchOccupiedCellFeedbackRadius: CGFloat { get }
     var touchFeedbackColor: SKColor { get }
     var touchFeedbackLineWidth: CGFloat { get }
-    var touchFeedbackZPosition: CGFloat { get }
     var touchFeedbackScaleAmount: CGFloat { get }
     var touchFeedbackScaleDuration: TimeInterval { get }
     var touchFeedbackWaitDuration: TimeInterval { get }
@@ -115,7 +112,6 @@ protocol ConfigurationService {
     var timeNightDuration: TimeInterval { get }
     var timeLabelFontSize: CGFloat { get }
     var timeLabelFontName: String { get }
-    var timeLabelZPosition: CGFloat { get }
     var timeDawnColor: SKColor { get }
     var timeDayColor: SKColor { get }
     var timeDuskColor: SKColor { get }
@@ -132,8 +128,6 @@ protocol ConfigurationService {
     
     // MARK: - Objects Configuration
     var objectDefaultSize: CGSize { get }
-    var objectDefaultZPosition: CGFloat { get }
-    var objectCarryZPosition: CGFloat { get }
     var objectRotationDuration: TimeInterval { get }
     var objectRotationFeedbackScale: CGFloat { get }
     var objectRotationFeedbackDuration: TimeInterval { get }
@@ -147,7 +141,6 @@ protocol ConfigurationService {
     
     // MARK: - Table Service Configuration
     var tableDrinkOnTableOffset: CGPoint { get }
-    var tableDrinkOnTableZPosition: CGFloat { get }
     var tableDrinkOnTableSize: CGSize { get }
     var tableLidSize: CGSize { get }
     var tableLidOffset: CGPoint { get }
@@ -159,7 +152,6 @@ protocol ConfigurationService {
     // MARK: - Debug Configuration
     var debugShowGridOverlay: Bool { get }
     var debugGridOverlayAlpha: CGFloat { get }
-    var debugGridOverlayZPosition: CGFloat { get }
     var debugLogNPCStatusInterval: TimeInterval { get }
     
     // MARK: - Convenience Methods

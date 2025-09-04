@@ -5,6 +5,7 @@
       "name": "Qari",
       "animal": "Deer",
       "cause_of_death": "Car crash",
+      "home_room": 1,
       "dialogue": {
         "day": [
           "I could sip boba all day, it's like sunshine in a cup!",
@@ -27,6 +28,7 @@
       "name": "Timothy",
       "animal": "Rabbit",
       "cause_of_death": "Starvation",
+      "home_room": 2,
       "dialogue": {
         "day": [
           "Carrots are good, but boba is divine!",
@@ -49,6 +51,7 @@
       "name": "Gertrude",
       "animal": "Wolf",
       "cause_of_death": "Poisoning",
+      "home_room": 3,
       "dialogue": {
         "day": [
           "Sweet boba for a sweet old lady!",
@@ -71,6 +74,7 @@
       "name": "Stanuel",
       "animal": "Mule",
       "cause_of_death": "Overwork",
+      "home_room": 4,
       "dialogue": {
         "day": [
           "Another cup... maybe it'll make me feel lighter.",
@@ -93,6 +97,7 @@
       "name": "BB James",
       "animal": "Pufferfish",
       "cause_of_death": "Choking",
+      "home_room": 5,
       "dialogue": {
         "day": [
           "Boba pearls are the best part! Big, chewy, fun!",
@@ -115,6 +120,7 @@
       "name": "Luna",
       "animal": "Owl",
       "cause_of_death": "Fell from a tree",
+      "home_room": 1,
       "dialogue": {
         "day": [
           "Night or day, boba is my wisdom drink.",
@@ -137,6 +143,7 @@
       "name": "Finn",
       "animal": "Fox",
       "cause_of_death": "Hunting trap",
+      "home_room": 2,
       "dialogue": {
         "day": [
           "Boba hunting is the only hunting I like to do.",
@@ -159,6 +166,7 @@
       "name": "Ivy",
       "animal": "Songbird",
       "cause_of_death": "Window strike",
+      "home_room": 3,
       "dialogue": {
         "day": [
           "I sing while sipping sweet boba songs.",
@@ -181,6 +189,7 @@
       "name": "Oscar",
       "animal": "Bear",
       "cause_of_death": "Forest fire",
+      "home_room": 4,
       "dialogue": {
         "day": [
           "Boba warms me up almost as much as honey.",
@@ -203,6 +212,7 @@
       "name": "Mira",
       "animal": "Mouse",
       "cause_of_death": "Drowning",
+      "home_room": 5,
       "dialogue": {
         "day": [
           "The pearls are so big! I can barely finish them.",
@@ -225,6 +235,7 @@
       "name": "Hazel",
       "animal": "Hedgehog",
       "cause_of_death": "Hit by lawnmower",
+      "home_room": 1,
       "dialogue": {
         "day": [
           "Boba pearls remind me of little berries in the grass!",
@@ -247,6 +258,7 @@
       "name": "Rivet",
       "animal": "Frog",
       "cause_of_death": "Dried out in the sun",
+      "home_room": 2,
       "dialogue": {
         "day": [
           "Slurp, slurp! Just like a juicy fly, but sweeter!",
@@ -269,6 +281,7 @@
       "name": "Della",
       "animal": "Duck",
       "cause_of_death": "Oil spill",
+      "home_room": 3,
       "dialogue": {
         "day": [
           "Boba floats as nicely as I do on the pond!",
@@ -291,6 +304,7 @@
       "name": "Rascal",
       "animal": "Raccoon",
       "cause_of_death": "Garbage truck accident",
+      "home_room": 4,
       "dialogue": {
         "day": [
           "Sweet drinks taste even better than raiding a trash can!",
@@ -313,6 +327,7 @@
       "name": "Nixie",
       "animal": "Squirrel",
       "cause_of_death": "Electrocution on power lines",
+      "home_room": 5,
       "dialogue": {
         "day": [
           "I chatter happily while sipping boba pearls!",
@@ -335,6 +350,7 @@
       "name": "Echo",
       "animal": "Bat",
       "cause_of_death": "Cave collapse",
+      "home_room": 1,
       "dialogue": {
         "day": [
           "Sweet tea keeps my wings strong for night flights.",
