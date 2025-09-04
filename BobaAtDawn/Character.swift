@@ -1,6 +1,6 @@
 // MARK: - Movement Configuration
 struct MovementConfig {
-    static let usePhysicsMovement = false  // SET TO FALSE TO DISABLE PHYSICS MOVEMENT
+    static let usePhysicsMovement = true  // ENABLE PHYSICS MOVEMENT TO MATCH SHOP
     static let debugMovement = false      // Disabled for immersion
 }//
 //  Character.swift

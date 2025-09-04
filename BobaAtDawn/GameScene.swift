@@ -257,7 +257,7 @@ class GameScene: BaseGameScene {
             let worldPos = gridService.gridToWorld(cell)
             
             station.position = worldPos
-            station.zPosition = 5
+            station.zPosition = 50  // Same high z as working red markers
             addChild(station)
             ingredientStations.append(station)
             
@@ -445,6 +445,29 @@ class GameScene: BaseGameScene {
             
         // 6. Handle rotatable objects (including tables)
         } else if let rotatable = node as? RotatableObject {
+            
+            // SPECIAL CASE: Check if this is the drink display from DrinkCreator
+            if rotatable.name == "drink_display" && rotatable.parent == drinkCreator {
+                print("🧋 🎨 PICKING UP YOUR CREATION FROM CREATOR")
+                if character.carriedItem == nil {
+                    
+                    // Create a drink that perfectly matches your current creation
+                    let yourCreation = drinkCreator.createPickupDrink(from: ingredientStations)
+                    character.pickupItem(yourCreation)
+                    
+                    // ALWAYS reset stations and show new empty cup for next creation
+                    print("🧋 💥 RESETTING STATIONS FOR NEXT DRINK...")
+                    drinkCreator.resetStations(ingredientStations)
+                    print("🧋 ✅ Reset complete - ready for your next creation!")
+                    
+                    if yourCreation.objectType == .completedDrink {
+                        debugRecipeSystem()
+                    }
+                } else {
+                    print("❌ Already carrying something")
+                }
+                return // Exit early for drink creator interaction
+            }
             
             // Check if this is a table and we're carrying a drink
             if rotatable.name == "table" && character.carriedItem != nil {
@@ -671,21 +694,25 @@ class GameScene: BaseGameScene {
     }
     
     private func createTableDrink(from originalDrink: RotatableObject) -> SKNode {
-        // Create a smaller version of the drink for table display
-        let tableDrink = SKSpriteNode(color: originalDrink.color, size: configService.tableDrinkOnTableSize)
+        // Create a smaller version that preserves your sprite artwork
+        let tableDrink = SKNode()
         
-        // Copy drink visual elements if it's a completed drink
-        if originalDrink.objectType == .completedDrink {
-            // Add drink details (simplified)
-            let lid = SKSpriteNode(color: configService.tableLidColor, size: configService.tableLidSize)
-            lid.position = configService.tableLidOffset
-            tableDrink.addChild(lid)
-            
-            let straw = SKSpriteNode(color: configService.tableStrawColor, size: configService.tableStrawSize)
-            straw.position = configService.tableStrawOffset
-            tableDrink.addChild(straw)
+        // Copy all sprite children from the carried drink, preserving your artwork
+        for child in originalDrink.children {
+            if let spriteChild = child as? SKSpriteNode {
+                let copiedSprite = spriteChild.copy() as! SKSpriteNode
+                // Scale down for table display (about 60% of carried size) but keep identical positioning
+                copiedSprite.setScale(spriteChild.xScale * 0.6)
+                copiedSprite.position = spriteChild.position // Keep same relative position (zero)
+                copiedSprite.zPosition = spriteChild.zPosition
+                copiedSprite.alpha = spriteChild.alpha
+                tableDrink.addChild(copiedSprite)
+                
+                print("🧋 🎨 Copied sprite \(spriteChild.name ?? "unnamed") to table")
+            }
         }
         
+        print("🧋 🎨 Table drink created with \(tableDrink.children.count) sprite layers")
         return tableDrink
     }
     
