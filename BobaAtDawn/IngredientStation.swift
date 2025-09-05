@@ -22,18 +22,20 @@ class IngredientStation: RotatableObject {
         
         let color = GameConfig.stationColor(for: type)
         
-        switch type {
-        case .ice:
-            currentState = 0 // 0=ice, 1=lite, 2=none
-        case .boba, .foam, .tea, .lid:
-            currentState = false
-        }
+        currentState = false
         
         super.init(type: .station, color: color, shape: "station")
         self.name = "ingredient_station_\(type)"
         self.size = GameConfig.IngredientStations.size
         
         updateVisuals()
+        
+        // CRITICAL: Apply the correct sprite based on station type
+        let spriteApplied = applyStationSpriteFromType()
+        print("🧋 🎨 \(type) station sprite applied: \(spriteApplied)")
+        if !spriteApplied {
+            print("🧋 ⚠️ \(type) station falling back to colored shape")
+        }
     }
     
     required init?(coder aDecoder: NSCoder) {
@@ -42,22 +44,14 @@ class IngredientStation: RotatableObject {
     
     func interact() {
         print("🧋 💆 Interacting with \(stationType) station (current state: \(currentState))")
+        print("🧋 🔍 Station name: \(self.name ?? "unnamed")")
+        print("🧋 🔍 Station position: \(self.position)")
         
-        switch stationType {
-        case .ice:
-            var iceLevel = currentState as! Int
-            let oldLevel = iceLevel
-            iceLevel = (iceLevel + 1) % 3 // 0, 1, 2, back to 0
-            currentState = iceLevel
-            print("🧏 Ice level changed: \(oldLevel) -> \(iceLevel) (0=full, 1=light, 2=none)")
-            
-        case .boba, .foam, .tea, .lid:
-            var toggle = currentState as! Bool
-            let oldState = toggle
-            toggle.toggle()
-            currentState = toggle
-            print("🍵 \(stationType) toggled: \(oldState) -> \(toggle)")
-        }
+        var toggle = currentState as! Bool
+        let oldState = toggle
+        toggle.toggle()
+        currentState = toggle
+        print("🍵 \(stationType) toggled: \(oldState) -> \(toggle)")
         
         updateVisuals()
         
@@ -69,37 +63,51 @@ class IngredientStation: RotatableObject {
         run(pulseAction)
         
         print("🧋 ✅ \(stationType) interaction complete - new state: \(currentState)")
+        
+        // Debug: Print what this station will return for drink creation
+        print("🧋 🔍 hasIce: \(hasIce), hasBoba: \(hasBoba), hasFoam: \(hasFoam), hasTea: \(hasTea), hasLid: \(hasLid)")
     }
     
     private func updateVisuals() {
-        // Simple visual indicator - just change alpha/brightness
-        switch stationType {
-        case .ice:
-            let iceLevel = currentState as! Int
-            alpha = iceLevel == 2 ? 0.3 : (iceLevel == 1 ? 0.6 : 1.0) // none, lite, full
-            
-        case .boba, .foam, .tea, .lid:
+        
             let isActive = currentState as! Bool
             alpha = isActive ? 1.0 : 0.3
-        }
+        
     }
     
     // Getters for drink creation
-    var iceLevel: Int { return currentState as! Int }
-    var hasBoba: Bool { return stationType == .boba ? currentState as! Bool : false }
-    var hasFoam: Bool { return stationType == .foam ? currentState as! Bool : false }
-    var hasTea: Bool { return stationType == .tea ? currentState as! Bool : false }
-    var hasLid: Bool { return stationType == .lid ? currentState as! Bool : false }
+    var hasIce: Bool { 
+        let result = stationType == .ice ? currentState as! Bool : false
+        print("🧋 🧞 hasIce called on \(stationType) station: \(result) (currentState: \(currentState))")
+        return result
+    }
+    var hasBoba: Bool { 
+        let result = stationType == .boba ? currentState as! Bool : false
+        print("🧋 🔴 hasBoba called on \(stationType) station: \(result) (currentState: \(currentState))")
+        return result
+    }
+    var hasFoam: Bool { 
+        let result = stationType == .foam ? currentState as! Bool : false
+        print("🧋 🫧 hasFoam called on \(stationType) station: \(result) (currentState: \(currentState))")
+        return result
+    }
+    var hasTea: Bool { 
+        let result = stationType == .tea ? currentState as! Bool : false
+        print("🧋 🍵 hasTea called on \(stationType) station: \(result) (currentState: \(currentState))")
+        return result
+    }
+    var hasLid: Bool { 
+        let result = stationType == .lid ? currentState as! Bool : false
+        print("🧋 🥇 hasLid called on \(stationType) station: \(result) (currentState: \(currentState))")
+        return result
+    }
     
     func resetToDefault() {
         print("🧋 🔄 Resetting \(stationType) station from state \(currentState)")
         
-        switch stationType {
-        case .ice:
-            currentState = 0
-        case .boba, .foam, .tea, .lid:
-            currentState = false
-        }
+       
+        currentState = false
+        
         
         updateVisuals()
         
@@ -112,5 +120,68 @@ class IngredientStation: RotatableObject {
         run(resetFeedback)
         
         print("🧋 ✅ \(stationType) reset to state \(currentState)")
+    }
+}
+
+
+// MARK: - Sprite Mapping for Stations
+extension IngredientStation.StationType {
+    /// Preferred texture names to try (in order) for this station type.
+    /// 1) A type-specific sprite (e.g., "station_ice")
+    /// 2) A generic fallback sprite (e.g., "station_default")
+    var preferredSpriteNames: [String] {
+        switch self {
+        case .ice:  return ["station_ice", "station_default"]
+        case .boba: return ["station_boba", "station_default"]
+        case .foam: return ["station_foam", "station_default"]
+        case .tea:  return ["station_tea", "station_default"]
+        case .lid:  return ["station_lid", "station_default"]
+        }
+    }
+}
+
+extension IngredientStation {
+    /// Attempts to create a station sprite by trying each name in `preferredNames`.
+    /// Returns true if a texture was found and added; false if we should fall back to vector shapes.
+    @discardableResult
+    func createStationSprite(preferredNames: [String], atlasName: String = "Stations") -> Bool {
+        let atlas = SKTextureAtlas(named: atlasName)
+        
+        print("🧋 🗺 Available textures in \(atlasName) atlas: \(atlas.textureNames.sorted())")
+        print("🧋 🔍 Looking for \(stationType) station textures: \(preferredNames)")
+
+        guard let foundName = preferredNames.first(where: { atlas.textureNames.contains($0) }) else {
+            if let first = preferredNames.first {
+                print("🧋⚠️ No textures found in \(atlasName).atlas for \(preferredNames) — falling back to shape for \(first).")
+            } else {
+                print("🧋⚠️ No preferredNames provided — falling back to shape.")
+            }
+            return false
+        }
+
+        print("🧋 ✅ Found texture '\(foundName)' for \(stationType) station")
+        
+        let texture = atlas.textureNamed(foundName)
+        let node = SKSpriteNode(texture: texture)
+        node.name = "station_sprite_\(foundName)"
+        node.zPosition = 1
+        node.position = .zero
+        node.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        node.setScale(0.7)
+
+        // Remove prior visual children this object added (keep physics/body)
+        self.children
+            .filter { $0.name?.hasPrefix("station_") == true || $0.name?.hasPrefix("shape_") == true }
+            .forEach { $0.removeFromParent() }
+
+        self.addChild(node)
+        print("🧋 🎨 Applied \(foundName) sprite to \(stationType) station")
+        return true
+    }
+
+    /// Convenience: build from the enum you already have (tries type-specific, then "station_default").
+    @discardableResult
+    func applyStationSpriteFromType(atlasName: String = "Stations") -> Bool {
+        return createStationSprite(preferredNames: stationType.preferredSpriteNames, atlasName: atlasName)
     }
 }

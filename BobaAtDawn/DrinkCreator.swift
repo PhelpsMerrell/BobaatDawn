@@ -31,57 +31,64 @@ class DrinkCreator: SKNode {
     }
     
     func updateDrink(from stations: [IngredientStation]) {
-        // NEW: Use Recipe system to evaluate drink
-        let evaluation = RecipeConverter.evaluateRecipe(from: stations)
-        isComplete = RecipeConverter.isComplete(from: stations)
+        print("🧋 🔄 updateDrink called with \(stations.count) stations")
         
-        // Get ingredient states for visual display
-        let ingredients = RecipeConverter.convertToIngredients(from: stations)
-        
-        // Extract visual states for backward compatibility
-        var iceLevel = 0
+        // SIMPLIFIED: Direct station state checking
+        var hasIce = false
         var hasBoba = false
         var hasFoam = false
         var hasTea = false
         var hasLid = false
         
-        for ingredient in ingredients {
-            switch ingredient.type {
+        print("🧋 🔍 === STATION STATE CHECK ===")
+        for (index, station) in stations.enumerated() {
+            switch station.stationType {
             case .ice:
-                iceLevel = ingredient.level == .regular ? 0 : (ingredient.level == .light ? 1 : 2)
+                hasIce = station.hasIce
+                print("🧋 Station \(index + 1): ICE -> \(hasIce ? "ON" : "OFF")")
             case .boba:
-                hasBoba = ingredient.isPresent
+                hasBoba = station.hasBoba
+                print("🧋 Station \(index + 1): BOBA -> \(hasBoba ? "ON" : "OFF")")
             case .foam:
-                hasFoam = ingredient.isPresent
+                hasFoam = station.hasFoam
+                print("🧋 Station \(index + 1): FOAM -> \(hasFoam ? "ON" : "OFF")")
             case .tea:
-                hasTea = ingredient.isPresent
+                hasTea = station.hasTea
+                print("🧋 Station \(index + 1): TEA -> \(hasTea ? "ON" : "OFF")")
             case .lid:
-                hasLid = ingredient.isPresent
+                hasLid = station.hasLid
+                print("🧋 Station \(index + 1): LID -> \(hasLid ? "ON" : "OFF")")
             }
         }
+        print("🧋 🔍 === END STATION CHECK ===")
+        
+        // Simple completion check: tea + lid
+        isComplete = hasTea && hasLid
+        print("🧋 ✅ Completion: tea=\(hasTea), lid=\(hasLid) -> complete=\(isComplete)")
         
         // Update visual display
-        updateDrinkVisuals(iceLevel: iceLevel, hasBoba: hasBoba, hasFoam: hasFoam, hasTea: hasTea, hasLid: hasLid, quality: evaluation.quality)
+        updateDrinkVisuals(hasIce: hasIce, hasBoba: hasBoba, hasFoam: hasFoam, hasTea: hasTea, hasLid: hasLid)
         
         // Add shaking if complete
         updateShaking()
         
-        print("🧋 Recipe Evaluation: \(evaluation.feedback)")
-        if let recipe = evaluation.recipe {
-            print("📖 Recipe: \(recipe.name) - \(recipe.description)")
-            
-            // NEW: Track recipe discovery
-            RecipeManager.getInstance().discoverRecipe(recipe, quality: evaluation.quality)
+        // Simple feedback
+        let activeCount = [hasIce, hasBoba, hasFoam, hasTea, hasLid].filter { $0 }.count
+        if activeCount == 0 {
+            print("🧋 Empty cup - add some ingredients!")
+        } else if isComplete {
+            print("🧋 Drink ready! (\(activeCount) ingredients)")
+        } else {
+            print("🧋 Needs tea + lid to complete (\(activeCount) ingredients so far)")
         }
     }
     
     private func updateDrinkVisuals(
-        iceLevel: Int,
+        hasIce: Bool,
         hasBoba: Bool,
         hasFoam: Bool,
         hasTea: Bool,
-        hasLid: Bool,
-        quality: RecipeQuality
+        hasLid: Bool
     ) {
         // Reset container
         drinkDisplay.removeAllChildren()
@@ -124,12 +131,11 @@ class DrinkCreator: SKNode {
             print("🧋 Tea on (aligned, no per-layer scaling/offset)")
         }
 
-        // 2) Ice (visible only if tea present and iceLevel < 2); adjust opacity by ice level
-        if hasTea && iceLevel < 2 {
-            let iceAlpha: CGFloat = (iceLevel == 0) ? 1.0 : 0.6
-            let ice = makeLayer("ice_cubes", z: 2, visible: true, alpha: iceAlpha)
+        // 2) Ice (simple on/off)
+        if hasIce {
+            let ice = makeLayer("ice_cubes", z: 2, visible: true)
             drinkDisplay.addChild(ice)
-            print("🧊 Ice on (alpha \(iceAlpha))")
+            print("🧊 Ice on")
         }
 
         // 3) Boba
@@ -184,136 +190,112 @@ class DrinkCreator: SKNode {
             return nil 
         }
         
-        // NEW: Use Recipe system to evaluate the completed drink
-        let evaluation = RecipeConverter.evaluateRecipe(from: stations)
-        let ingredients = RecipeConverter.convertToIngredients(from: stations)
-        
-        // Extract visual states for backward compatibility
-        var iceLevel = 0
+        // SIMPLIFIED: Direct station state checking
+        var hasIce = false
         var hasBoba = false
         var hasFoam = false
         var hasTea = false
         var hasLid = false
         
-        for ingredient in ingredients {
-            switch ingredient.type {
-            case .ice:
-                iceLevel = ingredient.level == .regular ? 0 : (ingredient.level == .light ? 1 : 2)
-            case .boba:
-                hasBoba = ingredient.isPresent
-            case .foam:
-                hasFoam = ingredient.isPresent
-            case .tea:
-                hasTea = ingredient.isPresent
-            case .lid:
-                hasLid = ingredient.isPresent
+        for station in stations {
+            switch station.stationType {
+            case .ice: hasIce = station.hasIce
+            case .boba: hasBoba = station.hasBoba
+            case .foam: hasFoam = station.hasFoam
+            case .tea: hasTea = station.hasTea
+            case .lid: hasLid = station.hasLid
             }
         }
         
         // Create completed drink (smaller version)
         let completedDrink = RotatableObject(type: .completedDrink, color: .clear, shape: "drink")
-        
-        // NEW: Include recipe info in the name for NPCs to read
-        if let recipe = evaluation.recipe {
-            completedDrink.name = "completed_\(recipe.name.replacingOccurrences(of: " ", with: "_").lowercased())_\(evaluation.quality.rawValue)"
-        } else {
-            completedDrink.name = "completed_unknown_drink_\(evaluation.quality.rawValue)"
-        }
-        
+        completedDrink.name = "completed_drink"
         completedDrink.size = CGSize(width: 30, height: 45)
         
-        // FIXED: Use sprite atlas for completed drink too
+        // FIXED: Use identical sprite system as display with consistent scaling
         let bobaAtlas = SKTextureAtlas(named: "Boba")
         
-        // Add layers using sprite atlas with smaller scaling for carried version
+        // Get the common scale factor for carried drinks (smaller than display)
         let cupTexture = bobaAtlas.textureNamed("cup_empty")
-        let cup = SKSpriteNode(texture: cupTexture)
-        let cupScale = 25.0 / cupTexture.size().width // Even smaller for carried version
-        cup.setScale(cupScale)
-        cup.position = CGPoint.zero
-        cup.zPosition = 0
-        completedDrink.addChild(cup)
+        let carriedScale = 25.0 / cupTexture.size().width
         
-        if hasTea {
-            let teaTexture = bobaAtlas.textureNamed("tea_black")
-            let tea = SKSpriteNode(texture: teaTexture)
-            let teaScale = 22.0 / teaTexture.size().width
-            tea.setScale(teaScale)
-            tea.position = CGPoint(x: 0, y: -1)
-            tea.zPosition = 1
-            completedDrink.addChild(tea)
+        // Helper function to create perfectly aligned layers (same as display)
+        func makeCarriedLayer(_ name: String, z: CGFloat, visible: Bool = true, alpha: CGFloat = 1.0) -> SKSpriteNode? {
+            // Validate texture exists before creating sprite
+            guard bobaAtlas.textureNames.contains(name) else {
+                print("⚠️ WARNING: Texture '\(name)' not found in Boba atlas for completed drink")
+                return nil
+            }
+            
+            let tex = bobaAtlas.textureNamed(name)
+            tex.filteringMode = .nearest
+            let node = SKSpriteNode(texture: tex)
+            node.anchorPoint = CGPoint(x: 0.5, y: 0.5)   // identical for all
+            node.position = .zero                         // identical for all
+            node.setScale(carriedScale)                   // identical for all
+            node.zPosition = z
+            node.isHidden = !visible
+            node.alpha = alpha
+            node.blendMode = .alpha
+            node.name = name
+            return node
         }
         
-        if hasTea && iceLevel < 2 {
-            let iceTexture = bobaAtlas.textureNamed("ice_cubes")
-            let ice = SKSpriteNode(texture: iceTexture)
-            let iceScale = 20.0 / iceTexture.size().width
-            ice.setScale(iceScale)
-            ice.position = CGPoint(x: 0, y: 3)
-            ice.zPosition = 2
-            ice.alpha = iceLevel == 0 ? 1.0 : 0.6
-            completedDrink.addChild(ice)
+        // Build drink with identical layering system as display
+        if let cup = makeCarriedLayer("cup_empty", z: 0, visible: true) {
+            completedDrink.addChild(cup)
+        }
+        
+        if hasTea {
+            if let tea = makeCarriedLayer("tea_black", z: 1, visible: true) {
+                completedDrink.addChild(tea)
+            }
+        }
+        
+        if hasIce {
+            if let ice = makeCarriedLayer("ice_cubes", z: 2, visible: true) {
+                completedDrink.addChild(ice)
+            }
         }
         
         if hasBoba {
-            let bobaTexture = bobaAtlas.textureNamed("topping_tapioca")
-            let boba = SKSpriteNode(texture: bobaTexture)
-            let bobaScale = 18.0 / bobaTexture.size().width
-            boba.setScale(bobaScale)
-            boba.position = CGPoint(x: 0, y: -10)
-            boba.zPosition = 3
-            completedDrink.addChild(boba)
+            if let boba = makeCarriedLayer("topping_tapioca", z: 3, visible: true) {
+                completedDrink.addChild(boba)
+            }
         }
         
         if hasFoam {
-            let foamTexture = bobaAtlas.textureNamed("foam_cheese")
-            let foam = SKSpriteNode(texture: foamTexture)
-            let foamScale = 23.0 / foamTexture.size().width
-            foam.setScale(foamScale)
-            foam.position = CGPoint(x: 0, y: 12)
-            foam.zPosition = 4
-            completedDrink.addChild(foam)
+            if let foam = makeCarriedLayer("foam_cheese", z: 4, visible: true) {
+                completedDrink.addChild(foam)
+            }
         }
         
         if hasLid {
-            let lidTexture = bobaAtlas.textureNamed("lid_straw")
-            let lid = SKSpriteNode(texture: lidTexture)
-            let lidScale = 27.0 / lidTexture.size().width
-            lid.setScale(lidScale)
-            lid.position = CGPoint(x: 0, y: 15)
-            lid.zPosition = 5
-            completedDrink.addChild(lid)
+            if let lid = makeCarriedLayer("lid_straw", z: 5, visible: true) {
+                completedDrink.addChild(lid)
+            }
         }
         
-        print("🎆 ✅ Created completed drink: \(evaluation.feedback)")
-        if let recipe = evaluation.recipe {
-            print("📖 Recipe: \(recipe.name) - Quality: \(evaluation.quality.displayName) \(evaluation.quality.emoji)")
-        }
+        print("🎆 ✅ Created completed drink: Tea=\(hasTea), Ice=\(hasIce), Boba=\(hasBoba), Foam=\(hasFoam), Lid=\(hasLid)")
         
         return completedDrink
     }
     
     func createPickupDrink(from stations: [IngredientStation]) -> RotatableObject {
         // Get current ingredient states
-        let ingredients = RecipeConverter.convertToIngredients(from: stations)
-        var iceLevel = 0
+        var hasIce = false
         var hasBoba = false
         var hasFoam = false
         var hasTea = false
         var hasLid = false
         
-        for ingredient in ingredients {
-            switch ingredient.type {
-            case .ice:
-                iceLevel = ingredient.level == .regular ? 0 : (ingredient.level == .light ? 1 : 2)
-            case .boba:
-                hasBoba = ingredient.isPresent
-            case .foam:
-                hasFoam = ingredient.isPresent
-            case .tea:
-                hasTea = ingredient.isPresent
-            case .lid:
-                hasLid = ingredient.isPresent
+        for station in stations {
+            switch station.stationType {
+            case .ice: hasIce = station.hasIce
+            case .boba: hasBoba = station.hasBoba
+            case .foam: hasFoam = station.hasFoam
+            case .tea: hasTea = station.hasTea
+            case .lid: hasLid = station.hasLid
             }
         }
         
@@ -323,66 +305,71 @@ class DrinkCreator: SKNode {
         pickedUpDrink.size = CGSize(width: 30, height: 45)
         pickedUpDrink.name = isComplete ? "completed_drink" : "picked_up_drink"
         
-        // Build the drink using the same sprite system as the display
+        // FIXED: Use identical sprite system as display and completed drink
         let bobaAtlas = SKTextureAtlas(named: "Boba")
-        let cupScale = 25.0 / 35.0 // Consistent scale for carried version
         
-        // Always add the base cup
+        // Get the common scale factor for carried drinks (same as other methods)
         let cupTexture = bobaAtlas.textureNamed("cup_empty")
-        let cup = SKSpriteNode(texture: cupTexture)
-        cup.setScale(cupScale)
-        cup.position = CGPoint.zero // No offset
-        cup.zPosition = 0
-        pickedUpDrink.addChild(cup)
+        let carriedScale = 25.0 / cupTexture.size().width
         
-        // Add ingredients that are active - ALL with identical positioning and scaling
-        if hasTea {
-            let teaTexture = bobaAtlas.textureNamed("tea_black")
-            let tea = SKSpriteNode(texture: teaTexture)
-            tea.setScale(cupScale) // Same scale as cup
-            tea.position = CGPoint.zero // No offset
-            tea.zPosition = 1
-            pickedUpDrink.addChild(tea)
+        // Helper function to create perfectly aligned layers (identical to other methods)
+        func makePickupLayer(_ name: String, z: CGFloat, visible: Bool = true, alpha: CGFloat = 1.0) -> SKSpriteNode? {
+            // Validate texture exists before creating sprite
+            guard bobaAtlas.textureNames.contains(name) else {
+                print("⚠️ WARNING: Texture '\(name)' not found in Boba atlas for pickup drink")
+                return nil
+            }
+            
+            let tex = bobaAtlas.textureNamed(name)
+            tex.filteringMode = .nearest
+            let node = SKSpriteNode(texture: tex)
+            node.anchorPoint = CGPoint(x: 0.5, y: 0.5)   // identical for all
+            node.position = .zero                         // identical for all
+            node.setScale(carriedScale)                   // identical for all
+            node.zPosition = z
+            node.isHidden = !visible
+            node.alpha = alpha
+            node.blendMode = .alpha
+            node.name = name
+            return node
         }
         
-        if hasTea && iceLevel < 2 {
-            let iceTexture = bobaAtlas.textureNamed("ice_cubes")
-            let ice = SKSpriteNode(texture: iceTexture)
-            ice.setScale(cupScale) // Same scale as cup
-            ice.position = CGPoint.zero // No offset
-            ice.zPosition = 2
-            ice.alpha = iceLevel == 0 ? 1.0 : 0.6
-            pickedUpDrink.addChild(ice)
+        // Build drink with identical layering system as display and completed drink
+        if let cup = makePickupLayer("cup_empty", z: 0, visible: true) {
+            pickedUpDrink.addChild(cup)
+        }
+        
+        if hasTea {
+            if let tea = makePickupLayer("tea_black", z: 1, visible: true) {
+                pickedUpDrink.addChild(tea)
+            }
+        }
+        
+        if hasIce {
+            if let ice = makePickupLayer("ice_cubes", z: 2, visible: true) {
+                pickedUpDrink.addChild(ice)
+            }
         }
         
         if hasBoba {
-            let bobaTexture = bobaAtlas.textureNamed("topping_tapioca")
-            let boba = SKSpriteNode(texture: bobaTexture)
-            boba.setScale(cupScale) // Same scale as cup
-            boba.position = CGPoint.zero // No offset
-            boba.zPosition = 3
-            pickedUpDrink.addChild(boba)
+            if let boba = makePickupLayer("topping_tapioca", z: 3, visible: true) {
+                pickedUpDrink.addChild(boba)
+            }
         }
         
         if hasFoam {
-            let foamTexture = bobaAtlas.textureNamed("foam_cheese")
-            let foam = SKSpriteNode(texture: foamTexture)
-            foam.setScale(cupScale) // Same scale as cup
-            foam.position = CGPoint.zero // No offset
-            foam.zPosition = 4
-            pickedUpDrink.addChild(foam)
+            if let foam = makePickupLayer("foam_cheese", z: 4, visible: true) {
+                pickedUpDrink.addChild(foam)
+            }
         }
         
         if hasLid {
-            let lidTexture = bobaAtlas.textureNamed("lid_straw")
-            let lid = SKSpriteNode(texture: lidTexture)
-            lid.setScale(cupScale) // Same scale as cup
-            lid.position = CGPoint.zero // No offset
-            lid.zPosition = 5
-            pickedUpDrink.addChild(lid)
+            if let lid = makePickupLayer("lid_straw", z: 5, visible: true) {
+                pickedUpDrink.addChild(lid)
+            }
         }
         
-        print("🧋 ✨ Created pickup drink matching your creation - Tea:\(hasTea), Ice:\(iceLevel), Boba:\(hasBoba), Foam:\(hasFoam), Lid:\(hasLid)")
+        print("🧋 ✨ Created pickup drink matching your creation - Tea:\(hasTea), Ice:\(hasIce), Boba:\(hasBoba), Foam:\(hasFoam), Lid:\(hasLid)")
         return pickedUpDrink
     }
     

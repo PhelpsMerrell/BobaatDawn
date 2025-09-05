@@ -63,24 +63,72 @@ class RotatableObject: SKSpriteNode {
     
     // MARK: - Visual Setup
     private func setupVisualShape(_ shape: String) {
-        // Create shape indicators based on shape type
         switch shape {
-        case "arrow":
-            createArrowShape()
-        case "L":
-            createLShape()
-        case "triangle":
-            createTriangleShape()
         case "station":
-            createStationShape()
+            if let station = self as? IngredientStation {
+                // Try specific station sprite, then "station_default", else fall back to shape.
+                if station.applyStationSpriteFromType() {
+                    return
+                } else {
+                    createStationShape()
+                    return
+                }
+            } else {
+                createStationShape()
+                return
+            }
+
         case "drink":
+            if tryAddSprite(atlasName: "Objects", textureNames: ["drink_base", "drink_default"]) { return }
             createDrinkShape()
+
         case "table":
+            if tryAddSprite(atlasName: "Objects", textureNames: ["table", "table_default"]) { return }
             createTableShape()
+
+        case "arrow":
+            if tryAddSprite(atlasName: "Objects", textureNames: ["arrow", "shape_arrow"]) { return }
+            createArrowShape()
+
+        case "L":
+            if tryAddSprite(atlasName: "Objects", textureNames: ["shape_L"]) { return }
+            createLShape()
+
+        case "triangle":
+            if tryAddSprite(atlasName: "Objects", textureNames: ["shape_triangle"]) { return }
+            createTriangleShape()
+
+        case "rectangle":
+            _ = tryAddSprite(atlasName: "Objects", textureNames: ["shape_rectangle", "rectangle_default"])
+            // Rectangle has its own base; no fallback shape call here.
+
         default:
-            // Rectangle is default - no additional shape needed
             break
         }
+    }
+
+    /// Attempts to add a sprite from an atlas. Returns true on success, false if none of the names are found.
+    @discardableResult
+    private func tryAddSprite(atlasName: String, textureNames: [String]) -> Bool {
+        let atlas = SKTextureAtlas(named: atlasName)
+        guard let name = textureNames.first(where: { atlas.textureNames.contains($0) }) else {
+            return false
+        }
+
+        let texture = atlas.textureNamed(name)
+        let node = SKSpriteNode(texture: texture)
+        node.name = "shape_sprite_\(name)"
+        node.zPosition = 1
+        node.position = .zero
+        node.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+
+        // Remove any prior visual children added by this class
+        self.children
+            .filter { $0.name?.hasPrefix("station_") == true || $0.name?.hasPrefix("shape_") == true }
+            .forEach { $0.removeFromParent() }
+
+        self.addChild(node)
+        return true
     }
     
     private func createArrowShape() {

@@ -237,15 +237,22 @@ class GameScene: BaseGameScene {
 
     
     private func setupIngredientStations() {
-        // PRESERVED: 5-station boba creation system (adjusted for 60pt grid)
-        let stationTypes: [IngredientStation.StationType] = [.ice, .boba, .foam, .tea, .lid]
+        // REORDERED: 5-station boba creation system with ice at position 1
+        let stationTypes: [IngredientStation.StationType] = [.ice, .tea, .boba, .foam, .lid]
         let stationCells = [
-            GridCoordinate(x: 12, y: 15),  // Ice station
-            GridCoordinate(x: 14, y: 15),  // Boba station
-            GridCoordinate(x: 16, y: 15),  // Foam station
-            GridCoordinate(x: 18, y: 15),  // Tea station
-            GridCoordinate(x: 20, y: 15)   // Lid station
+            GridCoordinate(x: 12, y: 15),  // Ice station (Station 1)
+            GridCoordinate(x: 14, y: 15),  // Tea station (Station 2)
+            GridCoordinate(x: 16, y: 15),  // Boba station (Station 3)
+            GridCoordinate(x: 18, y: 15),  // Foam station (Station 4)
+            GridCoordinate(x: 20, y: 15)   // Lid station (Station 5)
         ]
+        
+        print("🧋 🏢 STATION SETUP: Creating stations in new order...")
+        print("🧋 Position 1 (leftmost): \(stationTypes[0])")
+        print("🧋 Position 2: \(stationTypes[1])")
+        print("🧋 Position 3: \(stationTypes[2])")
+        print("🧋 Position 4: \(stationTypes[3])")
+        print("🧋 Position 5 (rightmost): \(stationTypes[4])")
         
         for (index, type) in stationTypes.enumerated() {
             let station = IngredientStation(type: type)
@@ -256,6 +263,19 @@ class GameScene: BaseGameScene {
             station.zPosition = ZLayers.stations
             addChild(station)
             ingredientStations.append(station)
+            
+            print("🧋 🏢 Created \(type) station at position \(index + 1) (grid \(cell), world \(worldPos))")
+            print("🧋     -> Station should show \(type) sprite and control \(type) in drink")
+            print("🧋     -> Station name: \(station.name ?? "unnamed")")
+            print("🧋     -> Station stationType: \(station.stationType)")
+            
+            // CRITICAL: Verify the station we just created
+            print("🧋 🔍 VERIFICATION - Station \(index + 1):")
+            print("🧋     hasIce: \(station.hasIce)")
+            print("🧋     hasTea: \(station.hasTea)")
+            print("🧋     hasBoba: \(station.hasBoba)")
+            print("🧋     hasFoam: \(station.hasFoam)")
+            print("🧋     hasLid: \(station.hasLid)")
             
             // Reserve cell and register with grid
             gridService.reserveCell(cell)
@@ -492,8 +512,7 @@ class GameScene: BaseGameScene {
                     drinkCreator.resetStations(ingredientStations)
                     print("🧋 ✅ Picked up completed drink and reset stations")
                     
-                    // NEW: Show recipe system debug info
-                    debugRecipeSystem()
+                   
                 } else {
                     print("🧋 ❌ Failed to create completed drink!")
                 }
@@ -518,9 +537,7 @@ class GameScene: BaseGameScene {
                     drinkCreator.resetStations(ingredientStations)
                     print("🧋 ✅ Reset complete - ready for your next creation!")
                     
-                    if yourCreation.objectType == .completedDrink {
-                        debugRecipeSystem()
-                    }
+                    
                 } else {
                     print("❌ Already carrying something")
                 }
@@ -645,61 +662,61 @@ class GameScene: BaseGameScene {
     }
     
     private func createTableDrink(from originalDrink: RotatableObject) -> SKNode {
-        // Create a smaller version that preserves your sprite artwork
+        // FIXED: Create table drink using same consistent sprite layering system
         let tableDrink = SKNode()
         
-        // Copy all sprite children from the carried drink, preserving your artwork
+        // Use identical sprite system but with smaller table scale
+        let bobaAtlas = SKTextureAtlas(named: "Boba")
+        
+        // Validate atlas exists
+        guard bobaAtlas.textureNames.count > 0 else {
+            print("❌ ERROR: Boba atlas not found or empty for table drink")
+            return tableDrink
+        }
+        
+        let cupTexture = bobaAtlas.textureNamed("cup_empty")
+        let tableScale = 15.0 / cupTexture.size().width // Smaller for table display
+        
+        // Helper function to create perfectly aligned table layers
+        func makeTableLayer(_ name: String, z: CGFloat, visible: Bool = true, alpha: CGFloat = 1.0) -> SKSpriteNode? {
+            // Validate texture exists before creating sprite
+            guard bobaAtlas.textureNames.contains(name) else {
+                print("⚠️ WARNING: Texture '\(name)' not found in Boba atlas for table drink")
+                return nil
+            }
+            
+            let tex = bobaAtlas.textureNamed(name)
+            tex.filteringMode = .nearest
+            let node = SKSpriteNode(texture: tex)
+            node.anchorPoint = CGPoint(x: 0.5, y: 0.5)   // identical for all
+            node.position = .zero                         // identical for all
+            node.setScale(tableScale)                     // identical for all
+            node.zPosition = z
+            node.isHidden = !visible
+            node.alpha = alpha
+            node.blendMode = .alpha
+            node.name = name
+            return node
+        }
+        
+        // Recreate drink layers based on original drink's sprite children (preserve your recipe)
         for child in originalDrink.children {
-            if let spriteChild = child as? SKSpriteNode {
-                let copiedSprite = spriteChild.copy() as! SKSpriteNode
-                // Scale down for table display (about 60% of carried size) but keep identical positioning
-                copiedSprite.setScale(spriteChild.xScale * 0.6)
-                copiedSprite.position = spriteChild.position // Keep same relative position (zero)
-                copiedSprite.zPosition = spriteChild.zPosition
-                copiedSprite.alpha = spriteChild.alpha
-                tableDrink.addChild(copiedSprite)
-                
-                print("🧋 🎨 Copied sprite \(spriteChild.name ?? "unnamed") to table")
+            if let spriteChild = child as? SKSpriteNode, let spriteName = spriteChild.name {
+                if let tableLayer = makeTableLayer(spriteName, 
+                                                  z: spriteChild.zPosition, 
+                                                  visible: !spriteChild.isHidden, 
+                                                  alpha: spriteChild.alpha) {
+                    tableDrink.addChild(tableLayer)
+                    print("🧋 🎨 Created table layer \(spriteName) with consistent scaling")
+                }
             }
         }
         
-        print("🧋 🎨 Table drink created with \(tableDrink.children.count) sprite layers")
+        print("🧋 🎨 Table drink created with \(tableDrink.children.count) perfectly aligned sprite layers")
         return tableDrink
     }
     
-    // MARK: - Recipe System Debug
-    private func debugRecipeSystem() {
-        let ingredients = RecipeConverter.convertToIngredients(from: ingredientStations)
-        let evaluation = RecipeConverter.evaluateRecipe(from: ingredientStations)
-        
-        print("🧋 === Recipe System Debug ===")
-        print("🧋 Current Ingredients:")
-        for ingredient in ingredients {
-            if ingredient.isPresent {
-                print("🧋   ✅ \(ingredient.type.displayName): \(ingredient.level.displayName)")
-            }
-        }
-        
-        if let recipe = evaluation.recipe {
-            print("🧋 📖 Recipe: \(recipe.name)")
-            print("🧋 ⭐ Quality: \(evaluation.quality.displayName) \(evaluation.quality.emoji)")
-            print("🧋 📝 Description: \(recipe.description)")
-        } else {
-            print("🧋 ❌ No recipe match found")
-        }
-        
-        // Show improvement hint
-        if let hint = RecipeManager.getInstance().getImprovementHint(for: ingredients) {
-            print("🧋 💡 Hint: \(hint)")
-        }
-        
-        // Show statistics
-        let stats = RecipeManager.getInstance().getRecipeStatistics()
-        print("🧋 📈 Stats: \(stats.discoveredRecipes) recipes discovered, \(String(format: "%.1f", stats.averageQuality)) avg quality")
-        
-        print("🧋 =============================")
-    }
-    
+  
     // MARK: - Forest Transition
     private func enterForest() {
         print("🌲 Entering the mysterious forest...")
