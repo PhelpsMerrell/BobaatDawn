@@ -22,6 +22,12 @@ class StandardTimeService: TimeService {
     }
     
     func update() {
-        TimeManager.shared.update()
+        let currentTime = CFAbsoluteTimeGetCurrent()
+        TimeManager.shared.update(currentTime: currentTime)
+    }
+    
+    func setDebugPhase(_ phase: TimePhase) {
+        let currentTime = CFAbsoluteTimeGetCurrent()
+        TimeManager.shared.setPhase(phase, at: currentTime)
     }
 }

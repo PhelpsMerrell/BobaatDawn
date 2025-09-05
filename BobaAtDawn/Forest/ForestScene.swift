@@ -7,8 +7,9 @@
 
 import SpriteKit
 import UIKit // For haptic feedback
+import Foundation // For snail system
 
-class ForestScene: BaseGameScene {
+class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
     
     // MARK: - Room System (Internal - accessible to extensions)
     internal var currentRoom: Int = 1 // Rooms 1-5
@@ -34,6 +35,15 @@ class ForestScene: BaseGameScene {
     
     // MARK: - NPC System (Internal - accessible to extensions)
     internal var roomNPCs: [ForestNPC] = [] // NPCs in current room
+    
+    // MARK: - Snail System
+    private var snail: SnailNPC?
+    private var snailContactObserver: NSObjectProtocol?
+    
+    // Public access for extensions
+    var currentSnail: SnailNPC? {
+        return snail
+    }
     
     // MARK: - BaseGameScene Template Method Implementation
     override open func setupWorld() {
@@ -103,6 +113,12 @@ class ForestScene: BaseGameScene {
         residentManager.registerForestScene(self)
         
         setupCurrentRoom()
+        
+        // Initialize the snail
+        setupSnail()
+        
+        // Set up physics contact delegate for snail detection
+        physicsWorld.contactDelegate = self
         
         print("🌲 Forest Scene initialized - Room \\(currentRoom): \\(roomEmojis[currentRoom])")
     }
@@ -243,18 +259,19 @@ class ForestScene: BaseGameScene {
             return true
         }
         
-        // Regular movement with subtle haptic feedback
-        let targetCell = gridService.worldToGrid(location)
-        if gridService.isCellAvailable(targetCell) {
+        // Forest movement - allow movement anywhere within bounds
+        if isWithinForestBounds(location) {
             // Very light haptic for footsteps
             triggerMovementFeedback()
             
-            character.moveToGridCell(targetCell)
-            print("👤 Character moving to forest cell \\(targetCell)")
+            // Move character directly to world position (no grid restrictions)
+            character.handleTouchMovement(to: location)
+            print("👤 Character moving to forest position \\(location)")
             return true
+        } else {
+            print("❌ Movement blocked - outside forest bounds")
+            return false
         }
-        
-        return false // Let base class handle
     }
     
     override open func handleSceneSpecificLongPress(on node: SKNode, at location: CGPoint) {
@@ -365,6 +382,9 @@ class ForestScene: BaseGameScene {
         if !isTransitioning && transitionCooldown <= 0 {
             checkForRoomTransitions()
         }
+        
+        // Update snail behavior
+        updateSnailBehavior()
     }
     
     // MARK: - Character Position Monitoring
@@ -397,6 +417,145 @@ class ForestScene: BaseGameScene {
             transitionService.triggerHapticFeedback(type: .light)
             lastTriggeredSide = "right"
             transitionToRoom(getNextRoom())
+        }
+    }
+    
+    // MARK: - Snail System
+    internal func setupSnail() {
+        // Create the snail with time service dependency
+        let timeService = serviceContainer.resolve(TimeService.self)
+        snail = SnailNPC(timeService: timeService)
+        
+        // Position snail at a random location in the forest
+        let randomX = CGFloat.random(in: -worldWidth/3...worldWidth/3)
+        let randomY = CGFloat.random(in: -worldHeight/3...worldHeight/3)
+        snail?.position = CGPoint(x: randomX, y: randomY)
+        
+        // Add to scene
+        if let snail = snail {
+            addChild(snail)
+        }
+        
+        // Listen for snail catch events
+        snailContactObserver = NotificationCenter.default.addObserver(
+            forName: .snailCaughtPlayer,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleSnailCatch()
+        }
+        
+        print("🐌 The Snail has been unleashed in the forest...")
+    }
+    
+    private func updateSnailBehavior() {
+        guard let snail = snail else { return }
+        
+        // Update snail with current game state
+        snail.updateHuntingBehavior(
+            playerInForest: true,
+            playerRoom: currentRoom,
+            playerPosition: character?.position ?? .zero
+        )
+        
+        // Update snail internal state
+        snail.update(deltaTime: 1.0/60.0)
+    }
+    
+    private func handleSnailCatch() {
+        print("🐌 💀 PLAYER CAUGHT BY SNAIL - TELEPORTING TO SHOP!")
+        
+        // Create dramatic transition effect
+        createSnailCatchTransition()
+        
+        // Teleport player back to shop after brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.teleportPlayerToShop()
+        }
+    }
+    
+    private func createSnailCatchTransition() {
+        // Create ominous transition effect
+        let overlay = SKSpriteNode(color: .black, size: CGSize(width: frame.width * 2, height: frame.height * 2))
+        overlay.alpha = 0
+        overlay.zPosition = 1000
+        overlay.position = CGPoint(x: 0, y: 0)
+        addChild(overlay)
+        
+        // Fade to black
+        let fadeIn = SKAction.fadeIn(withDuration: 0.3)
+        overlay.run(fadeIn)
+        
+        // Add eerie sound effect placeholder
+        print("🔊 *Eerie snail catch sound*")
+        
+        // Haptic feedback for the catch
+        let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)
+        impactFeedback.impactOccurred()
+        
+        // Remove overlay after teleport
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            overlay.removeFromParent()
+        }
+    }
+    
+    private func teleportPlayerToShop() {
+        // Use the scene transition service to return to shop
+        let transitionService = serviceContainer.resolve(SceneTransitionService.self)
+        
+        // Reset player to shop starting position
+        transitionService.transitionToGame(from: self) {
+            print("🏠 Player safely returned to shop after snail encounter")
+            
+            // Optional: Show a brief message about the snail encounter
+            self.showSnailEscapeMessage()
+        }
+    }
+    
+    private func showSnailEscapeMessage() {
+        // You could add a subtle message or effect here
+        print("💭 You feel like you barely escaped something ominous...")
+    }
+    
+    // MARK: - Physics Contact for Snail
+    func didBegin(_ contact: SKPhysicsContact) {
+        
+        let bodyA = contact.bodyA
+        let bodyB = contact.bodyB
+        
+        // Check if character contacted snail
+        if (bodyA.categoryBitMask == PhysicsCategory.character && bodyB.categoryBitMask == PhysicsCategory.snail) ||
+           (bodyA.categoryBitMask == PhysicsCategory.snail && bodyB.categoryBitMask == PhysicsCategory.character) {
+            
+            // Determine which is the snail
+            let possibleSnail = (bodyA.node?.name == "snail_enemy") ? bodyA.node : 
+                               (bodyB.node?.name == "snail_enemy") ? bodyB.node : nil
+            
+            if let snailNode = possibleSnail as? SnailNPC {
+                // Player caught!
+                snailNode.playerCaught()
+            }
+        }
+    }
+    
+    // MARK: - Forest Bounds Check
+    private func isWithinForestBounds(_ location: CGPoint) -> Bool {
+        // Allow movement anywhere except in the boundaries (walls)
+        let margin: CGFloat = 60 // Same as wall thickness
+        
+        let leftBound = -worldWidth/2 + margin
+        let rightBound = worldWidth/2 - margin
+        let topBound = worldHeight/2 - margin
+        let bottomBound = -worldHeight/2 + margin
+        
+        return location.x > leftBound && location.x < rightBound &&
+               location.y < topBound && location.y > bottomBound
+    }
+    
+    // MARK: - Cleanup
+    deinit {
+        if let observer = snailContactObserver {
+            NotificationCenter.default.removeObserver(observer)
         }
     }
 }

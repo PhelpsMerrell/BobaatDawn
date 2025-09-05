@@ -44,6 +44,10 @@ struct ZLayers {
     static let npcs: CGFloat = 25
     static let npcEffects: CGFloat = 26
     
+    /// Special enemies (snail)
+    static let enemies: CGFloat = 27
+    static let enemyEffects: CGFloat = 28
+    
     /// Player character - always visible above NPCs
     static let character: CGFloat = 30
     static let characterEffects: CGFloat = 31

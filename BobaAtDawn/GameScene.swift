@@ -23,6 +23,9 @@ class GameScene: BaseGameScene {
     internal var timeBreaker: PowerBreaker!
     internal var timeWindow: Window!
     internal var timeLabel: SKLabelNode!
+    
+    // MARK: - Debug Controls
+    private var timeControlButton: TimeControlButton?
     //MARK: - Physics 
     private var physicsContactHandler: PhysicsContactHandler!
     // MARK: - World Areas
@@ -349,7 +352,26 @@ class GameScene: BaseGameScene {
         timeLabel.zPosition = ZLayers.timeSystemLabels
         addChild(timeLabel)
         
+        // Add time control button (DEBUG)
+        setupTimeControlButton(windowPosition: timePositions.window)
+        
         print("🌅 Time system positioned: breaker at grid \(GameConfig.Time.breakerGridPosition), window at grid \(GameConfig.Time.windowGridPosition)")
+    }
+    
+    // MARK: - Time Control Button Setup (DEBUG)
+    private func setupTimeControlButton(windowPosition: CGPoint) {
+        timeControlButton = TimeControlButton(timeService: timeService)
+        
+        // Position next to the window (to the right)
+        let buttonOffset: CGFloat = 80 // Distance from window
+        timeControlButton?.position = CGPoint(
+            x: windowPosition.x + buttonOffset,
+            y: windowPosition.y
+        )
+        
+        addChild(timeControlButton!)
+        
+        print("⏰ Time control button added next to window for testing")
     }
     
     // MARK: - Living World Setup (NEW)
@@ -549,6 +571,9 @@ class GameScene: BaseGameScene {
         // Update time display
         updateTimeDisplay()
         
+        // Update time control button
+        timeControlButton?.update()
+        
         // Update resident manager (handles all NPC lifecycle)
         residentManager.update(deltaTime: 1.0/60.0)
         
@@ -560,7 +585,7 @@ class GameScene: BaseGameScene {
         let phase = timeService.currentPhase
         let progress = timeService.phaseProgress
         
-        timeLabel.text = "\(phase.description.uppercased()) \(Int(progress * 100))%"
+        timeLabel.text = "\(phase.displayName.uppercased()) \(Int(progress * 100))%"
         
         // Change label color based on phase
         switch phase {

@@ -20,6 +20,7 @@ struct PhysicsCategory {
     static let door: UInt32 = 0b1000000     // 64
     static let shopFloor: UInt32 = 0b10000000 // 128
     static let boundary: UInt32 = 0b100000000 // 256
+    static let snail: UInt32 = 0b1000000000   // 512
 }
 
 // MARK: - Physics Configuration

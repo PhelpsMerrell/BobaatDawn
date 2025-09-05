@@ -141,7 +141,8 @@ class PowerBreaker: SKSpriteNode {
     
     private func resetBreaker() {
         isBreakerTripped = false
-        TimeManager.shared.advanceFromDawn()
+        let currentTime = CFAbsoluteTimeGetCurrent()
+        TimeManager.shared.advancePhase(at: currentTime)
         print("⚡ Power breaker reset! Advancing to next day")
     }
     

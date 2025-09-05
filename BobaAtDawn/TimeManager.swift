@@ -20,7 +20,7 @@ enum TimePhase: CaseIterable {
         }
     }
     
-    var description: String {
+    var displayName: String {
         switch self {
         case .dawn: return "dawn"
         case .day: return "day"
@@ -28,17 +28,10 @@ enum TimePhase: CaseIterable {
         case .night: return "night"
         }
     }
-    
-    var nextPhase: TimePhase {
-        let allPhases = TimePhase.allCases
-        guard let currentIndex = allPhases.firstIndex(of: self) else { return .dawn }
-        let nextIndex = (currentIndex + 1) % allPhases.count
-        return allPhases[nextIndex]
-    }
 }
 
 // MARK: - Time Manager
-class TimeManager {
+final class TimeManager {
     
     // MARK: - State
     private(set) var currentPhase: TimePhase = .day // Start in day, not dawn
@@ -57,87 +50,84 @@ class TimeManager {
     
     // MARK: - Singleton
     static let shared = TimeManager()
+    
     private init() {
         // Start time immediately when created
-        phaseStartTime = CFAbsoluteTimeGetCurrent()
-        lastUpdateTime = phaseStartTime
-    }
-    
-    // MARK: - Public Interface
-    func advanceFromDawn() {
-        guard currentPhase == .dawn && isBreakerTripped else { return }
-        
-        // Reset breaker and advance to day
-        isBreakerTripped = false
-        isTimeActive = true
-        advanceToNextPhase() // Dawn → Day
-        
-        print("⏰ Breaker reset! Advancing from Dawn to Day")
-    }
-    
-    func update() {
-        guard isTimeActive else { return }
-        
         let currentTime = CFAbsoluteTimeGetCurrent()
-        let elapsedInPhase = currentTime - phaseStartTime
-        let phaseDuration = currentPhase.duration
-        
-        // Update progress (0.0 to 1.0)
-        phaseProgress = Float(min(elapsedInPhase / phaseDuration, 1.0))
+        start(at: currentTime)
+    }
+    
+    // MARK: - Public Controls
+    func start(at time: TimeInterval) {
+        phaseStartTime = time
+        lastUpdateTime = time
+        isTimeActive = true
+        isBreakerTripped = false
+        phaseProgress = 0
+        onProgressUpdated?(phaseProgress)
+    }
+    
+    func pause() {
+        isTimeActive = false
+    }
+    
+    func resume(at time: TimeInterval) {
+        isTimeActive = true
+        lastUpdateTime = time
+    }
+    
+    func setPhase(_ phase: TimePhase, at time: TimeInterval) {
+        currentPhase = phase
+        phaseStartTime = time
+        lastUpdateTime = time
+        phaseProgress = 0
+        isBreakerTripped = false
+        onPhaseChanged?(phase)
         onProgressUpdated?(phaseProgress)
         
-        // Check if phase should advance
-        if elapsedInPhase >= phaseDuration {
-            if currentPhase == .dawn {
-                // Dawn completed - trip breaker, stop time
-                tripBreaker()
-            } else {
-                // Normal phase transition
-                advanceToNextPhase()
-            }
+        print("🔄 DEBUG: Force setting time phase to \(phase.displayName)")
+    }
+    
+    // Advance to next phase; trips breaker when finishing night -> dawn
+    func advancePhase(at time: TimeInterval) {
+        switch currentPhase {
+        case .dawn:
+            currentPhase = .day
+        case .day:
+            currentPhase = .dusk
+        case .dusk:
+            currentPhase = .night
+        case .night:
+            currentPhase = .dawn
+            isBreakerTripped = true
+            onBreakerTripped?()
         }
         
-        lastUpdateTime = currentTime
-    }
-    
-    // MARK: - Private Methods
-    private func tripBreaker() {
-        isTimeActive = false
-        isBreakerTripped = true
-        phaseProgress = 1.0
-        
-        print("🔴 Dawn cycle complete! Breaker tripped - player must advance to continue")
-        onBreakerTripped?()
-    }
-    
-    private func advanceToNextPhase() {
-        let previousPhase = currentPhase
-        currentPhase = currentPhase.nextPhase
-        phaseStartTime = CFAbsoluteTimeGetCurrent()
-        phaseProgress = 0.0
-        
-        print("🌅 Phase transition: \(previousPhase) → \(currentPhase)")
+        phaseStartTime = time
+        lastUpdateTime = time
+        phaseProgress = 0
         onPhaseChanged?(currentPhase)
         onProgressUpdated?(phaseProgress)
-    }
-    
-    // MARK: - Utility
-    func getRemainingTimeInPhase() -> TimeInterval {
-        guard isTimeActive else { return currentPhase.duration }
         
-        let currentTime = CFAbsoluteTimeGetCurrent()
-        let elapsedInPhase = currentTime - phaseStartTime
-        return max(0, currentPhase.duration - elapsedInPhase)
+        print("🔄 DEBUG: Time now at \(currentPhase.displayName), active: \(isTimeActive)")
     }
     
-    func getTotalCycleDuration() -> TimeInterval {
-        return TimePhase.allCases.reduce(0) { $0 + $1.duration }
-    }
-    
-    // MARK: - Debug
-    func getPhaseInfo() -> String {
-        let remaining = getRemainingTimeInPhase()
-        let progress = Int(phaseProgress * 100)
-        return "\(currentPhase) - \(progress)% - \(Int(remaining))s remaining"
+    // MARK: - Update Loop
+    func update(currentTime: TimeInterval) {
+        guard isTimeActive else { return }
+        
+        let dt = currentTime - lastUpdateTime
+        lastUpdateTime = currentTime
+        guard dt >= 0 else { return }
+        
+        let duration = currentPhase.duration
+        let elapsed = currentTime - phaseStartTime
+        let rawProgress = max(0, min(1, elapsed / duration))
+        phaseProgress = Float(rawProgress)
+        onProgressUpdated?(phaseProgress)
+        
+        if elapsed >= duration {
+            advancePhase(at: currentTime)
+        }
     }
 }

@@ -12,12 +12,18 @@ struct MovementConfig {
 //
 
 import SpriteKit
+import UIKit
 
 class Character: SKSpriteNode {
     
     // MARK: - Properties
     private(set) var carriedItem: RotatableObject?
     private let carryOffset: CGFloat = GameConfig.Character.carryOffset
+    
+    // MARK: - Animation
+    private var animationController: PlayerAnimationController?
+    private var isMovingForAnimation = false
+    private var lastMovementDirection: CGVector = CGVector(dx: 0, dy: -1) // Default facing down
     
     // MARK: - Dependencies
     private let gridService: GridService
@@ -65,7 +71,8 @@ class Character: SKSpriteNode {
         let startCell = GameConfig.Grid.characterStartPosition
         self.lastGridPosition = startCell
         
-        super.init(texture: nil, color: GameConfig.Character.color, size: GameConfig.Character.size)
+        // Initialize with default texture (will be replaced by animation controller)
+        super.init(texture: nil, color: .clear, size: GameConfig.Character.size)
         
         name = "character"
         zPosition = ZLayers.character
@@ -77,11 +84,20 @@ class Character: SKSpriteNode {
         position = gridService.gridToWorld(startCell)
         gridService.moveCharacterTo(startCell)
         
+        // Setup animation controller
+        setupAnimationController()
+        
         print("👤 Character initialized with physics at grid \(startCell), world \(position)")
     }
     
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+    
+    // MARK: - Animation Setup
+    private func setupAnimationController() {
+        animationController = PlayerAnimationController(character: self)
+        print("🎭 Initialized player animation controller")
     }
     
     // MARK: - Physics Setup
@@ -133,6 +149,13 @@ class Character: SKSpriteNode {
         // Stop any current movement
         removeAction(forKey: "character_movement")
         
+        // Calculate movement direction for animation
+        let direction = CGVector(dx: worldPosition.x - position.x, dy: worldPosition.y - position.y)
+        if direction.dx != 0 || direction.dy != 0 {
+            lastMovementDirection = direction
+            startWalkingAnimation(direction: direction)
+        }
+        
         // Calculate movement duration based on distance
         let distance = sqrt(pow(worldPosition.x - position.x, 2) + pow(worldPosition.y - position.y, 2))
         let duration = max(0.1, min(0.4, TimeInterval(distance / 400))) // Very fast movement
@@ -143,6 +166,9 @@ class Character: SKSpriteNode {
         
         // Add completion action for feedback
         let completionAction = SKAction.run {
+            // Stop walking animation
+            self.stopWalkingAnimation()
+            
             // Update carried item position after movement
             self.updateCarriedItemPosition()
             
@@ -257,6 +283,14 @@ class Character: SKSpriteNode {
             return
         }
         
+        // Calculate movement direction for animation
+        let targetWorldPos = gridService.gridToWorld(targetCell)
+        let direction = CGVector(dx: targetWorldPos.x - position.x, dy: targetWorldPos.y - position.y)
+        if direction.dx != 0 || direction.dy != 0 {
+            lastMovementDirection = direction
+            startWalkingAnimation(direction: direction)
+        }
+        
         guard gridService.isCellAvailable(targetCell) else {
             if MovementConfig.debugMovement {
                 print("❌ Cell \(targetCell) is occupied - collision detected!")
@@ -279,7 +313,6 @@ class Character: SKSpriteNode {
         gridService.moveCharacterTo(targetCell)
         
         // Use SKAction for movement (the old reliable way)
-        let targetWorldPos = gridService.gridToWorld(targetCell)
         let distance = sqrt(pow(targetWorldPos.x - position.x, 2) + pow(targetWorldPos.y - position.y, 2))
         let duration = max(0.15, min(0.6, TimeInterval(distance / 300)))
         
@@ -288,6 +321,9 @@ class Character: SKSpriteNode {
         
         // Add completion action
         let completionAction = SKAction.run {
+            // Stop walking animation
+            self.stopWalkingAnimation()
+            
             if MovementConfig.debugMovement {
                 print("✅ Character arrived at grid \(targetCell) via SKAction")
             }
@@ -521,5 +557,25 @@ class Character: SKSpriteNode {
     
     func getCurrentGridPosition() -> GridCoordinate {
         return movementController.getCurrentGridPosition() ?? lastGridPosition
+    }
+    
+    // MARK: - Animation Control
+    private func startWalkingAnimation(direction: CGVector) {
+        isMovingForAnimation = true
+        animationController?.startWalking(direction: direction)
+    }
+    
+    private func stopWalkingAnimation() {
+        isMovingForAnimation = false
+        animationController?.stopWalking()
+    }
+    
+    // MARK: - Public Animation Interface
+    func getCurrentAnimationDirection() -> AnimationDirection? {
+        return animationController?.getCurrentDirection()
+    }
+    
+    func isCurrentlyAnimating() -> Bool {
+        return animationController?.isCurrentlyAnimating() ?? false
     }
 }

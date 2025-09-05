@@ -16,7 +16,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "434"
             endingLineNumber = "434"
-            landmarkName = "handleGameSceneLongPress(on:at:)"
+            landmarkName = "addGridOverlay()"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
