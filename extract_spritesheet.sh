@@ -9,13 +9,16 @@ echo "🎭 Setting up player spritesheet for Boba in the Woods..."
 SPRITESHEET_FILE="player_spritesheet.png"  # Your uploaded spritesheet
 OUTPUT_DIR="/Users/phelpsmerrell/projects/BobaAtDawn/BobaAtDawn/BobaAtDawn/Assets.xcassets/Player.spriteatlas"
 
-# Spritesheet dimensions (adjust these based on your actual file)
-FRAME_WIDTH=32    # Width of each frame
-FRAME_HEIGHT=32   # Height of each frame
+# Spritesheet dimensions (based on your actual file metrics)
+FRAME_WIDTH=21    # Width of each frame (exact)
+FRAME_HEIGHT=34   # Height of each frame (exact)
+MARGIN=2          # Outer transparent border
+SPACING=2         # Gutters between tiles
 FRAMES_PER_ROW=3  # Number of animation frames per direction
 TOTAL_ROWS=8      # Number of direction rows
 
 echo "Frame size: ${FRAME_WIDTH}x${FRAME_HEIGHT}"
+echo "Margin: ${MARGIN}px, Spacing: ${SPACING}px"
 echo "Layout: ${FRAMES_PER_ROW} frames × ${TOTAL_ROWS} directions"
 
 # Check if ImageMagick is available
@@ -42,9 +45,10 @@ echo "✅ Found spritesheet: $SPRITESHEET_FILE"
 # Create individual frame files
 for row in $(seq 0 $((TOTAL_ROWS - 1))); do
     for frame in $(seq 0 $((FRAMES_PER_ROW - 1))); do
-        # Calculate crop position
-        x=$((frame * FRAME_WIDTH))
-        y=$((row * FRAME_HEIGHT))
+        # Calculate crop position with margin and spacing
+        # Formula: MARGIN + (frame * (FRAME_WIDTH + SPACING))
+        x=$((MARGIN + frame * (FRAME_WIDTH + SPACING)))
+        y=$((MARGIN + row * (FRAME_HEIGHT + SPACING)))
         
         # Output filename
         output_file="${OUTPUT_DIR}/player_${row}_${frame}.imageset"
