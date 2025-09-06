@@ -133,7 +133,7 @@ class RitualArea: SKNode {
         
         sacredTable = RotatableObject(type: .furniture, color: SKColor.gold, shape: "table")
         sacredTable.position = worldPos
-        sacredTable.name = "sacred_table"
+        sacredTable.name = "sacred_table"  // Special name for ritual table
         sacredTable.zPosition = ZLayers.tables
         
         addChild(sacredTable)
@@ -231,58 +231,18 @@ class RitualArea: SKNode {
         
         ritualState = .completed
         
-        // Show farewell dialogue
-        showFarewellDialogue()
-        
-        // Complete liberation after dialogue
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            self.completeLiberation()
-        }
-    }
-    
-    private func showFarewellDialogue() {
-        guard let npc = liberationNPC,
-              let chosenResident = chosenNPC else { return }
-        
-        // Create farewell dialogue
-        let farewellLines = [
-            "Thank you for helping me find peace...",
-            "I can finally let go of this world.",
-            "The boba you made was perfect - it gave me strength.",
-            "I'm ready to move on now. Farewell, kind soul."
-        ]
-        
-        if let scene = scene {
-            // Show special liberation dialogue
-            let dialogueProxy = NPCDialogueProxy(npc: npc, characterId: chosenResident.npcData.id)
-            DialogueService.shared.showCustomDialogue(
-                for: dialogueProxy, 
-                in: scene, 
-                customLines: farewellLines
-            )
-        }
-        
-        print("💬 👻 \(chosenResident.npcData.name) says their final farewell...")
-    }
-    
-    private func completeLiberation() {
-        guard let chosenResident = chosenNPC else { return }
-        
-        // Liberation animation
-        liberationAnimation()
-        
-        // Remove NPC from world permanently
-        liberationNPC?.removeFromParent()
+        // Mark as liberated in save system
+        SaveService.shared.markNPCAsLiberated(chosenResident.npcData.id)
         
         // Notify completion
         onRitualCompleted?(chosenResident)
         
-        // Cleanup ritual
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        // Cleanup ritual after delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { // Longer delay for full sequence
             self.cleanupRitual()
         }
         
-        print("✨ 👻 \(chosenResident.npcData.name) has found eternal peace and moves on from purgatory")
+        print("🕯️ ✨ Final boba served - liberation ritual initiated")
     }
     
     // MARK: - Animations
@@ -306,52 +266,6 @@ class RitualArea: SKNode {
             ])
             
             child.run(appear)
-        }
-    }
-    
-    private func liberationAnimation() {
-        guard let npc = liberationNPC else { return }
-        
-        // Beautiful ascension effect
-        let ascension = SKAction.sequence([
-            SKAction.group([
-                SKAction.fadeOut(withDuration: 2.0),
-                SKAction.scale(to: 2.0, duration: 2.0),
-                SKAction.moveBy(x: 0, y: 100, duration: 2.0)
-            ])
-        ])
-        
-        // Create light particles
-        for i in 0..<10 {
-            let delay = Double(i) * 0.1
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                self.createLightParticle(from: npc.position)
-            }
-        }
-        
-        npc.run(ascension)
-    }
-    
-    private func createLightParticle(from position: CGPoint) {
-        let particle = SKLabelNode(text: "✨")
-        particle.fontSize = 20
-        particle.position = position
-        particle.zPosition = ZLayers.effects
-        
-        if let parent = parent {
-            parent.addChild(particle)
-            
-            let float = SKAction.sequence([
-                SKAction.group([
-                    SKAction.moveBy(x: CGFloat.random(in: -50...50), 
-                                   y: CGFloat.random(in: 50...150), 
-                                   duration: 3.0),
-                    SKAction.fadeOut(withDuration: 3.0)
-                ]),
-                SKAction.removeFromParent()
-            ])
-            
-            particle.run(float)
         }
     }
     

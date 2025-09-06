@@ -108,7 +108,9 @@ class NPCResidentManager {
     
     // MARK: - Shop NPC Management
     private func selectNPCsForShop(count: Int) -> [NPCResident] {
-        let availableResidents = residents.filter { $0.isAvailableForShop }
+        let availableResidents = residents.filter { 
+            $0.isAvailableForShop && !SaveService.shared.isNPCLiberated($0.npcData.id) 
+        }
         return Array(availableResidents.shuffled().prefix(count))
     }
     
@@ -158,7 +160,9 @@ class NPCResidentManager {
         
         let currentRoom = forestScene.currentRoom
         let roomResidents = residents.filter { 
-            $0.npcData.homeRoom == currentRoom && $0.status == .atHome(room: currentRoom)
+            $0.npcData.homeRoom == currentRoom && 
+            $0.status == .atHome(room: currentRoom) &&
+            !SaveService.shared.isNPCLiberated($0.npcData.id) // Exclude liberated NPCs
         }
         
         for resident in roomResidents {
@@ -322,7 +326,9 @@ class NPCResidentManager {
     
     private func spawnRoomNPCs(room: Int, in scene: ForestScene) {
         let roomResidents = residents.filter { 
-            $0.npcData.homeRoom == room && $0.status == .atHome(room: room)
+            $0.npcData.homeRoom == room && 
+            $0.status == .atHome(room: room) &&
+            !SaveService.shared.isNPCLiberated($0.npcData.id) // Exclude liberated NPCs
         }
         
         for resident in roomResidents {

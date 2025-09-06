@@ -686,16 +686,222 @@ class GameScene: BaseGameScene {
     
     // MARK: - Sacred Table Service
     private func handleSacredTableService(drink: RotatableObject) {
+        // Find the ritual NPC
+        guard let ritualNPC = npcs.first(where: { npc in
+            npc.action(forKey: "ritual_pulse") != nil
+        }) else {
+            print("❌ No ritual NPC found to serve boba")
+            return
+        }
+        
         // Drop the drink
         character.dropItem()
         
-        // Notify ritual area that final boba was served
-        ritualArea.finalBobaServed()
+        // Move the drink to the sacred table
+        let tablePosition = ritualArea.position
+        drink.position = CGPoint(x: tablePosition.x, y: tablePosition.y - 40) // On table
+        drink.zPosition = ZLayers.tables + 1 // Above the table
         
-        // Remove the drink (it's consumed in the ritual)
+        // NPC picks up the drink after a moment
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.npcPicksUpFinalDrink(npc: ritualNPC, drink: drink)
+        }
+        
+        print("🧁 ✨ Final boba placed on sacred table for the departing soul...")
+    }
+    
+    private func npcPicksUpFinalDrink(npc: NPC, drink: RotatableObject) {
+        // Move drink to NPC (picked up)
+        let pickupAction = SKAction.move(to: CGPoint(x: npc.position.x, y: npc.position.y + 30), duration: 1.0)
+        drink.run(pickupAction)
+        
+        // NPC drinks and transforms
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.npcTransformsToGhost(npc: npc, drink: drink)
+        }
+        
+        print("👻 \(npc.animalType.rawValue) reaches for their final boba...")
+    }
+    
+    private func npcTransformsToGhost(npc: NPC, drink: RotatableObject) {
+        // Remove the drink (consumed)
         drink.removeFromParent()
         
-        print("🧁 ✨ Final boba served to the departing soul. The liberation is complete.")
+        // Stop ritual pulsing
+        npc.removeAction(forKey: "ritual_pulse")
+        npc.removeAction(forKey: "ritual_glow")
+        
+        // Transform to ghost appearance
+        transformNPCToGhost(npc: npc)
+        
+        // Start farewell sequence
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            self.showFarewellAndAscend(npc: npc)
+        }
+        
+        print("👻 ✨ \(npc.animalType.rawValue) drinks their final boba and begins to transform...")
+    }
+    
+    private func transformNPCToGhost(npc: NPC) {
+        // Ghost transformation effect
+        let ghostTransform = SKAction.sequence([
+            // Flash white
+            SKAction.colorize(with: .white, colorBlendFactor: 0.8, duration: 0.3),
+            // Fade to translucent
+            SKAction.group([
+                SKAction.fadeAlpha(to: 0.6, duration: 1.0),
+                SKAction.colorize(with: .cyan, colorBlendFactor: 0.4, duration: 1.0),
+                SKAction.scale(to: 1.1, duration: 1.0)
+            ])
+        ])
+        
+        // Floating ghost animation
+        let ghostFloat = SKAction.repeatForever(
+            SKAction.sequence([
+                SKAction.moveBy(x: 0, y: 10, duration: 1.5),
+                SKAction.moveBy(x: 0, y: -10, duration: 1.5)
+            ])
+        )
+        
+        npc.run(ghostTransform)
+        npc.run(ghostFloat, withKey: "ghost_float")
+        
+        // Add ghostly particles
+        createGhostParticles(around: npc)
+        
+        print("👻 \(npc.animalType.rawValue) becomes a peaceful spirit...")
+    }
+    
+    private func createGhostParticles(around npc: NPC) {
+        for i in 0..<5 {
+            let delay = Double(i) * 0.3
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                let particle = SKLabelNode(text: "✨")
+                particle.fontSize = 16
+                particle.position = CGPoint(
+                    x: npc.position.x + CGFloat.random(in: -30...30),
+                    y: npc.position.y + CGFloat.random(in: -20...20)
+                )
+                particle.zPosition = ZLayers.effects
+                
+                self.addChild(particle)
+                
+                let float = SKAction.sequence([
+                    SKAction.group([
+                        SKAction.moveBy(x: CGFloat.random(in: -20...20), 
+                                       y: CGFloat.random(in: 30...60), 
+                                       duration: 2.0),
+                        SKAction.fadeOut(withDuration: 2.0)
+                    ]),
+                    SKAction.removeFromParent()
+                ])
+                
+                particle.run(float)
+            }
+        }
+    }
+    
+    private func showFarewellAndAscend(npc: NPC) {
+        // Find the chosen resident data for farewell
+        guard let chosenResident = npcs.first(where: { $0 === npc }) else {
+            completeLiberation(npc: npc)
+            return
+        }
+        
+        // Show farewell dialogue
+        let farewellLines = [
+            "Thank you for helping me find peace...",
+            "I can finally let go of this world.",
+            "The boba you made was perfect - it gave me strength.",
+            "I'm ready to move on now. Farewell, kind soul."
+        ]
+        
+        // Show farewell dialogue using the existing bubble system
+        let farewellText = farewellLines.joined(separator: " ")
+        let farewellBubble = DialogueBubble(
+            text: farewellText,
+            speakerName: npc.animalType.rawValue,
+            position: npc.position,
+            npcID: npc.animalType.characterId ?? "unknown",
+            showResponseButtons: true  // Keep manual dismiss as preferred
+        )
+        
+        addChild(farewellBubble)
+        
+        // Begin ascension after dialogue time
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+            self.ascendToHeaven(npc: npc)
+        }
+        
+        print("💬 👻 \(npc.animalType.rawValue) speaks their final farewell...")
+    }
+    
+    private func ascendToHeaven(npc: NPC) {
+        // Dismiss any dialogue
+        DialogueService.shared.dismissDialogue()
+        
+        // Stop floating
+        npc.removeAction(forKey: "ghost_float")
+        
+        // Beautiful ascension effect
+        let ascension = SKAction.sequence([
+            SKAction.group([
+                SKAction.fadeOut(withDuration: 3.0),
+                SKAction.scale(to: 1.5, duration: 3.0),
+                SKAction.moveBy(x: 0, y: 150, duration: 3.0)
+            ])
+        ])
+        
+        // Create ascending light beam
+        createLightBeam(at: npc.position)
+        
+        npc.run(ascension) {
+            self.completeLiberation(npc: npc)
+        }
+        
+        print("✨ 👻 \(npc.animalType.rawValue) ascends toward the light...")
+    }
+    
+    private func createLightBeam(at position: CGPoint) {
+        let lightBeam = SKShapeNode(rect: CGRect(x: -20, y: 0, width: 40, height: 200))
+        lightBeam.fillColor = SKColor.white.withAlphaComponent(0.6)
+        lightBeam.strokeColor = .clear
+        lightBeam.position = position
+        lightBeam.zPosition = ZLayers.effects - 1
+        
+        addChild(lightBeam)
+        
+        let beamAnimation = SKAction.sequence([
+            SKAction.fadeIn(withDuration: 1.0),
+            SKAction.wait(forDuration: 2.0),
+            SKAction.fadeOut(withDuration: 1.0),
+            SKAction.removeFromParent()
+        ])
+        
+        lightBeam.run(beamAnimation)
+    }
+    
+    private func completeLiberation(npc: NPC) {
+        // Find resident data
+        let chosenResident = NPCResident(npcData: NPCData(
+            id: npc.animalType.characterId ?? "unknown",
+            name: "Unknown",
+            animal: npc.animalType.rawValue,
+            causeOfDeath: "Unknown",
+            homeRoom: 1,
+            dialogue: NPCDialogue(day: [], night: [])
+        ))
+        
+        // Remove NPC from shop permanently
+        if let index = npcs.firstIndex(of: npc) {
+            npcs.remove(at: index)
+        }
+        npc.removeFromParent()
+        
+        // Complete the ritual
+        ritualArea.finalBobaServed()
+        
+        print("✨ 👻 Liberation complete - soul has found eternal peace")
     }
     
 
@@ -1106,21 +1312,52 @@ class GameScene: BaseGameScene {
         if allNPCs.isEmpty {
             statusLines.append("🤷‍♂️ No NPCs found")
         } else {
+            var liberatedCount = 0
+            
             for npcData in allNPCs {
                 if let memory = SaveService.shared.getOrCreateNPCMemory(npcData.id, name: npcData.name, animalType: npcData.animal) {
                     let satisfactionLevel = memory.satisfactionLevel
                     let emoji = satisfactionLevel.emoji
                     
-                    statusLines.append("\(npcData.animal) \(npcData.name) \(emoji)")
-                    statusLines.append("Satisfaction: \(memory.satisfactionScore)/100")
-                    statusLines.append("Interactions: \(memory.totalInteractions)")
+                    // Check if NPC is liberated
+                    if memory.isLiberated {
+                        liberatedCount += 1
+                        statusLines.append("👻 \(npcData.animal) \(npcData.name) - LIBERATED ✨")
+                        if let liberationDate = memory.liberationDate {
+                            let formatter = DateFormatter()
+                            formatter.dateStyle = .short
+                            statusLines.append("Found peace: \(formatter.string(from: liberationDate))")
+                        }
+                    } else {
+                        statusLines.append("\(npcData.animal) \(npcData.name) \(emoji)")
+                        statusLines.append("Satisfaction: \(memory.satisfactionScore)/100")
+                        statusLines.append("Interactions: \(memory.totalInteractions)")
+                        
+                        // Show ritual eligibility
+                        if memory.satisfactionScore >= 45 && memory.satisfactionScore <= 75 {
+                            statusLines.append("🕯️ Ready for liberation ritual")
+                        }
+                    }
                     statusLines.append("")
                 } else {
                     statusLines.append("\(npcData.animal) \(npcData.name) - No data")
                     statusLines.append("")
                 }
             }
+            
             statusLines.append("📈 Total NPCs: \(allNPCs.count)")
+            statusLines.append("✨ Liberated souls: \(liberatedCount)")
+            
+            // Show ritual eligibility summary
+            let eligibleCount = allNPCs.filter { npcData in
+                guard !SaveService.shared.isNPCLiberated(npcData.id) else { return false }
+                if let memory = SaveService.shared.getOrCreateNPCMemory(npcData.id, name: npcData.name, animalType: npcData.animal) {
+                    return memory.satisfactionScore >= 45 && memory.satisfactionScore <= 75
+                }
+                return false
+            }.count
+            
+            statusLines.append("🕯️ Ready for ritual: \(eligibleCount)")
         }
         
         // Create and show status bubble
