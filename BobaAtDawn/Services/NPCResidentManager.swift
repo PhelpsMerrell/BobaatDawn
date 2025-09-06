@@ -191,6 +191,7 @@ class NPCResidentManager {
     
     // MARK: - Time Phase Management
     private var lastKnownTimePhase: TimePhase = .day
+    private var currentRitualNPCId: String? = nil // Track which NPC is currently in ritual
     
     func handleTimePhaseChange(_ newPhase: TimePhase) {
         guard newPhase != lastKnownTimePhase else { return }
@@ -201,27 +202,41 @@ class NPCResidentManager {
         print("🌅 Time phase changed from \(oldPhase.displayName) to \(newPhase.displayName)")
         
         switch newPhase {
-        case .dusk, .night:
-            // NPCs should leave the shop and go home
-            sendAllShopNPCsHome()
-        case .dawn, .day:
+        case .dusk, .night, .dawn:
+            // NPCs should leave the shop and go home (except ritual NPC during dawn)
+            let excludeRitual = newPhase == .dawn
+            print("🌅 Time phase: \(newPhase.displayName) - exclude ritual NPC: \(excludeRitual)")
+            sendAllShopNPCsHome(excludeRitualNPC: excludeRitual)
+        case .day:
             // NPCs can come to the shop
             maintainShopPopulation()
         }
     }
     
-    private func sendAllShopNPCsHome() {
+    private func sendAllShopNPCsHome(excludeRitualNPC: Bool = false) {
         let shopResidents = residents.filter { $0.status == .inShop }
         
         print("🌙 Sending \(shopResidents.count) NPCs home for the night...")
         
+        if shopResidents.isEmpty {
+            print("🌙 No NPCs currently in shop to send home")
+            return
+        }
+        
         for resident in shopResidents {
+            // Skip ritual NPC during dawn if specified
+            if excludeRitualNPC && resident.npcData.id == currentRitualNPCId {
+                print("🕯️ Keeping \(resident.npcData.name) in shop for dawn ritual")
+                continue
+            }
+            
             if let shopNPC = resident.shopNPC {
                 // Force NPCs to leave satisfied when going home for night
                 print("🏠 \(resident.npcData.name) is heading home to room \(resident.npcData.homeRoom)")
                 shopNPC.startLeaving(satisfied: true)
             } else {
                 // If no shop NPC, just move them directly home
+                print("🏠 Moving \(resident.npcData.name) directly home (no shop NPC found)")
                 moveResidentToForest(resident)
             }
         }
@@ -236,15 +251,15 @@ class NPCResidentManager {
             }
         }
         
-        // Only maintain shop population during day/dawn
-        if lastKnownTimePhase == .day || lastKnownTimePhase == .dawn {
+        // Only maintain shop population during day
+        if lastKnownTimePhase == .day {
             maintainShopPopulation()
         }
     }
     
     private func maintainShopPopulation() {
-        // Don't send NPCs to shop during dusk/night
-        guard lastKnownTimePhase == .day || lastKnownTimePhase == .dawn else {
+        // Don't send NPCs to shop during dusk/night/dawn
+        guard lastKnownTimePhase == .day else {
             print("🌙 Not maintaining shop population during \(lastKnownTimePhase.displayName)")
             return
         }
@@ -358,5 +373,18 @@ class NPCResidentManager {
             }
         }
         print("================================")
+    }
+    
+    // MARK: - Ritual NPC Management
+    func setRitualNPC(_ npcId: String) {
+        currentRitualNPCId = npcId
+        print("🕯️ \(npcId) is now the ritual NPC")
+    }
+    
+    func clearRitualNPC() {
+        if let ritualId = currentRitualNPCId {
+            print("🕯️ \(ritualId) is no longer the ritual NPC")
+        }
+        currentRitualNPCId = nil
     }
 }

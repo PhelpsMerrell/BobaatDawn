@@ -552,30 +552,75 @@ class GameScene: BaseGameScene {
             if isRitualActive {
                 ritualArea.forceCleanup()
                 isRitualActive = false
+                // Clear any ritual NPC designation
+                residentManager.clearRitualNPC()
                 print("🌅 Ritual fades as \(phase.displayName) begins...")
             }
         }
     }
     
     private func handleNPCSummoned(_ chosenResident: NPCResident) {
-        // Create liberation NPC at the sacred table
+        // Find existing shop NPC that matches the chosen resident
+        let matchingNPC = npcs.first { npc in
+            // Match by animal type and character ID
+            return npc.animalType.characterId == chosenResident.npcData.id
+        }
+        
+        guard let ritualNPC = matchingNPC else {
+            print("❌ No matching shop NPC found for \(chosenResident.npcData.name)")
+            // Fallback: create NPC if none in shop
+            createRitualNPC(chosenResident)
+            return
+        }
+        
+        // Move existing NPC to sacred table area (adjacent, not on table)
+        let sacredTablePosition = GridCoordinate(x: 16, y: 8) // Sacred table position
+        let adjacentPositions = gridService.getAvailableAdjacentCells(to: sacredTablePosition)
+        
+        if let sittingSpot = adjacentPositions.randomElement() {
+            let worldPos = gridService.gridToWorld(sittingSpot)
+            
+            // Smooth movement to sacred area
+            let moveAction = SKAction.move(to: worldPos, duration: 2.0)
+            moveAction.timingMode = .easeInEaseOut
+            ritualNPC.run(moveAction)
+            
+            // Start ritual pulsing to indicate this is the chosen one
+            startRitualPulsing(ritualNPC)
+            
+            // Set this NPC as the ritual NPC in resident manager
+            residentManager.setRitualNPC(chosenResident.npcData.id)
+            
+            // Notify ritual area
+            ritualArea.npcArrivedAtTable(ritualNPC)
+            
+            print("👻 ✨ \(chosenResident.npcData.name) moves to the sacred table, chosen for liberation...")
+        } else {
+            print("⚠️ No available adjacent cells to sacred table")
+        }
+    }
+    
+    private func createRitualNPC(_ chosenResident: NPCResident) {
+        // Fallback: create NPC if none in shop (should rarely happen)
         let animalType = AnimalType.allCases.first { $0.characterId == chosenResident.npcData.id } ?? .fox
         
-        // Create special liberation NPC (different from regular shop NPCs)
         let liberationNPC = NPC(
             animal: animalType,
-            startPosition: GridCoordinate(x: 16, y: 8), // Near sacred table
+            startPosition: GridCoordinate(x: 16, y: 7), // Adjacent to sacred table
             gridService: gridService,
             npcService: npcService
         )
         
-        // Position at sacred table
-        let sacredTablePosition = gridService.gridToWorld(GridCoordinate(x: 16, y: 8))
-        liberationNPC.position = sacredTablePosition
+        let adjacentPosition = gridService.gridToWorld(GridCoordinate(x: 16, y: 7))
+        liberationNPC.position = adjacentPosition
         
         addChild(liberationNPC)
+        npcs.append(liberationNPC)
         
-        // Notify ritual area that NPC arrived
+        // Start ritual pulsing
+        startRitualPulsing(liberationNPC)
+        
+        // Notify ritual area
         ritualArea.npcArrivedAtTable(liberationNPC)
         
         // Beautiful summoning animation
@@ -591,12 +636,49 @@ class GameScene: BaseGameScene {
         
         liberationNPC.run(summonAnimation)
         
-        print("👻 ✨ \(chosenResident.npcData.name) materializes at the sacred table, ready for final service...")
+        print("👻 ✨ \(chosenResident.npcData.name) materializes near the sacred table...")
+    }
+    
+    private func startRitualPulsing(_ npc: NPC) {
+        // Special pulsing animation to indicate this NPC is chosen for ritual
+        let ritualPulse = SKAction.repeatForever(
+            SKAction.sequence([
+                SKAction.scale(to: 1.2, duration: 1.0),
+                SKAction.scale(to: 1.0, duration: 1.0)
+            ])
+        )
+        
+        // Golden glow effect
+        let goldenGlow = SKAction.repeatForever(
+            SKAction.sequence([
+                SKAction.colorize(with: .gold, colorBlendFactor: 0.3, duration: 1.0),
+                SKAction.colorize(withColorBlendFactor: 0.0, duration: 1.0)
+            ])
+        )
+        
+        npc.run(ritualPulse, withKey: "ritual_pulse")
+        npc.run(goldenGlow, withKey: "ritual_glow")
+        
+        print("✨ \(npc.animalType.rawValue) begins to pulse with sacred energy...")
     }
     
     private func handleRitualCompleted(_ liberatedResident: NPCResident) {
+        // Find and clean up the ritual NPC
+        if let ritualNPC = npcs.first(where: { $0.animalType.characterId == liberatedResident.npcData.id }) {
+            // Stop ritual pulsing
+            ritualNPC.removeAction(forKey: "ritual_pulse")
+            ritualNPC.removeAction(forKey: "ritual_glow")
+            
+            // Reset scale and color
+            ritualNPC.setScale(1.0)
+            ritualNPC.colorBlendFactor = 0.0
+        }
+        
         // Remove NPC from the world permanently
         SaveService.shared.markNPCAsLiberated(liberatedResident.npcData.id)
+        
+        // Clear the ritual NPC from resident manager
+        residentManager.clearRitualNPC()
         
         print("✨ 👻 \(liberatedResident.npcData.name) has found eternal peace and left purgatory forever.")
         print("🌅 The ritual is complete. Dawn continues its gentle embrace...")
