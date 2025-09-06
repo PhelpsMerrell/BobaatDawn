@@ -8,6 +8,13 @@
 import SpriteKit
 import Foundation
 
+// MARK: - NPC Response Types
+enum NPCResponseType: String {
+    case dismiss = "dismiss"  // No satisfaction change
+    case nice = "nice"        // +1 satisfaction
+    case mean = "mean"        // -1 satisfaction
+}
+
 // MARK: - Dialogue Service
 class DialogueService {
     static let shared = DialogueService()
@@ -72,7 +79,8 @@ class DialogueService {
         let bubble = DialogueBubble(
             text: dialogueText,
             speakerName: npcData.name,
-            position: npc.position
+            position: npc.position,
+            npcID: npc.npcId
         )
         
         activeBubble = bubble
@@ -102,7 +110,8 @@ class DialogueService {
         let bubble = DialogueBubble(
             text: dialogueText,
             speakerName: npcData.name,
-            position: proxy.position
+            position: proxy.position,
+            npcID: proxy.npcId
         )
         
         activeBubble = bubble
@@ -157,11 +166,14 @@ class DialogueBubble: SKNode {
     private let bubbleBackground: SKShapeNode
     private let textLabel: SKLabelNode
     private let nameLabel: SKLabelNode
-    private let tapToClose: SKLabelNode
+    private let responseButtons: SKNode
+    private let npcID: String
     
-    init(text: String, speakerName: String, position: CGPoint) {
-        // Create bubble background
-        let bubbleSize = CGSize(width: 300, height: 120)
+    init(text: String, speakerName: String, position: CGPoint, npcID: String) {
+        self.npcID = npcID
+        
+        // Create bubble background (make it taller for buttons)
+        let bubbleSize = CGSize(width: 320, height: 160)
         bubbleBackground = SKShapeNode(rectOf: bubbleSize, cornerRadius: 15)
         bubbleBackground.fillColor = SKColor.white.withAlphaComponent(0.95)
         bubbleBackground.strokeColor = SKColor.black.withAlphaComponent(0.7)
@@ -183,35 +195,31 @@ class DialogueBubble: SKNode {
         textLabel.fontColor = SKColor.black
         textLabel.horizontalAlignmentMode = .center
         textLabel.verticalAlignmentMode = .center
-        textLabel.numberOfLines = 4 // Allow multi-line text
+        textLabel.numberOfLines = 3 // Reduced for button space
         textLabel.preferredMaxLayoutWidth = bubbleSize.width - 20 // Text padding
         
-        // Create tap to close hint
-        tapToClose = SKLabelNode(text: "tap to close")
-        tapToClose.fontName = "Arial"
-        tapToClose.fontSize = 10
-        tapToClose.fontColor = SKColor.gray
-        tapToClose.horizontalAlignmentMode = .center
-        tapToClose.verticalAlignmentMode = .center
-        tapToClose.alpha = 0.6
+        // Create response buttons container
+        responseButtons = SKNode()
         
         super.init()
         
         // Position bubble above NPC
-        self.position = CGPoint(x: position.x, y: position.y + 80)
+        self.position = CGPoint(x: position.x, y: position.y + 100)
         self.zPosition = 100 // High z-position to appear above everything
         
         // Add components
         addChild(bubbleBackground)
         
         // Position text elements within bubble
-        nameLabel.position = CGPoint(x: 0, y: 35)
-        textLabel.position = CGPoint(x: 0, y: 0)
-        tapToClose.position = CGPoint(x: 0, y: -35)
+        nameLabel.position = CGPoint(x: 0, y: 50)
+        textLabel.position = CGPoint(x: 0, y: 15)
         
         addChild(nameLabel)
         addChild(textLabel)
-        addChild(tapToClose)
+        
+        // Create response buttons
+        setupResponseButtons()
+        addChild(responseButtons)
         
         // Make the entire bubble interactive
         bubbleBackground.name = "dialogue_bubble"
@@ -227,12 +235,97 @@ class DialogueBubble: SKNode {
         run(showAnimation)
     }
     
+    private func setupResponseButtons() {
+        let buttonSpacing: CGFloat = 90
+        let buttonY: CGFloat = -45
+        
+        // Dismiss button (❌)
+        let dismissButton = createResponseButton(emoji: "❌", responseType: NPCResponseType.dismiss, position: CGPoint(x: -buttonSpacing, y: buttonY))
+        
+        // Nice button (😊)
+        let niceButton = createResponseButton(emoji: "😊", responseType: NPCResponseType.nice, position: CGPoint(x: 0, y: buttonY))
+        
+        // Mean button (😠)
+        let meanButton = createResponseButton(emoji: "😠", responseType: NPCResponseType.mean, position: CGPoint(x: buttonSpacing, y: buttonY))
+        
+        responseButtons.addChild(dismissButton)
+        responseButtons.addChild(niceButton)
+        responseButtons.addChild(meanButton)
+    }
+    
+    private func createResponseButton(emoji: String, responseType: NPCResponseType, position: CGPoint) -> SKNode {
+        let buttonContainer = SKNode()
+        buttonContainer.position = position
+        
+        // Button background
+        let buttonBG = SKShapeNode(circleOfRadius: 20)
+        buttonBG.fillColor = SKColor.lightGray.withAlphaComponent(0.3)
+        buttonBG.strokeColor = SKColor.gray
+        buttonBG.lineWidth = 1
+        
+        // Button emoji
+        let buttonLabel = SKLabelNode(text: emoji)
+        buttonLabel.fontSize = 24
+        buttonLabel.fontName = "Arial"
+        buttonLabel.horizontalAlignmentMode = .center
+        buttonLabel.verticalAlignmentMode = .center
+        
+        buttonContainer.addChild(buttonBG)
+        buttonContainer.addChild(buttonLabel)
+        
+        // Set name for touch detection
+        buttonContainer.name = "response_\(responseType.rawValue)"
+        
+        return buttonContainer
+    }
+    
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        // Dismiss dialogue when bubble is tapped
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
+        let touchedNode = atPoint(location)
+        
+        // Check if a response button was tapped
+        if let nodeName = touchedNode.parent?.name, nodeName.hasPrefix("response_") {
+            let responseTypeString = String(nodeName.dropFirst("response_".count))
+            
+            if let responseType = NPCResponseType(rawValue: responseTypeString) {
+                handleResponse(responseType)
+                return
+            }
+        }
+        
+        // If no button was tapped, dismiss dialogue
         DialogueService.shared.dismissDialogue()
+    }
+    
+    private func handleResponse(_ responseType: NPCResponseType) {
+        // Record the interaction in SwiftData
+        SaveService.shared.recordNPCInteraction(npcID, responseType: responseType)
+        
+        // Visual feedback for button press
+        if let buttonNode = responseButtons.childNode(withName: "response_\(responseType.rawValue)") {
+            let pressAction = SKAction.sequence([
+                SKAction.scale(to: 0.8, duration: 0.1),
+                SKAction.scale(to: 1.0, duration: 0.1)
+            ])
+            buttonNode.run(pressAction)
+        }
+        
+        // Brief delay then dismiss
+        let waitAction = SKAction.wait(forDuration: 0.3)
+        let dismissAction = SKAction.run {
+            DialogueService.shared.dismissDialogue()
+        }
+        
+        run(SKAction.sequence([waitAction, dismissAction]))
+        
+        // Debug output
+        let responseText = responseType == NPCResponseType.dismiss ? "dismissed" : 
+                          responseType == NPCResponseType.nice ? "was nice to" : "was mean to"
+        print("💬 Player \(responseText) \(npcID)")
     }
 }

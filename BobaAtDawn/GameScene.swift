@@ -19,6 +19,11 @@ class GameScene: BaseGameScene {
     internal var ingredientStations: [IngredientStation] = []
     private var drinkCreator: DrinkCreator!
     
+    // MARK: - Save System
+    private var saveJournal: SaveSystemButton!
+    private var clearDataButton: SaveSystemButton!
+    private var npcStatusTracker: SaveSystemButton!
+    
     // MARK: - Time System (Internal - accessible to extensions)
     internal var timeBreaker: PowerBreaker!
     internal var timeWindow: Window!
@@ -55,6 +60,11 @@ class GameScene: BaseGameScene {
                 
                 setupTimeSystem()
                 print("✅ Time system setup complete")
+                
+                // NEW: Setup save system
+                print("🔧 ABOUT TO CALL setupSaveSystem()")
+                setupSaveSystem()
+                print("✅ Save system setup complete")
                 
                 // NEW: Initialize resident manager and living world
                 setupLivingWorld()
@@ -394,6 +404,53 @@ class GameScene: BaseGameScene {
         print("⏰ Time control button added next to window for testing")
     }
     
+    // MARK: - Save System Setup
+    private func setupSaveSystem() {
+        print("🔧 setupSaveSystem() STARTED")
+        
+        // Create save journal button
+        saveJournal = SaveSystemButton(type: .saveJournal)
+        let journalCell = GridCoordinate(x: 8, y: 17)
+        saveJournal.position = gridService.gridToWorld(journalCell)
+        saveJournal.zPosition = ZLayers.timeSystem
+        addChild(saveJournal)
+        print("📔 Save journal added to scene. Parent: \(saveJournal.parent?.name ?? "nil")")
+        
+        // Create clear data button
+        clearDataButton = SaveSystemButton(type: .clearData)
+        let clearCell = GridCoordinate(x: 10, y: 17)
+        clearDataButton.position = gridService.gridToWorld(clearCell)
+        clearDataButton.zPosition = ZLayers.timeSystem
+        addChild(clearDataButton)
+        print("🗑️ Clear button added to scene. Parent: \(clearDataButton.parent?.name ?? "nil")")
+        
+        // Create NPC status tracker
+        npcStatusTracker = SaveSystemButton(type: .npcStatus)
+        let statusCell = GridCoordinate(x: 12, y: 17)
+        npcStatusTracker.position = gridService.gridToWorld(statusCell)
+        npcStatusTracker.zPosition = ZLayers.timeSystem
+        addChild(npcStatusTracker)
+        print("📈 Status tracker added to scene. Parent: \(npcStatusTracker.parent?.name ?? "nil")")
+        
+        print("📔 Save journal positioned at grid \(journalCell)")
+        print("🗑️ Clear data button positioned at grid \(clearCell)")
+        print("📈 NPC status tracker positioned at grid \(statusCell)")
+        
+        // DEBUG: Test if buttons are positioned correctly
+        print("🔧 DEBUG: Save journal world position: \(saveJournal.position)")
+        print("🔧 DEBUG: Clear button world position: \(clearDataButton.position)")
+        print("🔧 DEBUG: Status tracker world position: \(npcStatusTracker.position)")
+        print("🔧 DEBUG: Scene size: \(self.size)")
+        
+        // DEBUG: Check if buttons are in scene
+        print("🔧 DEBUG: Scene has \(self.children.count) children")
+        let saveButtons = self.children.compactMap { $0 as? SaveSystemButton }
+        print("🔧 DEBUG: Found \(saveButtons.count) SaveSystemButton children in scene")
+        for button in saveButtons {
+            print("🔧 DEBUG: - \(button.buttonType.emoji) at \(button.position), zPosition: \(button.zPosition)")
+        }
+    }
+    
     // MARK: - Living World Setup (NEW)
     private func setupLivingWorld() {
         // Register this game scene with the resident manager
@@ -495,7 +552,37 @@ class GameScene: BaseGameScene {
             drinkCreator.updateDrink(from: ingredientStations)
             print("🧋 ✅ Updated drink display after station interaction")
             
-        // 4. Forest door - enter woods
+        // 4. Save journal - save game state
+        } else if node.name == "save_journal" {
+            print("📔 Saving game state...")
+            saveGameState()
+            
+        // 5. Clear data button - clear all save data
+        } else if node.name == "clear_data_button" {
+            print("🗑️ Clearing all save data...")
+            clearSaveData()
+            
+        // 6. NPC status tracker - show status report
+        } else if node.name == "npc_status_tracker" {
+            print("📈 Showing NPC status report...")
+            showNPCStatusReport()
+            
+        // 7. Forest door - enter woods
+        } else if let saveButton = node as? SaveSystemButton {
+            print("🔧 Interacting with \(saveButton.buttonType) save button")
+            
+            switch saveButton.buttonType {
+            case .saveJournal:
+                print("📔 Saving game state...")
+                saveGameState()
+            case .clearData:
+                print("🗑️ Clearing all save data...")
+                clearSaveData()
+            case .npcStatus:
+                print("📈 Showing NPC status report...")
+                showNPCStatusReport()
+            }
+            
         } else if node.name == "front_door" {
             // Haptic feedback for entering forest
             transitionService.triggerHapticFeedback(type: .success)
@@ -647,8 +734,8 @@ class GameScene: BaseGameScene {
     
     // MARK: - Table Service System (Phase 2)
     private func placeDrinkOnTable(drink: RotatableObject, table: RotatableObject) {
-        // Remove drink from character
-        character.dropItemSilently() // We'll add this method
+        // Remove drink from character (using existing dropItem method)
+        character.dropItem()
         
         // Create drink sprite as child of table
         let drinkOnTable = createTableDrink(from: drink)
@@ -726,6 +813,103 @@ class GameScene: BaseGameScene {
             print("🌲 Successfully transitioned to forest")
         }
     }
+    
+    // MARK: - Save System
+    private func saveGameState() {
+        // Visual feedback - brief glow
+        let glowAction = SKAction.sequence([
+            SKAction.scale(to: 1.2, duration: 0.1),
+            SKAction.scale(to: 1.0, duration: 0.1)
+        ])
+        saveJournal.run(glowAction)
+        
+        // Haptic feedback
+        transitionService.triggerHapticFeedback(type: .success)
+        
+        // Save the actual game state
+        SaveService.shared.saveCurrentGameState(timeService: timeService, residentManager: residentManager)
+        
+        print("📔 ✅ Game saved successfully!")
+    }
+    
+    private func clearSaveData() {
+        // Visual feedback - brief red glow
+        let clearAction = SKAction.sequence([
+            SKAction.colorize(with: .red, colorBlendFactor: 0.8, duration: 0.1),
+            SKAction.colorize(with: .white, colorBlendFactor: 0.0, duration: 0.1)
+        ])
+        clearDataButton.run(clearAction)
+        
+        // Strong haptic feedback for destructive action
+        transitionService.triggerHapticFeedback(type: .light)
+        
+        // Clear all save data
+        SaveService.shared.clearAllSaveData()
+        
+        print("🗑️ ✅ All save data cleared!")
+    }
+    
+    private func showNPCStatusReport() {
+        // Visual feedback - brief glow
+        let glowAction = SKAction.sequence([
+            SKAction.scale(to: 1.2, duration: 0.1),
+            SKAction.scale(to: 1.0, duration: 0.1)
+        ])
+        npcStatusTracker.run(glowAction)
+        
+        // Haptic feedback
+        transitionService.triggerHapticFeedback(type: .selection)
+        
+        // ALSO: Print SwiftData inspection to console
+        SaveService.shared.inspectSwiftDataContents()
+        
+        // Create and show status bubble
+        showNPCStatusBubble()
+        
+        print("📈 ✅ NPC status report displayed!")
+    }
+    
+    // MARK: - NPC Status Bubble Display
+    private func showNPCStatusBubble() {
+        // Dismiss any existing dialogue first
+        DialogueService.shared.dismissDialogue()
+        
+        // Get all NPCs from dialogue service
+        let allNPCs = DialogueService.shared.getAllNPCs()
+        
+        // Create status content
+        var statusLines: [String] = []
+        statusLines.append("📈 NPC STATUS REPORT")
+        statusLines.append("")
+        
+        if allNPCs.isEmpty {
+            statusLines.append("🤷‍♂️ No NPCs found")
+        } else {
+            for npcData in allNPCs {
+                if let memory = SaveService.shared.getOrCreateNPCMemory(npcData.id, name: npcData.name, animalType: npcData.animal) {
+                    let satisfactionLevel = memory.satisfactionLevel
+                    let emoji = satisfactionLevel.emoji
+                    
+                    statusLines.append("\(npcData.animal) \(npcData.name) \(emoji)")
+                    statusLines.append("Satisfaction: \(memory.satisfactionScore)/100")
+                    statusLines.append("Interactions: \(memory.totalInteractions)")
+                    statusLines.append("")
+                } else {
+                    statusLines.append("\(npcData.animal) \(npcData.name) - No data")
+                    statusLines.append("")
+                }
+            }
+            statusLines.append("📈 Total NPCs: \(allNPCs.count)")
+        }
+        
+        // Create and show status bubble
+        let statusBubble = NPCStatusBubble(
+            statusLines: statusLines,
+            position: npcStatusTracker.position
+        )
+        
+        addChild(statusBubble)
+    }
 }
 
 // MARK: - Physics Contact Delegate (NEW)
@@ -769,5 +953,194 @@ extension GameScene: PhysicsContactDelegate {
     func itemContactedFurniture(_ item: SKNode, furniture: SKNode) {
         print("📦 Item contacted furniture via physics")
         // Could handle automatic item placement
+    }
+}
+
+// MARK: - NPC Status Bubble
+class NPCStatusBubble: SKNode {
+    private let bubbleBackground: SKShapeNode
+    private let contentNode: SKNode
+    private let scrollContainer: SKNode
+    private var scrollOffset: CGFloat = 0
+    private let maxScrollOffset: CGFloat
+    private var longPressTimer: Timer?
+    private let longPressDuration: TimeInterval = 0.6
+    
+    init(statusLines: [String], position: CGPoint) {
+        // Fixed bubble size that fits on screen
+        let bubbleWidth: CGFloat = 280
+        let bubbleHeight: CGFloat = 320
+        let lineHeight: CGFloat = 18
+        let padding: CGFloat = 15
+        
+        // Calculate content height for scrolling
+        let contentHeight = CGFloat(statusLines.count) * lineHeight + padding
+        let visibleHeight = bubbleHeight - padding * 2 - 30 // Leave room for instructions
+        maxScrollOffset = max(0, contentHeight - visibleHeight)
+        
+        // Create bubble background
+        bubbleBackground = SKShapeNode(rectOf: CGSize(width: bubbleWidth, height: bubbleHeight), cornerRadius: 12)
+        bubbleBackground.fillColor = SKColor.white.withAlphaComponent(0.95)
+        bubbleBackground.strokeColor = SKColor.black.withAlphaComponent(0.7)
+        bubbleBackground.lineWidth = 2
+        
+        // Create scroll container
+        scrollContainer = SKNode()
+        
+        // Create content container
+        contentNode = SKNode()
+        
+        super.init()
+        
+        // Position bubble in center of screen instead of above button
+        self.position = CGPoint(x: 0, y: 0) // Center of screen
+        self.zPosition = 200 // Very high z-position
+        
+        // Add background
+        addChild(bubbleBackground)
+        
+        // Add text lines to content
+        for (index, line) in statusLines.enumerated() {
+            let label = SKLabelNode(text: line)
+            label.fontName = line.hasPrefix("📈") ? "Arial-Bold" : "Arial"
+            label.fontSize = line.hasPrefix("📈") ? 13 : 11
+            label.fontColor = line.hasPrefix("📈") ? SKColor.darkGray : SKColor.black
+            label.horizontalAlignmentMode = .center
+            label.verticalAlignmentMode = .center
+            
+            // Position from top down
+            let yOffset = (contentHeight/2) - (CGFloat(index) * lineHeight) - padding
+            label.position = CGPoint(x: 0, y: yOffset)
+            
+            contentNode.addChild(label)
+        }
+        
+        // Add content to scroll container
+        scrollContainer.addChild(contentNode)
+        
+        // Clip the scroll area
+        let clipFrame = CGRect(x: -bubbleWidth/2 + padding, y: -visibleHeight/2, width: bubbleWidth - padding*2, height: visibleHeight)
+        let clipNode = SKCropNode()
+        let clipMask = SKSpriteNode(color: .white, size: clipFrame.size)
+        clipMask.position = CGPoint(x: clipFrame.midX, y: clipFrame.midY)
+        clipNode.maskNode = clipMask
+        clipNode.addChild(scrollContainer)
+        
+        addChild(clipNode)
+        
+        // Add instructions
+        let instructionText = maxScrollOffset > 0 ? "Drag to scroll • Long press to close" : "Long press to close"
+        let closeLabel = SKLabelNode(text: instructionText)
+        closeLabel.fontName = "Arial"
+        closeLabel.fontSize = 9
+        closeLabel.fontColor = SKColor.gray
+        closeLabel.horizontalAlignmentMode = .center
+        closeLabel.verticalAlignmentMode = .center
+        closeLabel.position = CGPoint(x: 0, y: -(bubbleHeight/2) + 12)
+        addChild(closeLabel)
+        
+        // Add scroll indicator if needed
+        if maxScrollOffset > 0 {
+            let scrollIndicator = SKLabelNode(text: "⇅")
+            scrollIndicator.fontName = "Arial"
+            scrollIndicator.fontSize = 12
+            scrollIndicator.fontColor = SKColor.gray
+            scrollIndicator.horizontalAlignmentMode = .center
+            scrollIndicator.verticalAlignmentMode = .center
+            scrollIndicator.position = CGPoint(x: bubbleWidth/2 - 15, y: 0)
+            addChild(scrollIndicator)
+        }
+        
+        // Make the bubble interactive
+        bubbleBackground.name = "status_bubble"
+        isUserInteractionEnabled = true
+        
+        // Animate bubble appearance
+        alpha = 0
+        setScale(0.5)
+        let showAnimation = SKAction.group([
+            SKAction.fadeIn(withDuration: 0.3),
+            SKAction.scale(to: 1.0, duration: 0.3)
+        ])
+        run(showAnimation)
+    }
+    
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
+        
+        // Start long press timer for closing
+        startLongPressTimer()
+        
+        // Don't immediately close - just track touch for potential scrolling
+    }
+    
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard let touch = touches.first else { return }
+        
+        // Cancel long press timer when user starts dragging
+        cancelLongPressTimer()
+        
+        guard maxScrollOffset > 0 else { return }
+        
+        let location = touch.location(in: self)
+        let previousLocation = touch.previousLocation(in: self)
+        
+        // Only scroll if touch is inside bubble
+        if bubbleBackground.contains(location) {
+            let deltaY = location.y - previousLocation.y
+            
+            // Update scroll offset
+            let newOffset = scrollOffset + deltaY
+            scrollOffset = max(-maxScrollOffset, min(0, newOffset))
+            
+            // Apply scroll to content
+            contentNode.position.y = scrollOffset
+        }
+    }
+    
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        // Cancel long press timer when touch ends
+        cancelLongPressTimer()
+    }
+    
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        // Cancel long press timer when touch is cancelled
+        cancelLongPressTimer()
+    }
+    
+    private func startLongPressTimer() {
+        cancelLongPressTimer() // Cancel any existing timer
+        
+        longPressTimer = Timer.scheduledTimer(withTimeInterval: longPressDuration, repeats: false) { [weak self] _ in
+            self?.handleLongPress()
+        }
+    }
+    
+    private func cancelLongPressTimer() {
+        longPressTimer?.invalidate()
+        longPressTimer = nil
+    }
+    
+    private func handleLongPress() {
+        print("📈 Long press detected - closing status bubble")
+        closeBubble()
+    }
+    
+    private func closeBubble() {
+        let hideAnimation = SKAction.group([
+            SKAction.fadeOut(withDuration: 0.2),
+            SKAction.scale(to: 0.8, duration: 0.2)
+        ])
+        
+        let removeAction = SKAction.run {
+            self.removeFromParent()
+        }
+        
+        run(SKAction.sequence([hideAnimation, removeAction]))
     }
 }

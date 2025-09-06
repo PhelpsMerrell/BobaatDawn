@@ -192,8 +192,35 @@ class BaseGameScene: SKScene, InputServiceDelegate {
     
     // MARK: - Touch Handling (Shared Implementation with Template Methods)
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        print("📟 TOUCH EVENT: touchesBegan called with \(touches.count) touches")
+        
         // Don't handle touches during pinch
-        guard !isHandlingPinch else { return }
+        guard !isHandlingPinch else { 
+            print("📟 TOUCH EVENT: Ignoring touch during pinch")
+            return 
+        }
+        
+        // DEBUG: Log what node was touched
+        guard let touch = touches.first else { return }
+        let location = touch.location(in: self)
+        let touchedNode = self.atPoint(location)
+        print("👍 TOUCH: Touched node at \(location): \(touchedNode.name ?? "unnamed") - \(type(of: touchedNode))")
+        
+        // Special logging for SaveSystemButton
+        if let saveButton = touchedNode as? SaveSystemButton {
+            print("👍 TOUCH: Found SaveSystemButton directly: \(saveButton.buttonType.emoji)")
+        }
+        
+        // DEBUG: Check if there are any SaveSystemButtons near the touch location
+        let searchRadius: CGFloat = 50.0
+        let nearbyButtons = self.children.compactMap { $0 as? SaveSystemButton }.filter { button in
+            let distance = sqrt(pow(button.position.x - location.x, 2) + pow(button.position.y - location.y, 2))
+            return distance <= searchRadius
+        }
+        print("👍 TOUCH: Found \(nearbyButtons.count) SaveSystemButtons within \(searchRadius)pt of touch")
+        for button in nearbyButtons {
+            print("👍 TOUCH: - \(button.buttonType.emoji) at \(button.position), distance: \(sqrt(pow(button.position.x - location.x, 2) + pow(button.position.y - location.y, 2)))")
+        }
         
         // Allow subclasses to handle scene-specific touches first
         if handleSceneSpecificTouch(touches, with: event) {

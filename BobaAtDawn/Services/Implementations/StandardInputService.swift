@@ -56,12 +56,18 @@ class StandardInputService: InputService {
         // Setup pinch gesture - InputService handles it internally
         if gestureConfig.enablePinch {
             let pinchGesture = UIPinchGestureRecognizer(target: self, action: #selector(handlePinchGesture(_:)))
+            pinchGesture.delaysTouchesBegan = false
+            pinchGesture.delaysTouchesEnded = false
+            pinchGesture.cancelsTouchesInView = false
             view.addGestureRecognizer(pinchGesture)
         }
         
         // Setup rotation gesture (mainly for GameScene) - InputService handles it internally
         if gestureConfig.enableRotation {
             let rotationGesture = UIRotationGestureRecognizer(target: self, action: #selector(handleRotationGesture(_:)))
+            rotationGesture.delaysTouchesBegan = false
+            rotationGesture.delaysTouchesEnded = false
+            rotationGesture.cancelsTouchesInView = false
             view.addGestureRecognizer(rotationGesture)
         }
         
@@ -69,6 +75,9 @@ class StandardInputService: InputService {
         if gestureConfig.enableTwoFingerTap {
             let twoFingerTap = UITapGestureRecognizer(target: self, action: #selector(handleTwoFingerTapGesture(_:)))
             twoFingerTap.numberOfTouchesRequired = 2
+            twoFingerTap.delaysTouchesBegan = false
+            twoFingerTap.delaysTouchesEnded = false
+            twoFingerTap.cancelsTouchesInView = false
             view.addGestureRecognizer(twoFingerTap)
         }
         
@@ -219,6 +228,10 @@ class StandardInputService: InputService {
         
         print("🔎 Checking node: \(node.name ?? "unnamed") - \(type(of: node))")
         
+        // ADD: Special debug for SaveSystemButton
+        if let saveButton = node as? SaveSystemButton {
+            print("🔧 Found SaveSystemButton: \(saveButton.buttonType.emoji) (\(saveButton.buttonType.name))")
+        }
         var current: SKNode? = node
         var depth = 0
         
@@ -294,6 +307,11 @@ class StandardInputService: InputService {
                 return station
             }
             
+            // Check for save system buttons
+            if let saveButton = node as? SaveSystemButton {
+                return saveButton
+            }
+            
             // Check for completed drink pickup
             if node.name == "completed_drink_pickup" {
                 return node
@@ -339,6 +357,11 @@ extension StandardInputService {
         guard let delegate = delegate else {
             print("🎮 InputService: Pinch gesture received but no delegate set")
             return
+        }
+        
+        // CRITICAL: Don't consume all touches - let single taps through
+        if gesture.state == .began {
+            print("🎮 InputService: Pinch began - will handle pinch but allow other touches")
         }
         
         delegate.inputService(self, didReceivePinch: gesture)
