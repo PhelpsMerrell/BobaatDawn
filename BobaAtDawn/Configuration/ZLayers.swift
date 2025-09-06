@@ -62,6 +62,11 @@ struct ZLayers {
     static let timeSystem: CGFloat = 50
     static let timeSystemLabels: CGFloat = 51
     
+    /// Ritual systems
+    static let ritualArea: CGFloat = 55
+    static let ritualItems: CGFloat = 56
+    static let effects: CGFloat = 57
+    
     /// Doors and transitions
     static let doors: CGFloat = 60
     static let doorEffects: CGFloat = 61

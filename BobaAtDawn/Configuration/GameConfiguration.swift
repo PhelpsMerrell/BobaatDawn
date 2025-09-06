@@ -215,8 +215,8 @@ struct GameConfig {
         
         // FIXED: Time system positioning using grid coordinates
         static let breakerGridPosition = GridCoordinate(x: 3, y: 20)   // Top-left area
-        static let windowGridPosition = GridCoordinate(x: 28, y: 18)   // Top-right area
-        static let labelGridPosition = GridCoordinate(x: 28, y: 18)    // Same as window
+        static let windowGridPosition = GridCoordinate(x: 3, y: 18)   // Top-right area
+        static let labelGridPosition = GridCoordinate(x: 3, y: 18)    // Same as window
         
         // Time display configuration
         static let labelFontSize: CGFloat = 24

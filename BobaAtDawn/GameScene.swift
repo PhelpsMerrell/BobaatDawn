@@ -29,6 +29,10 @@ class GameScene: BaseGameScene {
     internal var timeWindow: Window!
     internal var timeLabel: SKLabelNode!
     
+    // MARK: - Ritual System
+    private var ritualArea: RitualArea!
+    private var isRitualActive: Bool = false
+    
     // MARK: - Debug Controls
     private var timeControlButton: TimeControlButton?
     //MARK: - Physics 
@@ -70,6 +74,14 @@ class GameScene: BaseGameScene {
                 setupLivingWorld()
                 print("✅ Living world initialized")
                 
+                // Setup time phase change monitoring
+                setupTimePhaseMonitoring()
+                print("✅ Time phase monitoring setup complete")
+                
+                // Setup ritual area
+                setupRitualArea()
+                print("✅ Ritual area setup complete")
+                
                 // Optional grid overlay for development
                 if showGridOverlay {
                     addGridOverlay()
@@ -81,10 +93,6 @@ class GameScene: BaseGameScene {
                 
                 print("🔧 GameScene.setupSpecificContent() completed successfully")
                 
-            } catch {
-                print("❌ CRITICAL ERROR in setupSpecificContent(): \(error)")
-                // Try to continue with minimal setup
-                setupTimeSystem()
             }
         }
     
@@ -248,13 +256,14 @@ class GameScene: BaseGameScene {
     
     private func setupIngredientStations() {
         // REORDERED: 5-station boba creation system with ice at position 1
+        // MOVED UP: Stations moved up to make room for ritual area below
         let stationTypes: [IngredientStation.StationType] = [.ice, .tea, .boba, .foam, .lid]
         let stationCells = [
-            GridCoordinate(x: 12, y: 15),  // Ice station (Station 1)
-            GridCoordinate(x: 14, y: 15),  // Tea station (Station 2)
-            GridCoordinate(x: 16, y: 15),  // Boba station (Station 3)
-            GridCoordinate(x: 18, y: 15),  // Foam station (Station 4)
-            GridCoordinate(x: 20, y: 15)   // Lid station (Station 5)
+            GridCoordinate(x: 12, y: 17),  // Ice station (Station 1) - moved up 3 rows
+            GridCoordinate(x: 14, y: 17),  // Tea station (Station 2) - moved up 3 rows
+            GridCoordinate(x: 16, y: 17),  // Boba station (Station 3) - moved up 3 rows
+            GridCoordinate(x: 18, y: 17),  // Foam station (Station 4) - moved up 3 rows
+            GridCoordinate(x: 20, y: 17)   // Lid station (Station 5) - moved up 3 rows
         ]
         
         print("🧋 🏢 STATION SETUP: Creating stations in new order...")
@@ -293,9 +302,9 @@ class GameScene: BaseGameScene {
             gridService.occupyCell(cell, with: gameObject)
         }
         
-        // DrinkCreator position - also grid-aligned (adjusted for new grid)
+        // DrinkCreator position - also grid-aligned (moved up with stations)
         drinkCreator = DrinkCreator()
-        let displayCell = GridCoordinate(x: 16, y: 13)  // Below tea station center
+        let displayCell = GridCoordinate(x: 16, y: 14)  // Below tea station center (moved up)
         drinkCreator.position = gridService.gridToWorld(displayCell)
         drinkCreator.zPosition = ZLayers.drinkCreator
         addChild(drinkCreator)
@@ -310,10 +319,10 @@ class GameScene: BaseGameScene {
     private func convertExistingObjectsToGrid() {
         // Convert sample objects to grid positions (adjusted for 60pt grid)
         let objectConfigs = [
-            (gridPos: GridCoordinate(x: 25, y: 15), type: ObjectType.furniture, color: SKColor.red, shape: "arrow"),
-            (gridPos: GridCoordinate(x: 8, y: 12), type: ObjectType.furniture, color: SKColor.blue, shape: "L"),
-            (gridPos: GridCoordinate(x: 18, y: 10), type: ObjectType.drink, color: SKColor.green, shape: "triangle"),
-            (gridPos: GridCoordinate(x: 14, y: 18), type: ObjectType.furniture, color: SKColor.orange, shape: "rectangle")
+            (gridPos: GridCoordinate(x: 25, y: 10), type: ObjectType.furniture, color: SKColor.red, shape: "arrow"),
+            (gridPos: GridCoordinate(x: 25, y: 12), type: ObjectType.furniture, color: SKColor.blue, shape: "L"),
+            (gridPos: GridCoordinate(x: 25, y: 14), type: ObjectType.drink, color: SKColor.green, shape: "triangle"),
+            (gridPos: GridCoordinate(x: 25, y: 16), type: ObjectType.furniture, color: SKColor.orange, shape: "rectangle")
         ]
         
         for config in objectConfigs {
@@ -330,15 +339,15 @@ class GameScene: BaseGameScene {
         
         // Convert tables to grid positions (adjusted for 60pt grid)
         let tableGridPositions = [
-            GridCoordinate(x: 22, y: 18),
-            GridCoordinate(x: 10, y: 10),
-            GridCoordinate(x: 26, y: 8),
-            GridCoordinate(x: 13, y: 20),
-            GridCoordinate(x: 28, y: 14),
-            GridCoordinate(x: 6, y: 12),
+            GridCoordinate(x: 12, y: 8),
+            GridCoordinate(x: 14, y: 8),
+            GridCoordinate(x: 16, y: 8),
+            GridCoordinate(x: 18, y: 8),
+            GridCoordinate(x: 12, y: 6),
+            GridCoordinate(x: 14, y: 6),
             GridCoordinate(x: 16, y: 6),
-            GridCoordinate(x: 20, y: 12),
-            GridCoordinate(x: 14, y: 10)
+            GridCoordinate(x: 18, y: 6),
+            GridCoordinate(x: 20, y: 6)
         ]
         
         for gridPos in tableGridPositions {
@@ -410,7 +419,7 @@ class GameScene: BaseGameScene {
         
         // Create save journal button
         saveJournal = SaveSystemButton(type: .saveJournal)
-        let journalCell = GridCoordinate(x: 8, y: 17)
+        let journalCell = GridCoordinate(x: 2, y: 3)
         saveJournal.position = gridService.gridToWorld(journalCell)
         saveJournal.zPosition = ZLayers.timeSystem
         addChild(saveJournal)
@@ -418,7 +427,7 @@ class GameScene: BaseGameScene {
         
         // Create clear data button
         clearDataButton = SaveSystemButton(type: .clearData)
-        let clearCell = GridCoordinate(x: 10, y: 17)
+        let clearCell = GridCoordinate(x: 4, y: 3)
         clearDataButton.position = gridService.gridToWorld(clearCell)
         clearDataButton.zPosition = ZLayers.timeSystem
         addChild(clearDataButton)
@@ -426,7 +435,7 @@ class GameScene: BaseGameScene {
         
         // Create NPC status tracker
         npcStatusTracker = SaveSystemButton(type: .npcStatus)
-        let statusCell = GridCoordinate(x: 12, y: 17)
+        let statusCell = GridCoordinate(x: 6, y: 3)
         npcStatusTracker.position = gridService.gridToWorld(statusCell)
         npcStatusTracker.zPosition = ZLayers.timeSystem
         addChild(npcStatusTracker)
@@ -462,6 +471,38 @@ class GameScene: BaseGameScene {
         print("🌍 Living world initialized with persistent residents")
     }
     
+    // MARK: - Time Phase Monitoring
+    private var lastTimePhase: TimePhase = .day
+    
+    private func setupTimePhaseMonitoring() {
+        // Initialize with current time phase
+        lastTimePhase = timeService.currentPhase
+        residentManager.handleTimePhaseChange(lastTimePhase)
+        
+        print("🌅 Time phase monitoring initialized with \(lastTimePhase.displayName)")
+    }
+    
+    // MARK: - Ritual Area Setup
+    private func setupRitualArea() {
+        // Position ritual area below the boba stations
+        let ritualCenter = GridCoordinate(x: 16, y: 12)  // Below drink creator
+        
+        ritualArea = RitualArea(gridService: gridService, centerPosition: ritualCenter)
+        
+        // Set up ritual callbacks
+        ritualArea.onNPCSummoned = { [weak self] chosenResident in
+            self?.handleNPCSummoned(chosenResident)
+        }
+        
+        ritualArea.onRitualCompleted = { [weak self] liberatedResident in
+            self?.handleRitualCompleted(liberatedResident)
+        }
+        
+        addChild(ritualArea)
+        
+        print("🕯️ ✨ Ritual area ready at grid \(ritualCenter) - awaiting dawn...")
+    }
+    
     // MARK: - NPC Creation for Resident Manager
     func createShopNPC(animalType: AnimalType, resident: NPCResident) -> NPC {
         // Create NPC with dependencies injected
@@ -492,6 +533,87 @@ class GameScene: BaseGameScene {
         entranceAnimation.timingMode = .easeOut
         
         npc.run(entranceAnimation)
+    }
+    
+    // MARK: - Ritual System Integration
+    private func handleRitualTimePhaseChange(_ phase: TimePhase) {
+        switch phase {
+        case .dawn:
+            // Check if ritual should be activated
+            if ritualArea.hasEligibleNPCs() {
+                ritualArea.spawnRitual()
+                isRitualActive = true
+                print("🌅 ✨ DAWN BREAKS - Sacred ritual manifests for a worthy soul!")
+            } else {
+                print("🌅 Dawn arrives, but no souls are ready for liberation...")
+            }
+        case .day, .dusk, .night:
+            // Clean up ritual if it was active
+            if isRitualActive {
+                ritualArea.forceCleanup()
+                isRitualActive = false
+                print("🌅 Ritual fades as \(phase.displayName) begins...")
+            }
+        }
+    }
+    
+    private func handleNPCSummoned(_ chosenResident: NPCResident) {
+        // Create liberation NPC at the sacred table
+        let animalType = AnimalType.allCases.first { $0.characterId == chosenResident.npcData.id } ?? .fox
+        
+        // Create special liberation NPC (different from regular shop NPCs)
+        let liberationNPC = NPC(
+            animal: animalType,
+            startPosition: GridCoordinate(x: 16, y: 8), // Near sacred table
+            gridService: gridService,
+            npcService: npcService
+        )
+        
+        // Position at sacred table
+        let sacredTablePosition = gridService.gridToWorld(GridCoordinate(x: 16, y: 8))
+        liberationNPC.position = sacredTablePosition
+        
+        addChild(liberationNPC)
+        
+        // Notify ritual area that NPC arrived
+        ritualArea.npcArrivedAtTable(liberationNPC)
+        
+        // Beautiful summoning animation
+        liberationNPC.alpha = 0.0
+        liberationNPC.setScale(0.5)
+        
+        let summonAnimation = SKAction.sequence([
+            SKAction.group([
+                SKAction.fadeIn(withDuration: 1.5),
+                SKAction.scale(to: 1.0, duration: 1.5)
+            ])
+        ])
+        
+        liberationNPC.run(summonAnimation)
+        
+        print("👻 ✨ \(chosenResident.npcData.name) materializes at the sacred table, ready for final service...")
+    }
+    
+    private func handleRitualCompleted(_ liberatedResident: NPCResident) {
+        // Remove NPC from the world permanently
+        SaveService.shared.markNPCAsLiberated(liberatedResident.npcData.id)
+        
+        print("✨ 👻 \(liberatedResident.npcData.name) has found eternal peace and left purgatory forever.")
+        print("🌅 The ritual is complete. Dawn continues its gentle embrace...")
+    }
+    
+    // MARK: - Sacred Table Service
+    private func handleSacredTableService(drink: RotatableObject) {
+        // Drop the drink
+        character.dropItem()
+        
+        // Notify ritual area that final boba was served
+        ritualArea.finalBobaServed()
+        
+        // Remove the drink (it's consumed in the ritual)
+        drink.removeFromParent()
+        
+        print("🧁 ✨ Final boba served to the departing soul. The liberation is complete.")
     }
     
 
@@ -635,6 +757,12 @@ class GameScene: BaseGameScene {
             if rotatable.name == "table" && character.carriedItem != nil {
                 if let carriedDrink = character.carriedItem {
                     print("🧋 Attempting to place \(carriedDrink.objectType) on table")
+                    // SPECIAL CASE: Sacred table during ritual
+                    if rotatable.name == "sacred_table" && isRitualActive {
+                        handleSacredTableService(drink: carriedDrink)
+                        return
+                    }
+                    
                     placeDrinkOnTable(drink: carriedDrink, table: rotatable)
                 }
                 return // Exit early for table interaction
@@ -671,6 +799,17 @@ class GameScene: BaseGameScene {
     override open func updateSpecificContent(_ currentTime: TimeInterval) {
         // Update time system
         timeService.update()
+        
+        // Check for time phase changes and notify resident manager
+        let currentPhase = timeService.currentPhase
+        if currentPhase != lastTimePhase {
+            print("🌅 Detected time phase change: \(lastTimePhase.displayName) → \(currentPhase.displayName)")
+            lastTimePhase = currentPhase
+            residentManager.handleTimePhaseChange(currentPhase)
+            
+            // Handle ritual activation/deactivation
+            handleRitualTimePhaseChange(currentPhase)
+        }
         
         // Update time display
         updateTimeDisplay()
@@ -735,7 +874,7 @@ class GameScene: BaseGameScene {
     // MARK: - Table Service System (Phase 2)
     private func placeDrinkOnTable(drink: RotatableObject, table: RotatableObject) {
         // Remove drink from character (using existing dropItem method)
-        character.dropItem()
+        character.dropItemSilently()
         
         // Create drink sprite as child of table
         let drinkOnTable = createTableDrink(from: drink)

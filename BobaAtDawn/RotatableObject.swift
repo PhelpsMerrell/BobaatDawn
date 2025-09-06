@@ -295,4 +295,16 @@ class RotatableObject: SKSpriteNode {
     var canBeArranged: Bool {
         return objectType == .furniture || objectType == .station
     }
+    func fadeAway() {
+        let fadeOut = SKAction.sequence([
+            SKAction.group([
+                SKAction.fadeOut(withDuration: 1.5),
+                SKAction.scale(to: 0.3, duration: 1.5)
+            ]),
+            SKAction.removeFromParent()
+        ])
+        
+        run(fadeOut)
+        print("🎵 Sacred harp fades as the dawn ends...")
+    }
 }

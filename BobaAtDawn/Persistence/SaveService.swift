@@ -190,6 +190,23 @@ final class SaveService {
         saveNPCMemoryChanges(memory)
     }
     
+    // MARK: - NPC Liberation Tracking
+    func markNPCAsLiberated(_ npcID: String) {
+        guard let memory = getNPCMemory(npcID) else { return }
+        
+        memory.isLiberated = true
+        memory.liberationDate = Date()
+        
+        print("✨ NPC \(npcID) marked as liberated from purgatory")
+        
+        saveNPCMemoryChanges(memory)
+    }
+    
+    func isNPCLiberated(_ npcID: String) -> Bool {
+        guard let memory = getNPCMemory(npcID) else { return false }
+        return memory.isLiberated
+    }
+    
     func recordNPCDrinkReceived(_ npcID: String) {
         guard let memory = getNPCMemory(npcID) else { return }
         

@@ -57,6 +57,10 @@ final class NPCMemory {
     // Emotional state (affects dialogue selection)
     var currentMood: String = "neutral"
     
+    // Liberation tracking
+    var isLiberated: Bool = false
+    var liberationDate: Date?
+    
     // Satisfaction level helpers
     var satisfactionLevel: SatisfactionLevel {
         switch satisfactionScore {

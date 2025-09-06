@@ -6,6 +6,7 @@
 //
 
 import SpriteKit
+import Foundation
 
 // MARK: - Resident Status
 enum ResidentStatus: Equatable {
@@ -102,6 +103,7 @@ class NPCResidentManager {
         spawnAllForestNPCs()
         
         print("🌍 World initialized: \(getShopNPCCount()) NPCs in shop, \(getForestNPCCount()) NPCs in forest")
+        print("🌍 Starting time phase: \(lastKnownTimePhase.displayName)")
     }
     
     // MARK: - Shop NPC Management
@@ -187,6 +189,44 @@ class NPCResidentManager {
         print("🏠 Spawned \(resident.npcData.name) in their home (room \(resident.npcData.homeRoom))")
     }
     
+    // MARK: - Time Phase Management
+    private var lastKnownTimePhase: TimePhase = .day
+    
+    func handleTimePhaseChange(_ newPhase: TimePhase) {
+        guard newPhase != lastKnownTimePhase else { return }
+        
+        let oldPhase = lastKnownTimePhase
+        lastKnownTimePhase = newPhase
+        
+        print("🌅 Time phase changed from \(oldPhase.displayName) to \(newPhase.displayName)")
+        
+        switch newPhase {
+        case .dusk, .night:
+            // NPCs should leave the shop and go home
+            sendAllShopNPCsHome()
+        case .dawn, .day:
+            // NPCs can come to the shop
+            maintainShopPopulation()
+        }
+    }
+    
+    private func sendAllShopNPCsHome() {
+        let shopResidents = residents.filter { $0.status == .inShop }
+        
+        print("🌙 Sending \(shopResidents.count) NPCs home for the night...")
+        
+        for resident in shopResidents {
+            if let shopNPC = resident.shopNPC {
+                // Force NPCs to leave satisfied when going home for night
+                print("🏠 \(resident.npcData.name) is heading home to room \(resident.npcData.homeRoom)")
+                shopNPC.startLeaving(satisfied: true)
+            } else {
+                // If no shop NPC, just move them directly home
+                moveResidentToForest(resident)
+            }
+        }
+    }
+    
     // MARK: - Update System
     func update(deltaTime: TimeInterval) {
         // Update cooldowns
@@ -196,11 +236,19 @@ class NPCResidentManager {
             }
         }
         
-        // Check if we need to maintain shop population
-        maintainShopPopulation()
+        // Only maintain shop population during day/dawn
+        if lastKnownTimePhase == .day || lastKnownTimePhase == .dawn {
+            maintainShopPopulation()
+        }
     }
     
     private func maintainShopPopulation() {
+        // Don't send NPCs to shop during dusk/night
+        guard lastKnownTimePhase == .day || lastKnownTimePhase == .dawn else {
+            print("🌙 Not maintaining shop population during \(lastKnownTimePhase.displayName)")
+            return
+        }
+        
         let currentShopCount = getShopNPCCount()
         
         if currentShopCount < targetShopNPCs {
@@ -292,6 +340,7 @@ class NPCResidentManager {
     // MARK: - Debug Info
     func printStatus() {
         print("🌍 === RESIDENT MANAGER STATUS ===")
+        print("🌅 Current Time Phase: \(lastKnownTimePhase.displayName)")
         print("🏪 Shop NPCs: \(getShopNPCCount())/\(targetShopNPCs)")
         print("🌲 Forest NPCs: \(getForestNPCCount())")
         

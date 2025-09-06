@@ -120,6 +120,38 @@ class DialogueService {
         print("💬 \\(npcData.name): \\(dialogueText)")
     }
     
+    // MARK: - Custom Dialogue (for ritual farewells)
+    func showCustomDialogue(for proxy: NPCDialogueProxy, in scene: SKScene, customLines: [String]) {
+        // Dismiss any existing bubble first
+        dismissDialogue()
+        
+        // Get NPC data for name
+        guard let npcData = getNPC(byId: proxy.npcId) else {
+            print("❌ ERROR: No dialogue data found for NPC: \(proxy.npcId)")
+            return
+        }
+        
+        // Freeze the NPC via proxy
+        proxy.freeze()
+        
+        // Use custom dialogue text
+        let dialogueText = customLines.randomElement() ?? "Farewell..."
+        
+        // Create and show speech bubble (no response buttons for liberation)
+        let bubble = DialogueBubble(
+            text: dialogueText,
+            speakerName: npcData.name,
+            position: proxy.position,
+            npcID: proxy.npcId,
+            showResponseButtons: false  // No response buttons for liberation dialogue
+        )
+        
+        activeBubble = bubble
+        scene.addChild(bubble)
+        
+        print("💬 👻 \(npcData.name) (liberation): \(dialogueText)")
+    }
+    
     func dismissDialogue() {
         // Get scene reference before removing bubble
         let currentScene = activeBubble?.scene
@@ -169,11 +201,12 @@ class DialogueBubble: SKNode {
     private let responseButtons: SKNode
     private let npcID: String
     
-    init(text: String, speakerName: String, position: CGPoint, npcID: String) {
+    init(text: String, speakerName: String, position: CGPoint, npcID: String, showResponseButtons: Bool = true) {
         self.npcID = npcID
         
-        // Create bubble background (make it taller for buttons)
-        let bubbleSize = CGSize(width: 320, height: 160)
+        // Create bubble background (adjust height based on whether buttons are shown)
+        let bubbleHeight: CGFloat = showResponseButtons ? 160 : 120
+        let bubbleSize = CGSize(width: 320, height: bubbleHeight)
         bubbleBackground = SKShapeNode(rectOf: bubbleSize, cornerRadius: 15)
         bubbleBackground.fillColor = SKColor.white.withAlphaComponent(0.95)
         bubbleBackground.strokeColor = SKColor.black.withAlphaComponent(0.7)
@@ -195,7 +228,7 @@ class DialogueBubble: SKNode {
         textLabel.fontColor = SKColor.black
         textLabel.horizontalAlignmentMode = .center
         textLabel.verticalAlignmentMode = .center
-        textLabel.numberOfLines = 3 // Reduced for button space
+        textLabel.numberOfLines = showResponseButtons ? 3 : 4 // More lines if no buttons
         textLabel.preferredMaxLayoutWidth = bubbleSize.width - 20 // Text padding
         
         // Create response buttons container
@@ -211,15 +244,20 @@ class DialogueBubble: SKNode {
         addChild(bubbleBackground)
         
         // Position text elements within bubble
-        nameLabel.position = CGPoint(x: 0, y: 50)
-        textLabel.position = CGPoint(x: 0, y: 15)
+        let nameY: CGFloat = showResponseButtons ? 50 : 35
+        let textY: CGFloat = showResponseButtons ? 15 : 0
+        
+        nameLabel.position = CGPoint(x: 0, y: nameY)
+        textLabel.position = CGPoint(x: 0, y: textY)
         
         addChild(nameLabel)
         addChild(textLabel)
         
-        // Create response buttons
-        setupResponseButtons()
-        addChild(responseButtons)
+        // Only create response buttons if requested
+        if showResponseButtons {
+            setupResponseButtons()
+            addChild(responseButtons)
+        }
         
         // Make the entire bubble interactive
         bubbleBackground.name = "dialogue_bubble"
