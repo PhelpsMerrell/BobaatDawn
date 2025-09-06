@@ -419,7 +419,7 @@ class GameScene: BaseGameScene {
         
         // Create save journal button
         saveJournal = SaveSystemButton(type: .saveJournal)
-        let journalCell = GridCoordinate(x: 2, y: 3)
+        let journalCell = GridCoordinate(x: 2, y: 7)
         saveJournal.position = gridService.gridToWorld(journalCell)
         saveJournal.zPosition = ZLayers.timeSystem
         addChild(saveJournal)
@@ -427,7 +427,7 @@ class GameScene: BaseGameScene {
         
         // Create clear data button
         clearDataButton = SaveSystemButton(type: .clearData)
-        let clearCell = GridCoordinate(x: 4, y: 3)
+        let clearCell = GridCoordinate(x: 4, y: 7)
         clearDataButton.position = gridService.gridToWorld(clearCell)
         clearDataButton.zPosition = ZLayers.timeSystem
         addChild(clearDataButton)
@@ -435,7 +435,7 @@ class GameScene: BaseGameScene {
         
         // Create NPC status tracker
         npcStatusTracker = SaveSystemButton(type: .npcStatus)
-        let statusCell = GridCoordinate(x: 6, y: 3)
+        let statusCell = GridCoordinate(x: 6, y: 7)
         npcStatusTracker.position = gridService.gridToWorld(statusCell)
         npcStatusTracker.zPosition = ZLayers.timeSystem
         addChild(npcStatusTracker)
@@ -1450,9 +1450,9 @@ class NPCStatusBubble: SKNode {
         
         super.init()
         
-        // Position bubble in center of screen instead of above button
-        self.position = CGPoint(x: 0, y: 0) // Center of screen
-        self.zPosition = 200 // Very high z-position
+        // Position using the passed world coordinates
+        self.position = position
+        self.zPosition = ZLayers.statusBubble // Use proper Z-layer
         
         // Add background
         addChild(bubbleBackground)

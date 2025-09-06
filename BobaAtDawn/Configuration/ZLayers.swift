@@ -72,6 +72,10 @@ struct ZLayers {
     static let doorEffects: CGFloat = 61
     
     // MARK: - UI and Overlay Elements (70+)
+    /// User interface elements
+    static let ui: CGFloat = 80
+    static let statusBubble: CGFloat = 85  // Status reports and info bubbles
+    
     /// Feedback and indicators
     static let touchFeedback: CGFloat = 70
     static let gridOverlay: CGFloat = 75
