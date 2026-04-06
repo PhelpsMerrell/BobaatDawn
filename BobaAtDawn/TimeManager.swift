@@ -34,10 +34,10 @@ enum TimePhase: CaseIterable {
 final class TimeManager {
     
     // MARK: - State
-    private(set) var currentPhase: TimePhase = .day // Start in day, not dawn
-    private(set) var isTimeActive: Bool = true // Start flowing immediately
-    private(set) var phaseProgress: Float = 0.0 // 0.0 to 1.0 through current phase
-    private(set) var isBreakerTripped: Bool = false // Dawn completed, needs player reset
+    private(set) var currentPhase: TimePhase = .day
+    private(set) var isTimeActive: Bool = true
+    private(set) var phaseProgress: Float = 0.0
+    private(set) var isBreakerTripped: Bool = false
     
     // MARK: - Timing
     private var phaseStartTime: TimeInterval = 0
@@ -46,13 +46,12 @@ final class TimeManager {
     // MARK: - Callbacks
     var onPhaseChanged: ((TimePhase) -> Void)?
     var onProgressUpdated: ((Float) -> Void)?
-    var onBreakerTripped: (() -> Void)? // Dawn completed
+    var onBreakerTripped: (() -> Void)?
     
     // MARK: - Singleton
     static let shared = TimeManager()
     
     private init() {
-        // Start time immediately when created
         let currentTime = CFAbsoluteTimeGetCurrent()
         start(at: currentTime)
     }
@@ -85,18 +84,15 @@ final class TimeManager {
         onPhaseChanged?(phase)
         onProgressUpdated?(phaseProgress)
         
-        print("🔄 DEBUG: Force setting time phase to \(phase.displayName)")
+        Log.debug(.time, "Force setting time phase to \(phase.displayName)")
     }
     
     // Advance to next phase; trips breaker when finishing night -> dawn
     func advancePhase(at time: TimeInterval) {
         switch currentPhase {
-        case .dawn:
-            currentPhase = .day
-        case .day:
-            currentPhase = .dusk
-        case .dusk:
-            currentPhase = .night
+        case .dawn:  currentPhase = .day
+        case .day:   currentPhase = .dusk
+        case .dusk:  currentPhase = .night
         case .night:
             currentPhase = .dawn
             isBreakerTripped = true
@@ -109,7 +105,7 @@ final class TimeManager {
         onPhaseChanged?(currentPhase)
         onProgressUpdated?(phaseProgress)
         
-        print("🔄 DEBUG: Time now at \(currentPhase.displayName), active: \(isTimeActive)")
+        Log.info(.time, "Phase advanced to \(currentPhase.displayName)")
     }
     
     // MARK: - Update Loop

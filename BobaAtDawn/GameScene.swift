@@ -2,7 +2,10 @@
 //  GameScene.swift
 //  BobaAtDawn
 //
-//  Created by Phelps Merrell on 8/18/25.
+//  Main game scene — shop interior, world building, input handling, update loop.
+//  Ritual system:  GameScene+Ritual.swift
+//  Save system:    GameScene+SaveSystem.swift
+//  Grid helpers:   GameScene+GridPositioning.swift
 //
 
 import SpriteKit
@@ -10,1595 +13,536 @@ import SpriteKit
 // MARK: - Main Game Scene
 class GameScene: BaseGameScene {
     
-    // MARK: - Game-Specific Services
-    private lazy var npcService: NPCService = serviceContainer.resolve(NPCService.self)
-    private lazy var timeService: TimeService = serviceContainer.resolve(TimeService.self)
-    private let residentManager = NPCResidentManager.shared
+    // MARK: - Services (internal for extension access)
+    internal lazy var npcService: NPCService = serviceContainer.resolve(NPCService.self)
+    internal lazy var timeService: TimeService = serviceContainer.resolve(TimeService.self)
+    internal let residentManager = NPCResidentManager.shared
     
-    // MARK: - Game Objects (Internal - accessible to extensions)
+    // MARK: - Game Objects
     internal var ingredientStations: [IngredientStation] = []
-    private var drinkCreator: DrinkCreator!
+    internal var drinkCreator: DrinkCreator!
     
     // MARK: - Save System
-    private var saveJournal: SaveSystemButton!
-    private var clearDataButton: SaveSystemButton!
-    private var npcStatusTracker: SaveSystemButton!
+    internal var saveJournal: SaveSystemButton!
+    internal var clearDataButton: SaveSystemButton!
+    internal var npcStatusTracker: SaveSystemButton!
     
-    // MARK: - Time System (Internal - accessible to extensions)
+    // MARK: - Time System
     internal var timeBreaker: PowerBreaker!
     internal var timeWindow: Window!
     internal var timeLabel: SKLabelNode!
     
     // MARK: - Ritual System
-    private var ritualArea: RitualArea!
-    private var isRitualActive: Bool = false
+    internal var ritualArea: RitualArea!
+    internal var isRitualActive: Bool = false
     
-    // MARK: - Debug Controls
-    private var timeControlButton: TimeControlButton?
-    //MARK: - Physics 
-    private var physicsContactHandler: PhysicsContactHandler!
-    // MARK: - World Areas
-    private var shopFloor: SKSpriteNode!
+    // MARK: - Debug / Physics / World
+    internal var timeControlButton: TimeControlButton?
+    internal var physicsContactHandler: PhysicsContactHandler!
+    internal var shopFloor: SKSpriteNode!
+    internal var showGridOverlay = false
     
-    // MARK: - Grid Visual Debug (Optional)
-    private var showGridOverlay = false  // DISABLED: Grid overlay hidden
+    // MARK: - NPC System
+    internal var npcs: [ShopNPC] = []
     
-    // MARK: - NPC System (Now managed by ResidentManager)
-    // NPCs are now managed by NPCResidentManager for persistent world
-    private var npcs: [NPC] = [] // Shop NPCs only
+    // MARK: - Time Phase Monitoring
+    internal var lastTimePhase: TimePhase = .day
     
-    // MARK: - BaseGameScene Template Method Implementation
+    // MARK: - Scene Lifecycle
+    
     override open func setupSpecificContent() {
-            print("🔧 GameScene.setupSpecificContent() starting...")
-            
-            do {
-                // NEW: Set up physics world first
-                setupPhysicsWorld()
-                print("✅ Physics world setup complete")
-                
-                setupIngredientStations()
-                print("✅ Ingredient stations setup complete")
-                
-                convertExistingObjectsToGrid()
-                print("✅ Objects converted to grid")
-                
-                setupTimeSystem()
-                print("✅ Time system setup complete")
-                
-                // NEW: Setup save system
-                print("🔧 ABOUT TO CALL setupSaveSystem()")
-                setupSaveSystem()
-                print("✅ Save system setup complete")
-                
-                // NEW: Initialize resident manager and living world
-                setupLivingWorld()
-                print("✅ Living world initialized")
-                
-                // Setup time phase change monitoring
-                setupTimePhaseMonitoring()
-                print("✅ Time phase monitoring setup complete")
-                
-                // Setup ritual area
-                setupRitualArea()
-                print("✅ Ritual area setup complete")
-                
-                // Optional grid overlay for development
-                if showGridOverlay {
-                    addGridOverlay()
-                    print("✅ Grid overlay added")
-                }
-                
-                print("🍯 Physics-enabled game initialized with DI!")
-                gridService.printGridState()
-                
-                print("🔧 GameScene.setupSpecificContent() completed successfully")
-                
-            }
-        }
+        Log.info(.scene, "GameScene setup starting...")
+        
+        setupPhysicsWorld()
+        setupIngredientStations()
+        convertExistingObjectsToGrid()
+        setupTimeSystem()
+        setupSaveSystem()       // → GameScene+SaveSystem.swift
+        setupLivingWorld()
+        setupTimePhaseMonitoring()
+        setupRitualArea()       // → GameScene+Ritual.swift
+        
+        if showGridOverlay { addGridOverlay() }
+        
+        gridService.printGridState()
+        Log.info(.scene, "GameScene setup complete")
+    }
     
-    // MARK: - Physics Setup (NEW)
+    // MARK: - Physics Setup
+    
     private func setupPhysicsWorld() {
-        // Set up complete physics system
         physicsWorld.gravity = PhysicsConfig.World.gravity
         physicsWorld.speed = PhysicsConfig.World.speed
-        
-        // Set up physics contact handling
         physicsContactHandler = PhysicsContactHandler()
         physicsWorld.contactDelegate = physicsContactHandler
-        
-        setupPhysicsContactHandling()
-        
-        print("⚡ Physics world enabled")
+        physicsContactHandler.contactDelegate = self
+        Log.info(.physics, "Physics world enabled")
     }
     
-    private func setupPhysicsContactHandling() {
-        physicsContactHandler?.contactDelegate = self
-        print("⚡ Physics contact handler delegate set")
-    }
+    // MARK: - World Building
     
     override open func setupWorld() {
-        print("🌍 GameScene.setupWorld() starting with world dimensions: \(worldWidth) x \(worldHeight)")
-        print("🌍 Scene size: \(self.size)")
-        
-        // Call base implementation
         super.setupWorld()
         
-        // CRITICAL: Add size validation before creating sprites
         guard worldWidth > 0 && worldHeight > 0 else {
-            print("❌ ERROR: Invalid world dimensions: \(worldWidth) x \(worldHeight)")
+            Log.error(.scene, "Invalid world dimensions: \(worldWidth) x \(worldHeight)")
             return
         }
         
-        let shopFloorSize = CGSize(width: worldWidth, height: worldHeight)
-        print("🏠 Creating shop floor with size: \(shopFloorSize)")
-        guard shopFloorSize.width > 0 && shopFloorSize.height > 0 else {
-            print("❌ ERROR: Invalid shop floor size: \(shopFloorSize)")
-            return
-        }
-        
-        shopFloor = SKSpriteNode(color: configService.floorColor, size: shopFloorSize)
-        shopFloor.position = CGPoint(x: 0, y: 0)
+        // Floor
+        shopFloor = SKSpriteNode(color: configService.floorColor,
+                                  size: CGSize(width: worldWidth, height: worldHeight))
+        shopFloor.position = .zero
         shopFloor.zPosition = ZLayers.floor
         addChild(shopFloor)
         
-        // Add shop floor boundary (visual only)
         setupShopFloorBounds()
+        setupWalls()
+        setupFrontDoor()
         
-        // Add shop walls - WITH SIZE VALIDATION
-        let wallThickness = configService.wallThickness
-        let wallInset = configService.wallInset
-        let wallColor = configService.wallColor
-        
-        print("🧱 Wall config: thickness=\(wallThickness), inset=\(wallInset)")
-        
-        // Top wall
-        let topWallSize = CGSize(width: worldWidth, height: wallThickness)
-        print("🔴 Creating top wall with size: \(topWallSize)")
-        guard topWallSize.width > 0 && topWallSize.height > 0 else {
-            print("❌ ERROR: Invalid top wall size: \(topWallSize)")
-            return
-        }
-        let wallTop = SKSpriteNode(color: wallColor, size: topWallSize)
-        wallTop.position = CGPoint(x: 0, y: worldHeight/2 - wallInset)
-        wallTop.zPosition = ZLayers.walls
-        addChild(wallTop)
-        
-        // Bottom wall
-        let bottomWallSize = CGSize(width: worldWidth, height: wallThickness)
-        print("🔵 Creating bottom wall with size: \(bottomWallSize)")
-        guard bottomWallSize.width > 0 && bottomWallSize.height > 0 else {
-            print("❌ ERROR: Invalid bottom wall size: \(bottomWallSize)")
-            return
-        }
-        let wallBottom = SKSpriteNode(color: wallColor, size: bottomWallSize)
-        wallBottom.position = CGPoint(x: 0, y: -worldHeight/2 + wallInset)
-        wallBottom.zPosition = ZLayers.walls
-        addChild(wallBottom)
-        
-        // Left wall
-        let leftWallSize = CGSize(width: wallThickness, height: worldHeight)
-        print("🟡 Creating left wall with size: \(leftWallSize)")
-        guard leftWallSize.width > 0 && leftWallSize.height > 0 else {
-            print("❌ ERROR: Invalid left wall size: \(leftWallSize)")
-            return
-        }
-        let wallLeft = SKSpriteNode(color: wallColor, size: leftWallSize)
-        wallLeft.position = CGPoint(x: -worldWidth/2 + wallInset, y: 0)
-        wallLeft.zPosition = ZLayers.walls
-        addChild(wallLeft)
-        
-        // Add front door using grid positioning
-        let frontDoor = SKLabelNode(text: "🚪")
-        frontDoor.fontSize = configService.doorSize
-        frontDoor.fontName = "Arial"
-        frontDoor.horizontalAlignmentMode = .center
-        frontDoor.verticalAlignmentMode = .center
-        frontDoor.position = GameConfig.doorWorldPosition()  // FIXED: Use grid positioning
-        frontDoor.zPosition = ZLayers.doors
-        frontDoor.name = "front_door"
-        addChild(frontDoor)
-        
-        print("🚪 EMOJI Front door added at grid \(GameConfig.World.doorGridPosition) = world \(frontDoor.position)")
-        
-        // Right wall
-        let rightWallSize = CGSize(width: wallThickness, height: worldHeight)
-        print("🟢 Creating right wall with size: \(rightWallSize)")
-        guard rightWallSize.width > 0 && rightWallSize.height > 0 else {
-            print("❌ ERROR: Invalid right wall size: \(rightWallSize)")
-            return
-        }
-        let wallRight = SKSpriteNode(color: wallColor, size: rightWallSize)
-        wallRight.position = CGPoint(x: worldWidth/2 - wallInset, y: 0)
-        wallRight.zPosition = ZLayers.walls
-        addChild(wallRight)
-        
-        print("🌍 GameScene.setupWorld() completed successfully")
+        Log.info(.scene, "Shop world built (\(worldWidth)×\(worldHeight))")
     }
     
     private func setupShopFloorBounds() {
-        print("🏠 Setting up shop floor bounds...")
-        
-        // FIXED: Shop floor area using grid positioning
-        let shopFloorRect = GameConfig.shopFloorRect()
-        print("🏠 Shop floor rect: position=\(shopFloorRect.position), size=\(shopFloorRect.size)")
-        
-        // CRITICAL: Validate the calculated size
-        guard shopFloorRect.size.width > 0 && shopFloorRect.size.height > 0 else {
-            print("❌ ERROR: Invalid shop floor rect size: \(shopFloorRect.size)")
-            print("❌ This is likely where the crash occurs! Skipping shop floor bounds.")
+        let rect = GameConfig.shopFloorRect()
+        guard rect.size.width > 0, rect.size.height > 0, rect.size.width < 10000 else {
+            Log.error(.grid, "Invalid shop floor rect: \(rect.size)")
             return
         }
-        
-        // Additional size sanity check
-        guard shopFloorRect.size.width < 10000 && shopFloorRect.size.height < 10000 else {
-            print("❌ ERROR: Shop floor rect size too large: \(shopFloorRect.size)")
-            print("❌ This could cause memory issues! Skipping shop floor bounds.")
+        guard let bounds = createValidatedSprite(color: configService.shopFloorColor,
+                                                  size: rect.size, name: "shop floor bounds") else {
+            Log.error(.grid, "Failed to create shop floor bounds sprite")
             return
         }
-        
-        let shopFloorBounds = createValidatedSprite(color: configService.shopFloorColor, 
-                                                   size: shopFloorRect.size, 
-                                                   name: "shop floor bounds")
-        
-        guard let validFloorBounds = shopFloorBounds else {
-            print("❌ ERROR: Failed to create shop floor bounds sprite")
-            return
-        }
-        
-        validFloorBounds.position = shopFloorRect.position
-        validFloorBounds.zPosition = ZLayers.shopFloorBounds
-        addChild(validFloorBounds)
-        
-        print("🏠 Shop floor added: grid area \(GameConfig.World.shopFloorArea) = world rect \(shopFloorRect)")
+        bounds.position = rect.position
+        bounds.zPosition = ZLayers.shopFloorBounds
+        addChild(bounds)
     }
     
-
+    private func setupWalls() {
+        let t = configService.wallThickness
+        let inset = configService.wallInset
+        let color = configService.wallColor
+        let w = worldWidth, h = worldHeight
+        
+        func wall(_ size: CGSize, _ pos: CGPoint) {
+            guard size.width > 0, size.height > 0 else { return }
+            let node = SKSpriteNode(color: color, size: size)
+            node.position = pos
+            node.zPosition = ZLayers.walls
+            addChild(node)
+        }
+        
+        wall(CGSize(width: w, height: t), CGPoint(x: 0, y:  h/2 - inset))  // top
+        wall(CGSize(width: w, height: t), CGPoint(x: 0, y: -h/2 + inset))  // bottom
+        wall(CGSize(width: t, height: h), CGPoint(x: -w/2 + inset, y: 0))  // left
+        wall(CGSize(width: t, height: h), CGPoint(x:  w/2 - inset, y: 0))  // right
+    }
+    
+    private func setupFrontDoor() {
+        let door = SKLabelNode(text: "🚪")
+        door.fontSize = configService.doorSize
+        door.fontName = "Arial"
+        door.horizontalAlignmentMode = .center
+        door.verticalAlignmentMode = .center
+        door.position = GameConfig.doorWorldPosition()
+        door.zPosition = ZLayers.doors
+        door.name = "front_door"
+        addChild(door)
+        Log.debug(.scene, "Front door at grid \(GameConfig.World.doorGridPosition)")
+    }
+    
+    // MARK: - Ingredient Stations
     
     private func setupIngredientStations() {
-        // REORDERED: 5-station boba creation system with ice at position 1
-        // MOVED UP: Stations moved up to make room for ritual area below
-        let stationTypes: [IngredientStation.StationType] = [.ice, .tea, .boba, .foam, .lid]
-        let stationCells = [
-            GridCoordinate(x: 12, y: 17),  // Ice station (Station 1) - moved up 3 rows
-            GridCoordinate(x: 14, y: 17),  // Tea station (Station 2) - moved up 3 rows
-            GridCoordinate(x: 16, y: 17),  // Boba station (Station 3) - moved up 3 rows
-            GridCoordinate(x: 18, y: 17),  // Foam station (Station 4) - moved up 3 rows
-            GridCoordinate(x: 20, y: 17)   // Lid station (Station 5) - moved up 3 rows
+        let types: [IngredientStation.StationType] = [.ice, .tea, .boba, .foam, .lid]
+        let cells = [
+            GridCoordinate(x: 12, y: 17), GridCoordinate(x: 14, y: 17),
+            GridCoordinate(x: 16, y: 17), GridCoordinate(x: 18, y: 17),
+            GridCoordinate(x: 20, y: 17)
         ]
         
-        print("🧋 🏢 STATION SETUP: Creating stations in new order...")
-        print("🧋 Position 1 (leftmost): \(stationTypes[0])")
-        print("🧋 Position 2: \(stationTypes[1])")
-        print("🧋 Position 3: \(stationTypes[2])")
-        print("🧋 Position 4: \(stationTypes[3])")
-        print("🧋 Position 5 (rightmost): \(stationTypes[4])")
-        
-        for (index, type) in stationTypes.enumerated() {
+        for (i, type) in types.enumerated() {
             let station = IngredientStation(type: type)
-            let cell = stationCells[index]
-            let worldPos = gridService.gridToWorld(cell)
-            
-            station.position = worldPos
+            let cell = cells[i]
+            station.position = gridService.gridToWorld(cell)
             station.zPosition = ZLayers.stations
             addChild(station)
             ingredientStations.append(station)
             
-            print("🧋 🏢 Created \(type) station at position \(index + 1) (grid \(cell), world \(worldPos))")
-            print("🧋     -> Station should show \(type) sprite and control \(type) in drink")
-            print("🧋     -> Station name: \(station.name ?? "unnamed")")
-            print("🧋     -> Station stationType: \(station.stationType)")
-            
-            // CRITICAL: Verify the station we just created
-            print("🧋 🔍 VERIFICATION - Station \(index + 1):")
-            print("🧋     hasIce: \(station.hasIce)")
-            print("🧋     hasTea: \(station.hasTea)")
-            print("🧋     hasBoba: \(station.hasBoba)")
-            print("🧋     hasFoam: \(station.hasFoam)")
-            print("🧋     hasLid: \(station.hasLid)")
-            
-            // Reserve cell and register with grid
             gridService.reserveCell(cell)
-            let gameObject = GameObject(skNode: station, gridPosition: cell, objectType: .station, gridService: gridService)
-            gridService.occupyCell(cell, with: gameObject)
+            let go = GameObject(skNode: station, gridPosition: cell, objectType: .station, gridService: gridService)
+            gridService.occupyCell(cell, with: go)
+            
+            Log.debug(.drink, "Station \(type) at grid \(cell)")
         }
         
-        // DrinkCreator position - also grid-aligned (moved up with stations)
         drinkCreator = DrinkCreator()
-        let displayCell = GridCoordinate(x: 16, y: 14)  // Below tea station center (moved up)
+        let displayCell = GridCoordinate(x: 16, y: 14)
         drinkCreator.position = gridService.gridToWorld(displayCell)
         drinkCreator.zPosition = ZLayers.drinkCreator
         addChild(drinkCreator)
         gridService.reserveCell(displayCell)
-        
-        // PRESERVED: All boba creation logic unchanged
         drinkCreator.updateDrink(from: ingredientStations)
         
-        print("🧋 Ingredient stations positioned on grid")
+        Log.info(.drink, "5 ingredient stations placed")
     }
     
+    // MARK: - Furniture & Tables
+    
     private func convertExistingObjectsToGrid() {
-        // Convert sample objects to grid positions (adjusted for 60pt grid)
-        let objectConfigs = [
-            (gridPos: GridCoordinate(x: 25, y: 10), type: ObjectType.furniture, color: SKColor.red, shape: "arrow"),
-            (gridPos: GridCoordinate(x: 25, y: 12), type: ObjectType.furniture, color: SKColor.blue, shape: "L"),
-            (gridPos: GridCoordinate(x: 25, y: 14), type: ObjectType.drink, color: SKColor.green, shape: "triangle"),
-            (gridPos: GridCoordinate(x: 25, y: 16), type: ObjectType.furniture, color: SKColor.orange, shape: "rectangle")
+        let objectConfigs: [(GridCoordinate, ObjectType, SKColor, String)] = [
+            (GridCoordinate(x: 25, y: 10), .furniture, .red,    "arrow"),
+            (GridCoordinate(x: 25, y: 12), .furniture, .blue,   "L"),
+            (GridCoordinate(x: 25, y: 14), .drink,    .green,  "triangle"),
+            (GridCoordinate(x: 25, y: 16), .furniture, .orange, "rectangle")
         ]
         
-        for config in objectConfigs {
-            let obj = RotatableObject(type: config.type, color: config.color, shape: config.shape)
-            let worldPos = gridService.gridToWorld(config.gridPos)
-            obj.position = worldPos
+        for (gridPos, type, color, shape) in objectConfigs {
+            let obj = RotatableObject(type: type, color: color, shape: shape)
+            obj.position = gridService.gridToWorld(gridPos)
             obj.zPosition = ZLayers.groundObjects
             addChild(obj)
-            
-            // Register with grid
-            let gameObject = GameObject(skNode: obj, gridPosition: config.gridPos, objectType: config.type, gridService: gridService)
-            gridService.occupyCell(config.gridPos, with: gameObject)
+            let go = GameObject(skNode: obj, gridPosition: gridPos, objectType: type, gridService: gridService)
+            gridService.occupyCell(gridPos, with: go)
         }
         
-        // Convert tables to grid positions (adjusted for 60pt grid)
-        let tableGridPositions = [
-            GridCoordinate(x: 12, y: 8),
-            GridCoordinate(x: 14, y: 8),
-            GridCoordinate(x: 16, y: 8),
-            GridCoordinate(x: 18, y: 8),
-            GridCoordinate(x: 12, y: 6),
-            GridCoordinate(x: 14, y: 6),
-            GridCoordinate(x: 16, y: 6),
-            GridCoordinate(x: 18, y: 6),
+        let tablePositions = [
+            GridCoordinate(x: 12, y: 8), GridCoordinate(x: 14, y: 8),
+            GridCoordinate(x: 16, y: 8), GridCoordinate(x: 18, y: 8),
+            GridCoordinate(x: 12, y: 6), GridCoordinate(x: 14, y: 6),
+            GridCoordinate(x: 16, y: 6), GridCoordinate(x: 18, y: 6),
             GridCoordinate(x: 20, y: 6)
         ]
         
-        for gridPos in tableGridPositions {
-            let table = RotatableObject(type: .furniture, color: SKColor(red: 0.4, green: 0.2, blue: 0.1, alpha: 1.0), shape: "table")
-            let worldPos = gridService.gridToWorld(gridPos)
-            table.position = worldPos
+        let tableColor = SKColor(red: 0.4, green: 0.2, blue: 0.1, alpha: 1.0)
+        for gridPos in tablePositions {
+            let table = RotatableObject(type: .furniture, color: tableColor, shape: "table")
+            table.position = gridService.gridToWorld(gridPos)
             table.zPosition = ZLayers.tables
             table.name = "table"
             addChild(table)
-            
-            // Register with grid
-            let gameObject = GameObject(skNode: table, gridPosition: gridPos, objectType: .furniture, gridService: gridService)
-            gridService.occupyCell(gridPos, with: gameObject)
+            let go = GameObject(skNode: table, gridPosition: gridPos, objectType: .furniture, gridService: gridService)
+            gridService.occupyCell(gridPos, with: go)
         }
         
-        print("🎯 All objects converted to grid positions")
+        Log.debug(.grid, "Objects and tables placed on grid")
     }
     
+    // MARK: - Time System
+    
     private func setupTimeSystem() {
-        // FIXED: Time system using grid positioning
-        let timePositions = GameConfig.timeSystemPositions()
+        let positions = GameConfig.timeSystemPositions()
         
         timeBreaker = PowerBreaker()
-        timeBreaker.position = timePositions.breaker
+        timeBreaker.position = positions.breaker
         timeBreaker.zPosition = ZLayers.timeSystem
         addChild(timeBreaker)
         
         timeWindow = Window()
-        timeWindow.position = timePositions.window
+        timeWindow.position = positions.window
         timeWindow.zPosition = ZLayers.timeSystem
         addChild(timeWindow)
         
-        // Add time phase label
         timeLabel = SKLabelNode(text: "DAY")
         timeLabel.fontSize = 24
         timeLabel.fontName = "Arial-Bold"
         timeLabel.fontColor = .black
         timeLabel.horizontalAlignmentMode = .center
         timeLabel.verticalAlignmentMode = .center
-        timeLabel.position = timePositions.label
+        timeLabel.position = positions.label
         timeLabel.zPosition = ZLayers.timeSystemLabels
         addChild(timeLabel)
         
-        // Add time control button (DEBUG)
-        setupTimeControlButton(windowPosition: timePositions.window)
-        
-        print("🌅 Time system positioned: breaker at grid \(GameConfig.Time.breakerGridPosition), window at grid \(GameConfig.Time.windowGridPosition)")
-    }
-    
-    // MARK: - Time Control Button Setup (DEBUG)
-    private func setupTimeControlButton(windowPosition: CGPoint) {
         timeControlButton = TimeControlButton(timeService: timeService)
-        
-        // Position next to the window (to the right)
-        let buttonOffset: CGFloat = 80 // Distance from window
-        timeControlButton?.position = CGPoint(
-            x: windowPosition.x + buttonOffset,
-            y: windowPosition.y
-        )
-        
+        timeControlButton?.position = CGPoint(x: positions.window.x + 80, y: positions.window.y)
         addChild(timeControlButton!)
         
-        print("⏰ Time control button added next to window for testing")
+        Log.info(.time, "Time system placed")
     }
     
-    // MARK: - Save System Setup
-    private func setupSaveSystem() {
-        print("🔧 setupSaveSystem() STARTED")
-        
-        // Create save journal button
-        saveJournal = SaveSystemButton(type: .saveJournal)
-        let journalCell = GridCoordinate(x: 2, y: 7)
-        saveJournal.position = gridService.gridToWorld(journalCell)
-        saveJournal.zPosition = ZLayers.timeSystem
-        addChild(saveJournal)
-        print("📔 Save journal added to scene. Parent: \(saveJournal.parent?.name ?? "nil")")
-        
-        // Create clear data button
-        clearDataButton = SaveSystemButton(type: .clearData)
-        let clearCell = GridCoordinate(x: 4, y: 7)
-        clearDataButton.position = gridService.gridToWorld(clearCell)
-        clearDataButton.zPosition = ZLayers.timeSystem
-        addChild(clearDataButton)
-        print("🗑️ Clear button added to scene. Parent: \(clearDataButton.parent?.name ?? "nil")")
-        
-        // Create NPC status tracker
-        npcStatusTracker = SaveSystemButton(type: .npcStatus)
-        let statusCell = GridCoordinate(x: 6, y: 7)
-        npcStatusTracker.position = gridService.gridToWorld(statusCell)
-        npcStatusTracker.zPosition = ZLayers.timeSystem
-        addChild(npcStatusTracker)
-        print("📈 Status tracker added to scene. Parent: \(npcStatusTracker.parent?.name ?? "nil")")
-        
-        print("📔 Save journal positioned at grid \(journalCell)")
-        print("🗑️ Clear data button positioned at grid \(clearCell)")
-        print("📈 NPC status tracker positioned at grid \(statusCell)")
-        
-        // DEBUG: Test if buttons are positioned correctly
-        print("🔧 DEBUG: Save journal world position: \(saveJournal.position)")
-        print("🔧 DEBUG: Clear button world position: \(clearDataButton.position)")
-        print("🔧 DEBUG: Status tracker world position: \(npcStatusTracker.position)")
-        print("🔧 DEBUG: Scene size: \(self.size)")
-        
-        // DEBUG: Check if buttons are in scene
-        print("🔧 DEBUG: Scene has \(self.children.count) children")
-        let saveButtons = self.children.compactMap { $0 as? SaveSystemButton }
-        print("🔧 DEBUG: Found \(saveButtons.count) SaveSystemButton children in scene")
-        for button in saveButtons {
-            print("🔧 DEBUG: - \(button.buttonType.emoji) at \(button.position), zPosition: \(button.zPosition)")
-        }
-    }
+    // MARK: - Living World
     
-    // MARK: - Living World Setup (NEW)
     private func setupLivingWorld() {
-        // Register this game scene with the resident manager
         residentManager.registerGameScene(self)
-        
-        // Initialize the world with 3 NPCs in shop and rest in forest
         residentManager.initializeWorld()
-        
-        print("🌍 Living world initialized with persistent residents")
+        Log.info(.resident, "Living world initialized")
     }
-    
-    // MARK: - Time Phase Monitoring
-    private var lastTimePhase: TimePhase = .day
     
     private func setupTimePhaseMonitoring() {
-        // Initialize with current time phase
         lastTimePhase = timeService.currentPhase
         residentManager.handleTimePhaseChange(lastTimePhase)
-        
-        print("🌅 Time phase monitoring initialized with \(lastTimePhase.displayName)")
+        Log.info(.time, "Phase monitoring initialized at \(lastTimePhase.displayName)")
     }
     
-    // MARK: - Ritual Area Setup
-    private func setupRitualArea() {
-        // Position ritual area below the boba stations
-        let ritualCenter = GridCoordinate(x: 16, y: 12)  // Below drink creator
-        
-        ritualArea = RitualArea(gridService: gridService, centerPosition: ritualCenter)
-        
-        // Set up ritual callbacks
-        ritualArea.onNPCSummoned = { [weak self] chosenResident in
-            self?.handleNPCSummoned(chosenResident)
-        }
-        
-        ritualArea.onRitualCompleted = { [weak self] liberatedResident in
-            self?.handleRitualCompleted(liberatedResident)
-        }
-        
-        addChild(ritualArea)
-        
-        print("🕯️ ✨ Ritual area ready at grid \(ritualCenter) - awaiting dawn...")
-    }
+    // MARK: - Update Loop
     
-    // MARK: - NPC Creation for Resident Manager
-    func createShopNPC(animalType: AnimalType, resident: NPCResident) -> NPC {
-        // Create NPC with dependencies injected
-        let npc = NPC(animal: animalType, 
-                      startPosition: GameConfig.World.doorGridPosition,
-                      gridService: gridService,
-                      npcService: npcService)
-        
-        // Add to scene and track locally
-        addChild(npc)
-        npcs.append(npc)
-        
-        // Add entrance animation
-        addEntranceAnimation(for: npc)
-        
-        print("🏦 Created shop NPC \(animalType.rawValue) for resident \(resident.npcData.name)")
-        return npc
-    }
-    
-    private func addEntranceAnimation(for npc: NPC) {
-        npc.alpha = 0.0
-        npc.setScale(0.8)
-        
-        let entranceAnimation = SKAction.group([
-            SKAction.fadeIn(withDuration: 0.5),
-            SKAction.scale(to: 1.0, duration: 0.5)
-        ])
-        entranceAnimation.timingMode = .easeOut
-        
-        npc.run(entranceAnimation)
-    }
-    
-    // MARK: - Ritual System Integration
-    private func handleRitualTimePhaseChange(_ phase: TimePhase) {
-        switch phase {
-        case .dawn:
-            // Check if ritual should be activated
-            if ritualArea.hasEligibleNPCs() {
-                ritualArea.spawnRitual()
-                isRitualActive = true
-                print("🌅 ✨ DAWN BREAKS - Sacred ritual manifests for a worthy soul!")
-            } else {
-                print("🌅 Dawn arrives, but no souls are ready for liberation...")
-            }
-        case .day, .dusk, .night:
-            // Clean up ritual if it was active
-            if isRitualActive {
-                ritualArea.forceCleanup()
-                isRitualActive = false
-                // Clear any ritual NPC designation
-                residentManager.clearRitualNPC()
-                print("🌅 Ritual fades as \(phase.displayName) begins...")
-            }
-        }
-    }
-    
-    private func handleNPCSummoned(_ chosenResident: NPCResident) {
-        // Find existing shop NPC that matches the chosen resident
-        let matchingNPC = npcs.first { npc in
-            // Match by animal type and character ID
-            return npc.animalType.characterId == chosenResident.npcData.id
-        }
-        
-        guard let ritualNPC = matchingNPC else {
-            print("❌ No matching shop NPC found for \(chosenResident.npcData.name)")
-            // Fallback: create NPC if none in shop
-            createRitualNPC(chosenResident)
-            return
-        }
-        
-        // Move existing NPC to sacred table area (adjacent, not on table)
-        let sacredTablePosition = GridCoordinate(x: 16, y: 8) // Sacred table position
-        let adjacentPositions = gridService.getAvailableAdjacentCells(to: sacredTablePosition)
-        
-        if let sittingSpot = adjacentPositions.randomElement() {
-            let worldPos = gridService.gridToWorld(sittingSpot)
-            
-            // Smooth movement to sacred area
-            let moveAction = SKAction.move(to: worldPos, duration: 2.0)
-            moveAction.timingMode = .easeInEaseOut
-            ritualNPC.run(moveAction)
-            
-            // Start ritual pulsing to indicate this is the chosen one
-            startRitualPulsing(ritualNPC)
-            
-            // Set this NPC as the ritual NPC in resident manager
-            residentManager.setRitualNPC(chosenResident.npcData.id)
-            
-            // Notify ritual area
-            ritualArea.npcArrivedAtTable(ritualNPC)
-            
-            print("👻 ✨ \(chosenResident.npcData.name) moves to the sacred table, chosen for liberation...")
-        } else {
-            print("⚠️ No available adjacent cells to sacred table")
-        }
-    }
-    
-    private func createRitualNPC(_ chosenResident: NPCResident) {
-        // Fallback: create NPC if none in shop (should rarely happen)
-        let animalType = AnimalType.allCases.first { $0.characterId == chosenResident.npcData.id } ?? .fox
-        
-        let liberationNPC = NPC(
-            animal: animalType,
-            startPosition: GridCoordinate(x: 16, y: 7), // Adjacent to sacred table
-            gridService: gridService,
-            npcService: npcService
-        )
-        
-        let adjacentPosition = gridService.gridToWorld(GridCoordinate(x: 16, y: 7))
-        liberationNPC.position = adjacentPosition
-        
-        addChild(liberationNPC)
-        npcs.append(liberationNPC)
-        
-        // Start ritual pulsing
-        startRitualPulsing(liberationNPC)
-        
-        // Notify ritual area
-        ritualArea.npcArrivedAtTable(liberationNPC)
-        
-        // Beautiful summoning animation
-        liberationNPC.alpha = 0.0
-        liberationNPC.setScale(0.5)
-        
-        let summonAnimation = SKAction.sequence([
-            SKAction.group([
-                SKAction.fadeIn(withDuration: 1.5),
-                SKAction.scale(to: 1.0, duration: 1.5)
-            ])
-        ])
-        
-        liberationNPC.run(summonAnimation)
-        
-        print("👻 ✨ \(chosenResident.npcData.name) materializes near the sacred table...")
-    }
-    
-    private func startRitualPulsing(_ npc: NPC) {
-        // Special pulsing animation to indicate this NPC is chosen for ritual
-        let ritualPulse = SKAction.repeatForever(
-            SKAction.sequence([
-                SKAction.scale(to: 1.2, duration: 1.0),
-                SKAction.scale(to: 1.0, duration: 1.0)
-            ])
-        )
-        
-        // Golden glow effect
-        let goldenGlow = SKAction.repeatForever(
-            SKAction.sequence([
-                SKAction.colorize(with: .gold, colorBlendFactor: 0.3, duration: 1.0),
-                SKAction.colorize(withColorBlendFactor: 0.0, duration: 1.0)
-            ])
-        )
-        
-        npc.run(ritualPulse, withKey: "ritual_pulse")
-        npc.run(goldenGlow, withKey: "ritual_glow")
-        
-        print("✨ \(npc.animalType.rawValue) begins to pulse with sacred energy...")
-    }
-    
-    private func handleRitualCompleted(_ liberatedResident: NPCResident) {
-        // Find and clean up the ritual NPC
-        if let ritualNPC = npcs.first(where: { $0.animalType.characterId == liberatedResident.npcData.id }) {
-            // Stop ritual pulsing
-            ritualNPC.removeAction(forKey: "ritual_pulse")
-            ritualNPC.removeAction(forKey: "ritual_glow")
-            
-            // Reset scale and color
-            ritualNPC.setScale(1.0)
-            ritualNPC.colorBlendFactor = 0.0
-        }
-        
-        // Remove NPC from the world permanently
-        SaveService.shared.markNPCAsLiberated(liberatedResident.npcData.id)
-        
-        // Clear the ritual NPC from resident manager
-        residentManager.clearRitualNPC()
-        
-        print("✨ 👻 \(liberatedResident.npcData.name) has found eternal peace and left purgatory forever.")
-        print("🌅 The ritual is complete. Dawn continues its gentle embrace...")
-    }
-    
-    // MARK: - Sacred Table Service
-    private func handleSacredTableService(drink: RotatableObject) {
-        // Find the ritual NPC
-        guard let ritualNPC = npcs.first(where: { npc in
-            npc.action(forKey: "ritual_pulse") != nil
-        }) else {
-            print("❌ No ritual NPC found to serve boba")
-            return
-        }
-        
-        // Drop the drink
-        character.dropItem()
-        
-        // Move the drink to the sacred table
-        let tablePosition = ritualArea.position
-        drink.position = CGPoint(x: tablePosition.x, y: tablePosition.y - 40) // On table
-        drink.zPosition = ZLayers.tables + 1 // Above the table
-        
-        // NPC picks up the drink after a moment
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.npcPicksUpFinalDrink(npc: ritualNPC, drink: drink)
-        }
-        
-        print("🧁 ✨ Final boba placed on sacred table for the departing soul...")
-    }
-    
-    private func npcPicksUpFinalDrink(npc: NPC, drink: RotatableObject) {
-        // Move drink to NPC (picked up)
-        let pickupAction = SKAction.move(to: CGPoint(x: npc.position.x, y: npc.position.y + 30), duration: 1.0)
-        drink.run(pickupAction)
-        
-        // NPC drinks and transforms
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            self.npcTransformsToGhost(npc: npc, drink: drink)
-        }
-        
-        print("👻 \(npc.animalType.rawValue) reaches for their final boba...")
-    }
-    
-    private func npcTransformsToGhost(npc: NPC, drink: RotatableObject) {
-        // Remove the drink (consumed)
-        drink.removeFromParent()
-        
-        // Stop ritual pulsing
-        npc.removeAction(forKey: "ritual_pulse")
-        npc.removeAction(forKey: "ritual_glow")
-        
-        // Transform to ghost appearance
-        transformNPCToGhost(npc: npc)
-        
-        // Start farewell sequence
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            self.showFarewellAndAscend(npc: npc)
-        }
-        
-        print("👻 ✨ \(npc.animalType.rawValue) drinks their final boba and begins to transform...")
-    }
-    
-    private func transformNPCToGhost(npc: NPC) {
-        // Ghost transformation effect
-        let ghostTransform = SKAction.sequence([
-            // Flash white
-            SKAction.colorize(with: .white, colorBlendFactor: 0.8, duration: 0.3),
-            // Fade to translucent
-            SKAction.group([
-                SKAction.fadeAlpha(to: 0.6, duration: 1.0),
-                SKAction.colorize(with: .cyan, colorBlendFactor: 0.4, duration: 1.0),
-                SKAction.scale(to: 1.1, duration: 1.0)
-            ])
-        ])
-        
-        // Floating ghost animation
-        let ghostFloat = SKAction.repeatForever(
-            SKAction.sequence([
-                SKAction.moveBy(x: 0, y: 10, duration: 1.5),
-                SKAction.moveBy(x: 0, y: -10, duration: 1.5)
-            ])
-        )
-        
-        npc.run(ghostTransform)
-        npc.run(ghostFloat, withKey: "ghost_float")
-        
-        // Add ghostly particles
-        createGhostParticles(around: npc)
-        
-        print("👻 \(npc.animalType.rawValue) becomes a peaceful spirit...")
-    }
-    
-    private func createGhostParticles(around npc: NPC) {
-        for i in 0..<5 {
-            let delay = Double(i) * 0.3
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                let particle = SKLabelNode(text: "✨")
-                particle.fontSize = 16
-                particle.position = CGPoint(
-                    x: npc.position.x + CGFloat.random(in: -30...30),
-                    y: npc.position.y + CGFloat.random(in: -20...20)
-                )
-                particle.zPosition = ZLayers.effects
-                
-                self.addChild(particle)
-                
-                let float = SKAction.sequence([
-                    SKAction.group([
-                        SKAction.moveBy(x: CGFloat.random(in: -20...20), 
-                                       y: CGFloat.random(in: 30...60), 
-                                       duration: 2.0),
-                        SKAction.fadeOut(withDuration: 2.0)
-                    ]),
-                    SKAction.removeFromParent()
-                ])
-                
-                particle.run(float)
-            }
-        }
-    }
-    
-    private func showFarewellAndAscend(npc: NPC) {
-        // Find the chosen resident data for farewell
-        guard let chosenResident = npcs.first(where: { $0 === npc }) else {
-            completeLiberation(npc: npc)
-            return
-        }
-        
-        // Show farewell dialogue
-        let farewellLines = [
-            "Thank you for helping me find peace...",
-            "I can finally let go of this world.",
-            "The boba you made was perfect - it gave me strength.",
-            "I'm ready to move on now. Farewell, kind soul."
-        ]
-        
-        // Show farewell dialogue using the existing bubble system
-        let farewellText = farewellLines.joined(separator: " ")
-        let farewellBubble = DialogueBubble(
-            text: farewellText,
-            speakerName: npc.animalType.rawValue,
-            position: npc.position,
-            npcID: npc.animalType.characterId ?? "unknown",
-            showResponseButtons: true  // Keep manual dismiss as preferred
-        )
-        
-        addChild(farewellBubble)
-        
-        // Begin ascension after dialogue time
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-            self.ascendToHeaven(npc: npc)
-        }
-        
-        print("💬 👻 \(npc.animalType.rawValue) speaks their final farewell...")
-    }
-    
-    private func ascendToHeaven(npc: NPC) {
-        // Dismiss any dialogue
-        DialogueService.shared.dismissDialogue()
-        
-        // Stop floating
-        npc.removeAction(forKey: "ghost_float")
-        
-        // Beautiful ascension effect
-        let ascension = SKAction.sequence([
-            SKAction.group([
-                SKAction.fadeOut(withDuration: 3.0),
-                SKAction.scale(to: 1.5, duration: 3.0),
-                SKAction.moveBy(x: 0, y: 150, duration: 3.0)
-            ])
-        ])
-        
-        // Create ascending light beam
-        createLightBeam(at: npc.position)
-        
-        npc.run(ascension) {
-            self.completeLiberation(npc: npc)
-        }
-        
-        print("✨ 👻 \(npc.animalType.rawValue) ascends toward the light...")
-    }
-    
-    private func createLightBeam(at position: CGPoint) {
-        let lightBeam = SKShapeNode(rect: CGRect(x: -20, y: 0, width: 40, height: 200))
-        lightBeam.fillColor = SKColor.white.withAlphaComponent(0.6)
-        lightBeam.strokeColor = .clear
-        lightBeam.position = position
-        lightBeam.zPosition = ZLayers.effects - 1
-        
-        addChild(lightBeam)
-        
-        let beamAnimation = SKAction.sequence([
-            SKAction.fadeIn(withDuration: 1.0),
-            SKAction.wait(forDuration: 2.0),
-            SKAction.fadeOut(withDuration: 1.0),
-            SKAction.removeFromParent()
-        ])
-        
-        lightBeam.run(beamAnimation)
-    }
-    
-    private func completeLiberation(npc: NPC) {
-        // Find resident data
-        let chosenResident = NPCResident(npcData: NPCData(
-            id: npc.animalType.characterId ?? "unknown",
-            name: "Unknown",
-            animal: npc.animalType.rawValue,
-            causeOfDeath: "Unknown",
-            homeRoom: 1,
-            dialogue: NPCDialogue(day: [], night: [])
-        ))
-        
-        // Remove NPC from shop permanently
-        if let index = npcs.firstIndex(of: npc) {
-            npcs.remove(at: index)
-        }
-        npc.removeFromParent()
-        
-        // Complete the ritual
-        ritualArea.finalBobaServed()
-        
-        print("✨ 👻 Liberation complete - soul has found eternal peace")
-    }
-    
-
-    
-    // MARK: - Grid Visual Debug (Optional)
-    private func addGridOverlay() {
-        // Subtle grid lines for development
-        for x in 0...gridService.columns {
-            let line = SKSpriteNode(color: SKColor.black.withAlphaComponent(0.1), 
-                                   size: CGSize(width: 1, height: CGFloat(gridService.rows) * gridService.cellSize))
-            line.position = CGPoint(x: gridService.shopOrigin.x + CGFloat(x) * gridService.cellSize, 
-                                   y: gridService.shopOrigin.y + CGFloat(gridService.rows) * gridService.cellSize / 2)
-            line.zPosition = ZLayers.gridOverlay
-            addChild(line)
-        }
-        
-        for y in 0...gridService.rows {
-            let line = SKSpriteNode(color: SKColor.black.withAlphaComponent(0.1), 
-                                   size: CGSize(width: CGFloat(gridService.columns) * gridService.cellSize, height: 1))
-            line.position = CGPoint(x: gridService.shopOrigin.x + CGFloat(gridService.columns) * gridService.cellSize / 2, 
-                                   y: gridService.shopOrigin.y + CGFloat(y) * gridService.cellSize)
-            line.zPosition = ZLayers.gridOverlay
-            addChild(line)
-        }
-        
-        print("🎯 Grid overlay added for debugging")
-    }
-
-    
-    // MARK: - BaseGameScene Template Method Implementation
-    override open func handleSceneSpecificLongPress(on node: SKNode, at location: CGPoint) {
-        handleGameSceneLongPress(on: node, at: location)
-    }
-
-    
-    private func handleGameSceneLongPress(on node: SKNode, at location: CGPoint) {
-        print("🔍 Long press on: \(node.name ?? "unnamed") - \(type(of: node))")
-        
-        // 1. Drop carried item if long pressing it
-        if node == character.carriedItem {
-            character.dropItem()
-            print("📦 Dropped carried item")
-            
-        // 2. Power breaker (only works when tripped)
-        } else if node == timeBreaker {
-            print("⏰ Attempting to toggle time breaker")
-            timeBreaker.toggle()
-            
-        // 3. Ingredient station interactions
-        } else if let station = node as? IngredientStation {
-            print("🧋 Interacting with \(station.stationType) station")
-            
-            // Use AnimationService for consistent station interaction feedback
-            let pulseAction = animationService.stationInteractionPulse(station)
-            animationService.run(pulseAction, on: station, withKey: AnimationKeys.stationInteraction, completion: nil)
-            
-            station.interact()
-            drinkCreator.updateDrink(from: ingredientStations)
-            print("🧋 ✅ Updated drink display after station interaction")
-            
-        // 4. Save journal - save game state
-        } else if node.name == "save_journal" {
-            print("📔 Saving game state...")
-            saveGameState()
-            
-        // 5. Clear data button - clear all save data
-        } else if node.name == "clear_data_button" {
-            print("🗑️ Clearing all save data...")
-            clearSaveData()
-            
-        // 6. NPC status tracker - show status report
-        } else if node.name == "npc_status_tracker" {
-            print("📈 Showing NPC status report...")
-            showNPCStatusReport()
-            
-        // 7. Forest door - enter woods
-        } else if let saveButton = node as? SaveSystemButton {
-            print("🔧 Interacting with \(saveButton.buttonType) save button")
-            
-            switch saveButton.buttonType {
-            case .saveJournal:
-                print("📔 Saving game state...")
-                saveGameState()
-            case .clearData:
-                print("🗑️ Clearing all save data...")
-                clearSaveData()
-            case .npcStatus:
-                print("📈 Showing NPC status report...")
-                showNPCStatusReport()
-            }
-            
-        } else if node.name == "front_door" {
-            // Haptic feedback for entering forest
-            transitionService.triggerHapticFeedback(type: .success)
-            print("🚪 Entering the mysterious forest...")
-            enterForest()
-            
-        // 5. Pick up completed drink
-        } else if node.name == "completed_drink_pickup" {
-            print("🧋 🎨 ATTEMPTING TO PICK UP COMPLETED DRINK")
-            if character.carriedItem == nil {
-                if let completedDrink = drinkCreator.createCompletedDrink(from: ingredientStations) {
-                    character.pickupItem(completedDrink)
-                    print("🧋 🎆 RESETTING STATIONS AFTER PICKUP...")
-                    drinkCreator.resetStations(ingredientStations)
-                    print("🧋 ✅ Picked up completed drink and reset stations")
-                    
-                   
-                } else {
-                    print("🧋 ❌ Failed to create completed drink!")
-                }
-            } else {
-                print("❌ Already carrying something")
-            }
-            
-        // 6. Handle rotatable objects (including tables)
-        } else if let rotatable = node as? RotatableObject {
-            
-            // SPECIAL CASE: Check if this is the drink display from DrinkCreator
-            if rotatable.name == "drink_display" && rotatable.parent == drinkCreator {
-                print("🧋 🎨 PICKING UP YOUR CREATION FROM CREATOR")
-                if character.carriedItem == nil {
-                    
-                    // Create a drink that perfectly matches your current creation
-                    let yourCreation = drinkCreator.createPickupDrink(from: ingredientStations)
-                    character.pickupItem(yourCreation)
-                    
-                    // ALWAYS reset stations and show new empty cup for next creation
-                    print("🧋 💥 RESETTING STATIONS FOR NEXT DRINK...")
-                    drinkCreator.resetStations(ingredientStations)
-                    print("🧋 ✅ Reset complete - ready for your next creation!")
-                    
-                    
-                } else {
-                    print("❌ Already carrying something")
-                }
-                return // Exit early for drink creator interaction
-            }
-            
-            // Check if this is a table and we're carrying a drink
-            if rotatable.name == "table" && character.carriedItem != nil {
-                if let carriedDrink = character.carriedItem {
-                    print("🧋 Attempting to place \(carriedDrink.objectType) on table")
-                    // SPECIAL CASE: Sacred table during ritual
-                    if rotatable.name == "sacred_table" && isRitualActive {
-                        handleSacredTableService(drink: carriedDrink)
-                        return
-                    }
-                    
-                    placeDrinkOnTable(drink: carriedDrink, table: rotatable)
-                }
-                return // Exit early for table interaction
-            }
-            
-            // Otherwise handle as pickupable object
-            print("📦 Found rotatable object: \(rotatable.objectType), canBeCarried: \(rotatable.canBeCarried)")
-            if rotatable.canBeCarried {
-                if character.carriedItem == nil {
-                    // Remove from grid when picked up
-                    if let gameObject = gridService.objectAt(gridService.worldToGrid(rotatable.position)) {
-                        gridService.freeCell(gameObject.gridPosition)
-                    }
-                    
-                    character.pickupItem(rotatable)
-                    print("📦 Picked up \(rotatable.objectType)")
-                } else {
-                    print("❌ Already carrying something")
-                }
-            } else {
-                print("❌ Cannot carry this object type")
-            }
-        } else {
-            print("🤷‍♂️ No action for this node")
-        }
-        
-        // Note: Timer cleanup is now handled by InputService
-    }
-
-    
-
-    
-    // MARK: - BaseGameScene Template Method Implementation
     override open func updateSpecificContent(_ currentTime: TimeInterval) {
-        // Update time system
         timeService.update()
         
-        // Check for time phase changes and notify resident manager
         let currentPhase = timeService.currentPhase
         if currentPhase != lastTimePhase {
-            print("🌅 Detected time phase change: \(lastTimePhase.displayName) → \(currentPhase.displayName)")
+            Log.info(.time, "Phase changed: \(lastTimePhase.displayName) → \(currentPhase.displayName)")
             lastTimePhase = currentPhase
             residentManager.handleTimePhaseChange(currentPhase)
-            
-            // Handle ritual activation/deactivation
-            handleRitualTimePhaseChange(currentPhase)
+            handleRitualTimePhaseChange(currentPhase)  // → GameScene+Ritual.swift
         }
         
-        // Update time display
         updateTimeDisplay()
-        
-        // Update time control button
         timeControlButton?.update()
-        
-        // Update resident manager (handles all NPC lifecycle)
-        residentManager.update(deltaTime: 1.0/60.0)
-        
-        // Update shop NPCs
+        residentManager.update(deltaTime: 1.0 / 60.0)
         updateShopNPCs()
+        
+        // Simulate snail wandering while player is in the shop
+        // Also check time activation so the snail wakes/sleeps even from the shop
+        let snailWorld = SnailWorldState.shared
+        if timeService.currentPhase == .night && !snailWorld.isActive {
+            snailWorld.activate()
+        } else if timeService.currentPhase != .night && snailWorld.isActive {
+            snailWorld.deactivate()
+        }
+        snailWorld.simulateWandering(deltaTime: 1.0 / 60.0)
     }
     
     private func updateTimeDisplay() {
         let phase = timeService.currentPhase
-        let progress = timeService.phaseProgress
+        let pct = Int(timeService.phaseProgress * 100)
+        let ritual = timeService.isRitualDay ? " 🕯️" : ""
+        timeLabel.text = "D\(timeService.dayCount) \(phase.displayName.uppercased()) \(pct)%\(ritual)"
         
-        timeLabel.text = "\(phase.displayName.uppercased()) \(Int(progress * 100))%"
-        
-        // Change label color based on phase
         switch phase {
-        case .dawn:
-            timeLabel.fontColor = .systemPink
-        case .day:
-            timeLabel.fontColor = .blue
-        case .dusk:
-            timeLabel.fontColor = .orange
-        case .night:
-            timeLabel.fontColor = .purple
+        case .dawn:  timeLabel.fontColor = .systemPink
+        case .day:   timeLabel.fontColor = .blue
+        case .dusk:  timeLabel.fontColor = .orange
+        case .night: timeLabel.fontColor = .purple
         }
     }
     
-    // MARK: - Shop NPC Management (NEW)
+    // MARK: - Shop NPC Management
+    
     private func updateShopNPCs() {
-        let deltaTime = 1.0/60.0
+        let dt = 1.0 / 60.0
+        for npc in npcs { npc.update(deltaTime: dt) }
         
-        // Update existing shop NPCs
-        for npc in npcs {
-            npc.update(deltaTime: deltaTime)
-        }
-        
-        // Clean up NPCs that have left
-        let initialCount = npcs.count
+        let before = npcs.count
         npcs.removeAll { npc in
-            if npc.parent == nil {
-                // Notify resident manager when NPC leaves
-                let satisfied = npc.state.isExiting && npc.state.displayName.contains("Happy")
-                residentManager.npcLeftShop(npc, satisfied: satisfied)
-                print("🦊 Cleaned up departed shop NPC \(npc.animalType.rawValue)")
-                return true
+            guard npc.parent == nil else { return false }
+            if npc.isCurrentlyInRitual() {
+                Log.warn(.npc, "Ritual NPC \(npc.animalType.rawValue) removed from parent — keeping in memory")
+                return false
             }
-            return false
+            let satisfied = npc.state.isExiting && npc.state.displayName.contains("Happy")
+            residentManager.npcLeftShop(npc, satisfied: satisfied)
+            Log.debug(.npc, "Cleaned up \(npc.animalType.rawValue)")
+            return true
         }
-        
-        // Log if NPCs were cleaned up
-        if npcs.count < initialCount {
-            print("🦊 Shop NPC cleanup: \(initialCount - npcs.count) NPCs removed, \(npcs.count) remain")
+        if npcs.count < before {
+            Log.debug(.npc, "NPC cleanup: \(before - npcs.count) removed, \(npcs.count) remain")
         }
     }
     
-    // MARK: - Table Service System (Phase 2)
-    private func placeDrinkOnTable(drink: RotatableObject, table: RotatableObject) {
-        // Remove drink from character (using existing dropItem method)
+    // MARK: - Table / Drink Placement
+    
+    func placeDrinkOnTable(drink: RotatableObject, table: RotatableObject) {
+        let existing = table.children.filter { $0.name == "drink_on_table" }
+        guard existing.count < 3 else {
+            Log.debug(.drink, "Table full (\(existing.count)/3)")
+            return
+        }
+        
         character.dropItemSilently()
         
-        // Create drink sprite as child of table
         let drinkOnTable = createTableDrink(from: drink)
-        drinkOnTable.position = configService.tableDrinkOnTableOffset
+        let offsets: [CGPoint] = [
+            configService.tableDrinkOnTableOffset,
+            CGPoint(x: configService.tableDrinkOnTableOffset.x - 15, y: configService.tableDrinkOnTableOffset.y + 10),
+            CGPoint(x: configService.tableDrinkOnTableOffset.x + 15, y: configService.tableDrinkOnTableOffset.y + 10)
+        ]
+        drinkOnTable.position = offsets[existing.count]
         drinkOnTable.zPosition = ZLayers.childLayer(for: ZLayers.tables)
         drinkOnTable.name = "drink_on_table"
         table.addChild(drinkOnTable)
         
-        print("🧋 ✨ Successfully placed \(drink.objectType) on table!")
-        print("🧋 Table now has \(table.children.count) child objects")
+        Log.info(.drink, "Placed drink on \(table.name ?? "table")")
+        
+        if table.name == "sacred_table" && isRitualActive {
+            Log.info(.ritual, "Sacred table — triggering ritual sequence")
+            triggerRitualSequence(drinkOnTable: drinkOnTable, sacredTable: table)
+        }
     }
     
-    private func createTableDrink(from originalDrink: RotatableObject) -> SKNode {
-        // FIXED: Create table drink using same consistent sprite layering system
+    func createTableDrink(from originalDrink: RotatableObject) -> SKNode {
         let tableDrink = SKNode()
-        
-        // Use identical sprite system but with smaller table scale
-        let bobaAtlas = SKTextureAtlas(named: "Boba")
-        
-        // Validate atlas exists
-        guard bobaAtlas.textureNames.count > 0 else {
-            print("❌ ERROR: Boba atlas not found or empty for table drink")
+        let atlas = SKTextureAtlas(named: "Boba")
+        guard atlas.textureNames.count > 0 else {
+            Log.error(.drink, "Boba atlas not found or empty")
             return tableDrink
         }
         
-        let cupTexture = bobaAtlas.textureNamed("cup_empty")
-        let tableScale = 15.0 / cupTexture.size().width // Smaller for table display
+        let cupTex = atlas.textureNamed("cup_empty")
+        let tableScale = 15.0 / cupTex.size().width
         
-        // Helper function to create perfectly aligned table layers
-        func makeTableLayer(_ name: String, z: CGFloat, visible: Bool = true, alpha: CGFloat = 1.0) -> SKSpriteNode? {
-            // Validate texture exists before creating sprite
-            guard bobaAtlas.textureNames.contains(name) else {
-                print("⚠️ WARNING: Texture '\(name)' not found in Boba atlas for table drink")
-                return nil
-            }
+        for child in originalDrink.children {
+            guard let sprite = child as? SKSpriteNode, let name = sprite.name else { continue }
+            guard atlas.textureNames.contains(name) else { continue }
             
-            let tex = bobaAtlas.textureNamed(name)
+            let tex = atlas.textureNamed(name)
             tex.filteringMode = .nearest
             let node = SKSpriteNode(texture: tex)
-            node.anchorPoint = CGPoint(x: 0.5, y: 0.5)   // identical for all
-            node.position = .zero                         // identical for all
-            node.setScale(tableScale)                     // identical for all
-            node.zPosition = z
-            node.isHidden = !visible
-            node.alpha = alpha
+            node.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+            node.position = .zero
+            node.setScale(tableScale)
+            node.zPosition = sprite.zPosition
+            node.isHidden = sprite.isHidden
+            node.alpha = sprite.alpha
             node.blendMode = .alpha
             node.name = name
-            return node
+            tableDrink.addChild(node)
         }
         
-        // Recreate drink layers based on original drink's sprite children (preserve your recipe)
-        for child in originalDrink.children {
-            if let spriteChild = child as? SKSpriteNode, let spriteName = spriteChild.name {
-                if let tableLayer = makeTableLayer(spriteName, 
-                                                  z: spriteChild.zPosition, 
-                                                  visible: !spriteChild.isHidden, 
-                                                  alpha: spriteChild.alpha) {
-                    tableDrink.addChild(tableLayer)
-                    print("🧋 🎨 Created table layer \(spriteName) with consistent scaling")
-                }
-            }
-        }
-        
-        print("🧋 🎨 Table drink created with \(tableDrink.children.count) perfectly aligned sprite layers")
+        Log.debug(.drink, "Table drink created with \(tableDrink.children.count) layers")
         return tableDrink
     }
     
-  
     // MARK: - Forest Transition
-    private func enterForest() {
-        print("🌲 Entering the mysterious forest...")
-        
-        // Use transition service for forest entry
+    
+    func enterForest() {
+        Log.info(.forest, "Entering the mysterious forest...")
         transitionService.transitionToForest(from: self) {
-            print("🌲 Successfully transitioned to forest")
+            Log.info(.forest, "Transitioned to forest")
         }
     }
     
-    // MARK: - Save System
-    private func saveGameState() {
-        // Visual feedback - brief glow
-        let glowAction = SKAction.sequence([
-            SKAction.scale(to: 1.2, duration: 0.1),
-            SKAction.scale(to: 1.0, duration: 0.1)
-        ])
-        saveJournal.run(glowAction)
-        
-        // Haptic feedback
-        transitionService.triggerHapticFeedback(type: .success)
-        
-        // Save the actual game state
-        SaveService.shared.saveCurrentGameState(timeService: timeService, residentManager: residentManager)
-        
-        print("📔 ✅ Game saved successfully!")
+    // MARK: - Grid Overlay (Debug)
+    
+    private func addGridOverlay() {
+        for x in 0...gridService.columns {
+            let line = SKSpriteNode(color: SKColor.black.withAlphaComponent(0.1),
+                                    size: CGSize(width: 1, height: CGFloat(gridService.rows) * gridService.cellSize))
+            line.position = CGPoint(x: gridService.shopOrigin.x + CGFloat(x) * gridService.cellSize,
+                                    y: gridService.shopOrigin.y + CGFloat(gridService.rows) * gridService.cellSize / 2)
+            line.zPosition = ZLayers.gridOverlay
+            addChild(line)
+        }
+        for y in 0...gridService.rows {
+            let line = SKSpriteNode(color: SKColor.black.withAlphaComponent(0.1),
+                                    size: CGSize(width: CGFloat(gridService.columns) * gridService.cellSize, height: 1))
+            line.position = CGPoint(x: gridService.shopOrigin.x + CGFloat(gridService.columns) * gridService.cellSize / 2,
+                                    y: gridService.shopOrigin.y + CGFloat(y) * gridService.cellSize)
+            line.zPosition = ZLayers.gridOverlay
+            addChild(line)
+        }
     }
     
-    private func clearSaveData() {
-        // Visual feedback - brief red glow
-        let clearAction = SKAction.sequence([
-            SKAction.colorize(with: .red, colorBlendFactor: 0.8, duration: 0.1),
-            SKAction.colorize(with: .white, colorBlendFactor: 0.0, duration: 0.1)
-        ])
-        clearDataButton.run(clearAction)
-        
-        // Strong haptic feedback for destructive action
-        transitionService.triggerHapticFeedback(type: .light)
-        
-        // Clear all save data
-        SaveService.shared.clearAllSaveData()
-        
-        print("🗑️ ✅ All save data cleared!")
+    // MARK: - Input Handling
+    
+    override open func handleSceneSpecificLongPress(on node: SKNode, at location: CGPoint) {
+        handleGameSceneLongPress(on: node, at: location)
     }
     
-    private func showNPCStatusReport() {
-        // Visual feedback - brief glow
-        let glowAction = SKAction.sequence([
-            SKAction.scale(to: 1.2, duration: 0.1),
-            SKAction.scale(to: 1.0, duration: 0.1)
-        ])
-        npcStatusTracker.run(glowAction)
+    private func handleGameSceneLongPress(on node: SKNode, at location: CGPoint) {
+        Log.debug(.input, "Long press on: \(node.name ?? "unnamed") (\(type(of: node)))")
         
-        // Haptic feedback
-        transitionService.triggerHapticFeedback(type: .selection)
-        
-        // ALSO: Print SwiftData inspection to console
-        SaveService.shared.inspectSwiftDataContents()
-        
-        // Create and show status bubble
-        showNPCStatusBubble()
-        
-        print("📈 ✅ NPC status report displayed!")
-    }
-    
-    // MARK: - NPC Status Bubble Display
-    private func showNPCStatusBubble() {
-        // Dismiss any existing dialogue first
-        DialogueService.shared.dismissDialogue()
-        
-        // Get all NPCs from dialogue service
-        let allNPCs = DialogueService.shared.getAllNPCs()
-        
-        // Create status content
-        var statusLines: [String] = []
-        statusLines.append("📈 NPC STATUS REPORT")
-        statusLines.append("")
-        
-        if allNPCs.isEmpty {
-            statusLines.append("🤷‍♂️ No NPCs found")
-        } else {
-            var liberatedCount = 0
+        if node == character.carriedItem {
+            character.dropItem()
             
-            for npcData in allNPCs {
-                if let memory = SaveService.shared.getOrCreateNPCMemory(npcData.id, name: npcData.name, animalType: npcData.animal) {
-                    let satisfactionLevel = memory.satisfactionLevel
-                    let emoji = satisfactionLevel.emoji
-                    
-                    // Check if NPC is liberated
-                    if memory.isLiberated {
-                        liberatedCount += 1
-                        statusLines.append("👻 \(npcData.animal) \(npcData.name) - LIBERATED ✨")
-                        if let liberationDate = memory.liberationDate {
-                            let formatter = DateFormatter()
-                            formatter.dateStyle = .short
-                            statusLines.append("Found peace: \(formatter.string(from: liberationDate))")
-                        }
-                    } else {
-                        statusLines.append("\(npcData.animal) \(npcData.name) \(emoji)")
-                        statusLines.append("Satisfaction: \(memory.satisfactionScore)/100")
-                        statusLines.append("Interactions: \(memory.totalInteractions)")
-                        
-                        // Show ritual eligibility
-                        if memory.satisfactionScore >= 45 && memory.satisfactionScore <= 75 {
-                            statusLines.append("🕯️ Ready for liberation ritual")
-                        }
-                    }
-                    statusLines.append("")
-                } else {
-                    statusLines.append("\(npcData.animal) \(npcData.name) - No data")
-                    statusLines.append("")
-                }
+        } else if node == timeBreaker {
+            timeBreaker.toggle()
+            
+        } else if let station = node as? IngredientStation {
+            let pulse = animationService.stationInteractionPulse(station)
+            animationService.run(pulse, on: station, withKey: AnimationKeys.stationInteraction, completion: nil)
+            station.interact()
+            drinkCreator.updateDrink(from: ingredientStations)
+            Log.debug(.drink, "Station \(station.stationType) toggled")
+            
+        } else if let saveButton = node as? SaveSystemButton {
+            switch saveButton.buttonType {
+            case .saveJournal: saveGameState()
+            case .clearData:   clearSaveData()
+            case .npcStatus:   showNPCStatusReport()
             }
             
-            statusLines.append("📈 Total NPCs: \(allNPCs.count)")
-            statusLines.append("✨ Liberated souls: \(liberatedCount)")
+        } else if node.name == "save_journal"      { saveGameState()
+        } else if node.name == "clear_data_button"  { clearSaveData()
+        } else if node.name == "npc_status_tracker" { showNPCStatusReport()
             
-            // Show ritual eligibility summary
-            let eligibleCount = allNPCs.filter { npcData in
-                guard !SaveService.shared.isNPCLiberated(npcData.id) else { return false }
-                if let memory = SaveService.shared.getOrCreateNPCMemory(npcData.id, name: npcData.name, animalType: npcData.animal) {
-                    return memory.satisfactionScore >= 45 && memory.satisfactionScore <= 75
+        } else if node.name == "front_door" {
+            transitionService.triggerHapticFeedback(type: .success)
+            enterForest()
+            
+        } else if let trash = node as? Trash {
+            trash.pickUp { Log.debug(.game, "Trash cleaned up") }
+            transitionService.triggerHapticFeedback(type: .light)
+            
+        } else if node.name == "completed_drink_pickup" {
+            if character.carriedItem == nil,
+               let drink = drinkCreator.createCompletedDrink(from: ingredientStations) {
+                character.pickupItem(drink)
+                drinkCreator.resetStations(ingredientStations)
+                Log.info(.drink, "Picked up completed drink, stations reset")
+            }
+            
+        } else if let rotatable = node as? RotatableObject {
+            // Drink creator pickup
+            if rotatable.name == "drink_display" && rotatable.parent == drinkCreator {
+                if character.carriedItem == nil {
+                    let creation = drinkCreator.createPickupDrink(from: ingredientStations)
+                    character.pickupItem(creation)
+                    drinkCreator.resetStations(ingredientStations)
+                    Log.info(.drink, "Picked up creation from creator, stations reset")
                 }
-                return false
-            }.count
+                return
+            }
             
-            statusLines.append("🕯️ Ready for ritual: \(eligibleCount)")
+            // Table drink placement
+            if (rotatable.name == "table" || rotatable.name == "sacred_table"),
+               let carried = character.carriedItem {
+                placeDrinkOnTable(drink: carried, table: rotatable)
+                return
+            }
+            
+            // Object pickup
+            if rotatable.canBeCarried && character.carriedItem == nil {
+                if let go = gridService.objectAt(gridService.worldToGrid(rotatable.position)) {
+                    gridService.freeCell(go.gridPosition)
+                }
+                character.pickupItem(rotatable)
+                Log.debug(.game, "Picked up \(rotatable.objectType)")
+            }
         }
-        
-        // Create and show status bubble
-        let statusBubble = NPCStatusBubble(
-            statusLines: statusLines,
-            position: npcStatusTracker.position
-        )
-        
-        addChild(statusBubble)
     }
 }
 
-// MARK: - Physics Contact Delegate (NEW)
+// MARK: - Physics Contact Delegate
+
 extension GameScene: PhysicsContactDelegate {
     
     func characterContactedStation(_ station: SKNode) {
-        if let ingredientStation = station as? IngredientStation {
-            print("⚡ Character contacted \(ingredientStation.stationType) station via physics")
-            // Could trigger proximity-based highlighting or interaction hints
-        }
+        // proximity hint hook
     }
     
     func characterContactedDoor(_ door: SKNode) {
-        if door.name == "front_door" {
-            print("⚡ Character contacted forest door via physics")
-            // Could show "Press to enter forest" hint
-        }
+        // "enter forest" hint hook
     }
     
     func characterContactedItem(_ item: SKNode) {
-        if let rotatable = item as? RotatableObject {
-            print("⚡ Character contacted item \(rotatable.objectType) via physics")
-            // Could show "Press to pickup" hint
-        }
+        // "pick up" hint hook
     }
     
     func characterContactedNPC(_ npc: SKNode) {
-        if let npcNode = npc as? NPC {
-            print("💬 Character contacted \(npcNode.animalType.rawValue) via physics")
-            // Could trigger dialogue or interaction hints
+        if let shopNPC = npc as? ShopNPC {
+            Log.debug(.npc, "Character contacted \(shopNPC.animalType.rawValue)")
         }
     }
     
     func npcContactedDoor(_ npc: SKNode, door: SKNode) {
-        if let npcNode = npc as? NPC, door.name == "front_door" {
-            print("🦊 \(npcNode.animalType.rawValue) contacted exit door - should leave")
-            npcNode.startLeaving(satisfied: true)
+        if let shopNPC = npc as? ShopNPC, door.name == "front_door" {
+            shopNPC.startLeaving(satisfied: true)
         }
     }
     
     func itemContactedFurniture(_ item: SKNode, furniture: SKNode) {
-        print("📦 Item contacted furniture via physics")
-        // Could handle automatic item placement
-    }
-}
-
-// MARK: - NPC Status Bubble
-class NPCStatusBubble: SKNode {
-    private let bubbleBackground: SKShapeNode
-    private let contentNode: SKNode
-    private let scrollContainer: SKNode
-    private var scrollOffset: CGFloat = 0
-    private let maxScrollOffset: CGFloat
-    private var longPressTimer: Timer?
-    private let longPressDuration: TimeInterval = 0.6
-    
-    init(statusLines: [String], position: CGPoint) {
-        // Fixed bubble size that fits on screen
-        let bubbleWidth: CGFloat = 280
-        let bubbleHeight: CGFloat = 320
-        let lineHeight: CGFloat = 18
-        let padding: CGFloat = 15
-        
-        // Calculate content height for scrolling
-        let contentHeight = CGFloat(statusLines.count) * lineHeight + padding
-        let visibleHeight = bubbleHeight - padding * 2 - 30 // Leave room for instructions
-        maxScrollOffset = max(0, contentHeight - visibleHeight)
-        
-        // Create bubble background
-        bubbleBackground = SKShapeNode(rectOf: CGSize(width: bubbleWidth, height: bubbleHeight), cornerRadius: 12)
-        bubbleBackground.fillColor = SKColor.white.withAlphaComponent(0.95)
-        bubbleBackground.strokeColor = SKColor.black.withAlphaComponent(0.7)
-        bubbleBackground.lineWidth = 2
-        
-        // Create scroll container
-        scrollContainer = SKNode()
-        
-        // Create content container
-        contentNode = SKNode()
-        
-        super.init()
-        
-        // Position using the passed world coordinates
-        self.position = position
-        self.zPosition = ZLayers.statusBubble // Use proper Z-layer
-        
-        // Add background
-        addChild(bubbleBackground)
-        
-        // Add text lines to content
-        for (index, line) in statusLines.enumerated() {
-            let label = SKLabelNode(text: line)
-            label.fontName = line.hasPrefix("📈") ? "Arial-Bold" : "Arial"
-            label.fontSize = line.hasPrefix("📈") ? 13 : 11
-            label.fontColor = line.hasPrefix("📈") ? SKColor.darkGray : SKColor.black
-            label.horizontalAlignmentMode = .center
-            label.verticalAlignmentMode = .center
-            
-            // Position from top down
-            let yOffset = (contentHeight/2) - (CGFloat(index) * lineHeight) - padding
-            label.position = CGPoint(x: 0, y: yOffset)
-            
-            contentNode.addChild(label)
-        }
-        
-        // Add content to scroll container
-        scrollContainer.addChild(contentNode)
-        
-        // Clip the scroll area
-        let clipFrame = CGRect(x: -bubbleWidth/2 + padding, y: -visibleHeight/2, width: bubbleWidth - padding*2, height: visibleHeight)
-        let clipNode = SKCropNode()
-        let clipMask = SKSpriteNode(color: .white, size: clipFrame.size)
-        clipMask.position = CGPoint(x: clipFrame.midX, y: clipFrame.midY)
-        clipNode.maskNode = clipMask
-        clipNode.addChild(scrollContainer)
-        
-        addChild(clipNode)
-        
-        // Add instructions
-        let instructionText = maxScrollOffset > 0 ? "Drag to scroll • Long press to close" : "Long press to close"
-        let closeLabel = SKLabelNode(text: instructionText)
-        closeLabel.fontName = "Arial"
-        closeLabel.fontSize = 9
-        closeLabel.fontColor = SKColor.gray
-        closeLabel.horizontalAlignmentMode = .center
-        closeLabel.verticalAlignmentMode = .center
-        closeLabel.position = CGPoint(x: 0, y: -(bubbleHeight/2) + 12)
-        addChild(closeLabel)
-        
-        // Add scroll indicator if needed
-        if maxScrollOffset > 0 {
-            let scrollIndicator = SKLabelNode(text: "⇅")
-            scrollIndicator.fontName = "Arial"
-            scrollIndicator.fontSize = 12
-            scrollIndicator.fontColor = SKColor.gray
-            scrollIndicator.horizontalAlignmentMode = .center
-            scrollIndicator.verticalAlignmentMode = .center
-            scrollIndicator.position = CGPoint(x: bubbleWidth/2 - 15, y: 0)
-            addChild(scrollIndicator)
-        }
-        
-        // Make the bubble interactive
-        bubbleBackground.name = "status_bubble"
-        isUserInteractionEnabled = true
-        
-        // Animate bubble appearance
-        alpha = 0
-        setScale(0.5)
-        let showAnimation = SKAction.group([
-            SKAction.fadeIn(withDuration: 0.3),
-            SKAction.scale(to: 1.0, duration: 0.3)
-        ])
-        run(showAnimation)
-    }
-    
-    required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-    
-    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first else { return }
-        let location = touch.location(in: self)
-        
-        // Start long press timer for closing
-        startLongPressTimer()
-        
-        // Don't immediately close - just track touch for potential scrolling
-    }
-    
-    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let touch = touches.first else { return }
-        
-        // Cancel long press timer when user starts dragging
-        cancelLongPressTimer()
-        
-        guard maxScrollOffset > 0 else { return }
-        
-        let location = touch.location(in: self)
-        let previousLocation = touch.previousLocation(in: self)
-        
-        // Only scroll if touch is inside bubble
-        if bubbleBackground.contains(location) {
-            let deltaY = location.y - previousLocation.y
-            
-            // Update scroll offset
-            let newOffset = scrollOffset + deltaY
-            scrollOffset = max(-maxScrollOffset, min(0, newOffset))
-            
-            // Apply scroll to content
-            contentNode.position.y = scrollOffset
-        }
-    }
-    
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        // Cancel long press timer when touch ends
-        cancelLongPressTimer()
-    }
-    
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        // Cancel long press timer when touch is cancelled
-        cancelLongPressTimer()
-    }
-    
-    private func startLongPressTimer() {
-        cancelLongPressTimer() // Cancel any existing timer
-        
-        longPressTimer = Timer.scheduledTimer(withTimeInterval: longPressDuration, repeats: false) { [weak self] _ in
-            self?.handleLongPress()
-        }
-    }
-    
-    private func cancelLongPressTimer() {
-        longPressTimer?.invalidate()
-        longPressTimer = nil
-    }
-    
-    private func handleLongPress() {
-        print("📈 Long press detected - closing status bubble")
-        closeBubble()
-    }
-    
-    private func closeBubble() {
-        let hideAnimation = SKAction.group([
-            SKAction.fadeOut(withDuration: 0.2),
-            SKAction.scale(to: 0.8, duration: 0.2)
-        ])
-        
-        let removeAction = SKAction.run {
-            self.removeFromParent()
-        }
-        
-        run(SKAction.sequence([hideAnimation, removeAction]))
+        // auto-placement hook
     }
 }

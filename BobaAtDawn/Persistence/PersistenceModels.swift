@@ -17,6 +17,10 @@ final class WorldState {
     var isTimeFlowing: Bool = true
     var cycleCount: Int = 0
     
+    // NEW: Day counter — incremented each time night→dawn transition fires.
+    // Ritual triggers when (dayCount % 3 == 0) and dayCount > 0.
+    var dayCount: Int = 0
+    
     // JSON string of current NPC positions/states
     var npcStatesJSON: String = "{}"
     
@@ -43,7 +47,7 @@ final class NPCMemory {
     var totalInteractions: Int = 0
     var lastInteractionDate: Date?
     
-    // NEW: Satisfaction system (1-100)
+    // Satisfaction system (1-100)
     var satisfactionScore: Int = 50 // Starts neutral
     var totalDrinksReceived: Int = 0
     var niceTreatmentCount: Int = 0

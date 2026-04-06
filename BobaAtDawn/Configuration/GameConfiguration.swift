@@ -303,6 +303,36 @@ struct GameConfig {
         static let entranceStartAlpha: CGFloat = 0.0
     }
     
+    // MARK: - Ritual Configuration
+    struct Ritual {
+        /// Grid center of the ritual circle (candles + harp spawn around this)
+        static let centerPosition = GridCoordinate(x: 16, y: 12)
+        
+        /// Sacred table position — MUST be used everywhere the sacred table is referenced.
+        /// Derived from centerPosition so they stay in sync.
+        static let sacredTablePosition = GridCoordinate(x: 16, y: 8)  // centerPosition.y - 4
+        
+        /// Preferred sitting spot for the ritual NPC (directly below sacred table)
+        static let ritualSittingSpot = GridCoordinate(x: 16, y: 7)
+        
+        /// Fallback sitting spots if the preferred one is occupied
+        static let alternativeSittingSpots = [
+            GridCoordinate(x: 15, y: 8),
+            GridCoordinate(x: 17, y: 8),
+            GridCoordinate(x: 16, y: 9)
+        ]
+        
+        /// Candle circle radius in grid cells
+        static let candleRadius = 2
+        static let candleCount = 7
+        
+        /// Every Nth day is a ritual day (dayCount > 0 && dayCount % N == 0)
+        static let ritualDayInterval = 3
+        
+        /// Post-liberation cleanup delay
+        static let cleanupDelay: TimeInterval = 8.0
+    }
+    
     // MARK: - Debug Configuration
     struct Debug {
         static let showGridOverlay = false
@@ -314,7 +344,11 @@ struct GameConfig {
 // MARK: - Convenience Extensions
 extension GameConfig {
     
-    // FIXED: Grid positioning helpers
+    // MARK: - Grid Positioning Helpers
+    // NOTE: These use the same math as GridWorld.gridToWorld().
+    // The canonical implementation lives in GridWorld (via GridService protocol).
+    // These static helpers exist for cases where a GridService instance isn't available
+    // (e.g. configuration constants). They MUST stay in sync with GridWorld.
     
     /// Convert grid coordinate to world position using current grid settings
     static func gridToWorld(_ gridPos: GridCoordinate) -> CGPoint {
@@ -339,43 +373,27 @@ extension GameConfig {
     
     /// Get shop floor rectangle in world coordinates - FIXED
     static func shopFloorRect() -> (position: CGPoint, size: CGSize) {
-        // Calculate the rectangle more carefully
         let topLeftGrid = World.shopFloorArea.topLeft
         let bottomRightGrid = World.shopFloorArea.bottomRight
         
-        print("🔍 shopFloorRect debug:")
-        print("   topLeft grid: \(topLeftGrid)")
-        print("   bottomRight grid: \(bottomRightGrid)")
-        
-        // Calculate grid dimensions
-        let gridWidth = bottomRightGrid.x - topLeftGrid.x + 1  // +1 to include both endpoints
+        let gridWidth = bottomRightGrid.x - topLeftGrid.x + 1
         let gridHeight = bottomRightGrid.y - topLeftGrid.y + 1
         
-        print("   grid dimensions: \(gridWidth) x \(gridHeight) cells")
-        
-        // Convert to world dimensions
         let width = CGFloat(gridWidth) * Grid.cellSize
         let height = CGFloat(gridHeight) * Grid.cellSize
         
-        print("   world dimensions: \(width) x \(height)")
-        
-        // Calculate center position
         let centerGridX = (topLeftGrid.x + bottomRightGrid.x) / 2
         let centerGridY = (topLeftGrid.y + bottomRightGrid.y) / 2
         let centerGrid = GridCoordinate(x: centerGridX, y: centerGridY)
         let centerWorld = gridToWorld(centerGrid)
         
         let calculatedSize = CGSize(width: width, height: height)
-        print("   final size: \(calculatedSize)")
-        print("   final position: \(centerWorld)")
         
-        // Validation
         guard calculatedSize.width > 0 && calculatedSize.height > 0 else {
-            print("❌ CRITICAL: shopFloorRect calculated invalid size: \(calculatedSize)")
-            // Return a safe fallback size
+            Log.error(.grid, "shopFloorRect calculated invalid size: \(calculatedSize)")
             return (
                 position: CGPoint(x: 0, y: 0),
-                size: CGSize(width: 780, height: 600)  // Reasonable fallback
+                size: CGSize(width: 780, height: 600)
             )
         }
         

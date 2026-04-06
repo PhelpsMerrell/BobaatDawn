@@ -1,15 +1,17 @@
-// MARK: - Movement Configuration
-struct MovementConfig {
-    static let usePhysicsMovement = false  // DISABLE PHYSICS - use simple SKAction movement
-    static let debugMovement = false      // Disabled for immersion
-    static let simplifiedMovement = true  // NEW: Bypass complex pathfinding for responsiveness
-    static let directMovement = true      // NEW: Move directly to tapped location when possible
-}//
+//
 //  Character.swift
 //  BobaAtDawn
 //
 //  Created by Phelps Merrell on 8/18/25.
 //
+
+// MARK: - Movement Configuration
+struct MovementConfig {
+    static let usePhysicsMovement = false  // DISABLE PHYSICS - use simple SKAction movement
+    static let debugMovement = false      // Disabled for immersion
+    static let simplifiedMovement = true  // Bypass complex pathfinding for responsiveness
+    static let directMovement = true      // Move directly to tapped location when possible
+}
 
 import SpriteKit
 import UIKit
@@ -31,13 +33,15 @@ class Character: SKSpriteNode {
     
     // MARK: - Physics Movement Controller
     // Lazy so it can safely use self.physicsBody AFTER setupPhysicsBody() runs.
-    private lazy var movementController: PhysicsMovementController = { [unowned self] in
+    // FIXED: Replaced [unowned self] with direct self access (safe in lazy var context —
+    // self is guaranteed alive when a lazy property initializer runs).
+    private lazy var movementController: PhysicsMovementController = {
         guard let body = self.physicsBody else {
             fatalError("Character physics body is nil; call setupPhysicsBody() before accessing movementController.")
         }
         return PhysicsMovementController(
             physicsBody: body,
-            gridService: gridService
+            gridService: self.gridService
         )
     }()
     
@@ -87,7 +91,7 @@ class Character: SKSpriteNode {
         // Setup animation controller
         setupAnimationController()
         
-        print("👤 Character initialized with physics at grid \(startCell), world \(position)")
+        Log.info(.game, "Character initialized at grid \(startCell)")
     }
     
     required init?(coder aDecoder: NSCoder) {
@@ -97,7 +101,7 @@ class Character: SKSpriteNode {
     // MARK: - Animation Setup
     private func setupAnimationController() {
         animationController = PlayerAnimationController(character: self)
-        print("🎭 Initialized player animation controller")
+        Log.debug(.animation, "Player animation controller initialized")
     }
     
     // MARK: - Physics Setup
@@ -106,17 +110,8 @@ class Character: SKSpriteNode {
         self.physicsBody = body // SpriteKit sets body.node automatically
         
         // Verify the physics body was set correctly
-        if physicsBody != nil {
-            print("⚡ Character physics body created successfully")
-        } else {
-            print("❌ ERROR: Failed to create character physics body")
-        }
-        
-        // Verify the node reference is correct
-        if physicsBody?.node === self {
-            print("⚡ Physics body node reference correct")
-        } else {
-            print("❌ WARNING: Physics body node reference may be incorrect")
+        if physicsBody == nil {
+            Log.error(.physics, "Failed to create character physics body")
         }
     }
     
@@ -185,7 +180,7 @@ class Character: SKSpriteNode {
         let sequenceAction = SKAction.sequence([moveAction, completionAction])
         run(sequenceAction, withKey: "character_movement")
         
-        print("🏃‍♂️ Character moving directly to \(worldPosition) in \(String(format: "%.2f", duration))s")
+        Log.debug(.game, "Character moving to \(worldPosition)")
     }
     
     // MARK: - Haptic Feedback (Immersive)
@@ -221,41 +216,20 @@ class Character: SKSpriteNode {
     private func findAndMoveToNearestAvailable(target: GridCoordinate) {
         let currentPos = gridService.worldToGrid(position)
         
-        // Try to find a path around the obstacle
         if let nearestCell = findPathAroundObstacle(from: currentPos, to: target) {
             moveToGridWithAction(nearestCell)
-            if MovementConfig.debugMovement {
-                print("🧮 Smart pathfinding: Moving to \(nearestCell) to get closer to \(target)")
-            }
-            // Subtle haptic for successful pathfinding
             triggerPathfindingFeedback()
-            
+        } else if let fallbackCell = gridService.findNearestAvailableCell(to: target, maxRadius: 5) {
+            moveToGridWithAction(fallbackCell)
+            triggerFallbackFeedback()
         } else {
-            // Fallback: just find any nearby available cell
-            if let fallbackCell = gridService.findNearestAvailableCell(to: target, maxRadius: 5) {
-                moveToGridWithAction(fallbackCell)
-                if MovementConfig.debugMovement {
-                    print("🧮 Fallback pathfinding: Moving to \(fallbackCell) near \(target)")
-                }
-                // Light haptic for fallback pathfinding
-                triggerFallbackFeedback()
-                
-            } else {
-                // Show subtle "can't reach" feedback - gentle shake + haptic
-                let gentleShake = SKAction.sequence([
-                    SKAction.moveBy(x: 2, y: 0, duration: 0.04),
-                    SKAction.moveBy(x: -4, y: 0, duration: 0.08),
-                    SKAction.moveBy(x: 2, y: 0, duration: 0.04)
-                ])
-                run(gentleShake)
-                
-                // Error haptic for blocked path
-                triggerBlockedFeedback()
-                
-                if MovementConfig.debugMovement {
-                    print("🧮 ❌ Cannot reach target \(target) - no path available")
-                }
-            }
+            let gentleShake = SKAction.sequence([
+                SKAction.moveBy(x: 2, y: 0, duration: 0.04),
+                SKAction.moveBy(x: -4, y: 0, duration: 0.08),
+                SKAction.moveBy(x: 2, y: 0, duration: 0.04)
+            ])
+            run(gentleShake)
+            triggerBlockedFeedback()
         }
     }
     
@@ -278,12 +252,8 @@ class Character: SKSpriteNode {
     
     // MARK: - Fallback Movement (SKAction-based)
     private func moveToGridWithAction(_ targetCell: GridCoordinate) {
-        guard targetCell.isValid() else {
-            print("❌ Invalid target cell: \(targetCell)")
-            return
-        }
+        guard targetCell.isValid() else { return }
         
-        // Calculate movement direction for animation
         let targetWorldPos = gridService.gridToWorld(targetCell)
         let direction = CGVector(dx: targetWorldPos.x - position.x, dy: targetWorldPos.y - position.y)
         if direction.dx != 0 || direction.dy != 0 {
@@ -292,20 +262,13 @@ class Character: SKSpriteNode {
         }
         
         guard gridService.isCellAvailable(targetCell) else {
-            if MovementConfig.debugMovement {
-                print("❌ Cell \(targetCell) is occupied - collision detected!")
-            }
-            // Subtle collision feedback - tiny shake + light haptic
             let subtleShake = SKAction.sequence([
                 SKAction.moveBy(x: 1, y: 0, duration: 0.03),
                 SKAction.moveBy(x: -2, y: 0, duration: 0.06),
                 SKAction.moveBy(x: 1, y: 0, duration: 0.03)
             ])
             run(subtleShake)
-            
-            // Light haptic for collision
             triggerCollisionFeedback()
-            
             return
         }
         
@@ -319,15 +282,8 @@ class Character: SKSpriteNode {
         let moveAction = SKAction.move(to: targetWorldPos, duration: duration)
         moveAction.timingMode = .easeOut
         
-        // Add completion action
         let completionAction = SKAction.run {
-            // Stop walking animation
             self.stopWalkingAnimation()
-            
-            if MovementConfig.debugMovement {
-                print("✅ Character arrived at grid \(targetCell) via SKAction")
-            }
-            // Very subtle haptic on successful arrival
             self.triggerArrivalFeedback()
         }
         
@@ -336,20 +292,20 @@ class Character: SKSpriteNode {
         removeAction(forKey: "character_movement")
         run(sequenceAction, withKey: "character_movement")
         
-        print("👤 Character moving to grid \(targetCell) via SKAction")
+        Log.debug(.game, "Character moving to grid \(targetCell)")
     }
     
     // MARK: - Physics Movement Methods
     func moveToward(_ worldPosition: CGPoint) {
         targetWorldPosition = worldPosition
         movementController.setMoving(true)  // FIXED: Ensure movement state is set
-        print("🏃‍♂️ Character moving toward world position \(worldPosition)")
+        Log.debug(.game, "Character moving toward \(worldPosition)")
     }
     
     func stop() {
         targetWorldPosition = nil
         movementController.stop()
-        print("🛑 Character stopped")
+        Log.debug(.game, "Character stopped")
     }
     
     func setMaxSpeed(_ speed: CGFloat) {
@@ -358,25 +314,11 @@ class Character: SKSpriteNode {
     
     // MARK: - Grid Movement (Physics-Based)
     func moveToGridCell(_ targetCell: GridCoordinate) {
-        guard targetCell.isValid() else {
-            print("❌ Invalid target cell: \(targetCell)")
-            return
-        }
-        
-        guard gridService.isCellAvailable(targetCell) else {
-            print("❌ Cell \(targetCell) is occupied")
-            return
-        }
-        
-        // Update grid state
+        guard targetCell.isValid(), gridService.isCellAvailable(targetCell) else { return }
         gridService.moveCharacterTo(targetCell)
-        
-        // Use physics-based movement instead of SKAction
         movementController.moveToGrid(targetCell) { [weak self] in
             self?.handleGridArrival(targetCell)
         }
-        
-        print("👤 Character moving with physics to grid \(targetCell)")
     }
     
     // Convenience method for backward compatibility
@@ -385,7 +327,6 @@ class Character: SKSpriteNode {
     }
     
     private func handleGridArrival(_ gridPosition: GridCoordinate) {
-        print("✅ Character arrived at grid \(gridPosition)")
         updateCarriedItemPosition()
     }
     
@@ -447,7 +388,7 @@ class Character: SKSpriteNode {
             dropAction.timingMode = .easeOut
             item.run(dropAction)
             
-            print("📦 Dropped \(item.objectType) fluidly at grid \(targetCell)")
+            Log.debug(.game, "Dropped \(item.objectType) at grid \(targetCell)")
         } else {
             // Fallback: drop at character position
             let dropPosition = CGPoint(x: position.x, y: position.y - 30)
@@ -455,7 +396,7 @@ class Character: SKSpriteNode {
             dropAction.timingMode = .easeOut
             item.run(dropAction)
             
-            print("📦 Dropped \(item.objectType) at character position (no grid cells available)")
+            Log.debug(.game, "Dropped \(item.objectType) at character position")
         }
         
         item.zPosition = ZLayers.groundObjects
@@ -473,7 +414,7 @@ class Character: SKSpriteNode {
         
         item.removeFromParent()
         carriedItem = nil
-        print("📦 Silently removed carried item")
+        Log.debug(.game, "Silently removed carried item")
     }
     
     func rotateCarriedItem() {
@@ -501,7 +442,7 @@ class Character: SKSpriteNode {
     private func updatePhysicsMovement(deltaTime: TimeInterval) {
         // Safety check: ensure physics body still exists
         guard physicsBody != nil else {
-            print("⚠️ Character.update: physics body is nil, skipping physics update")
+            Log.warn(.physics, "Character physics body is nil, skipping update")
             // Still update carried items
             if isCarrying {
                 updateCarriedItemPosition()
@@ -548,7 +489,6 @@ class Character: SKSpriteNode {
     // MARK: - Physics Integration
     func applyImpulse(_ impulse: CGVector) {
         physicsBody?.applyImpulse(impulse)
-        print("💥 Applied impulse to character: \(impulse)")
     }
     
     func getPhysicsVelocity() -> CGVector {

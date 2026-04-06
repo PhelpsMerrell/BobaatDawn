@@ -9,9 +9,9 @@ import SpriteKit
 
 protocol NPCService {
     // NPC lifecycle
-    func spawnNPC(animal: AnimalType?, at position: GridCoordinate?) -> NPC
-    func updateNPCs(_ npcs: inout [NPC], deltaTime: TimeInterval, currentTime: TimeInterval)
-    func cleanupDepartedNPCs(_ npcs: inout [NPC])
+    func spawnNPC(animal: AnimalType?, at position: GridCoordinate?) -> ShopNPC
+    func updateNPCs(_ npcs: inout [ShopNPC], deltaTime: TimeInterval, currentTime: TimeInterval)
+    func cleanupDepartedNPCs(_ npcs: inout [ShopNPC])
     
     // Spawn timing and logic
     func shouldSpawnNPC(currentTime: TimeInterval, lastSpawnTime: TimeInterval, currentNPCCount: Int, maxNPCs: Int) -> Bool

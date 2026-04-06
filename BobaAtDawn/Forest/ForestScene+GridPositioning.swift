@@ -154,9 +154,14 @@ extension ForestScene {
         // Clean forest look - no special objects added
         // addSpecialObjects(config.specialObjects) - REMOVED for cleaner look
         
-        print("🌲 Room \\(roomNumber) (\\(config.emoji)) setup with clean grid positioning")
+        // Add one-way portal if this room has one
+        setupPortal(for: roomNumber)
+        
+        // Add house markers for NPC homes
+        setupHouseMarkers(for: roomNumber)
+        
+        print("🌲 Room \\(roomNumber) (\\(config.emoji)) setup with grid positioning")
         print("   Room center: \\(config.roomIdentifierPosition)")
-        print("   Clean look: no special objects")
     }
     
     /// Add special objects to the current room
@@ -314,7 +319,8 @@ extension ForestScene {
             "small_rock_1", "small_rock_2", "cave_entrance",
             "star_fragment_1", "star_fragment_2", "crystal_pool",
             "gem_1", "gem_2", "treasure_chest",
-            "ancient_tree", "tree_hollow", "wisdom_stone"
+            "ancient_tree", "tree_hollow", "wisdom_stone",
+            "portal", "house_1", "house_2", "house_3", "house_4"
         ]
         
         for objectName in objectNames {
@@ -322,5 +328,118 @@ extension ForestScene {
         }
         
         print("🧹 Removed special objects from previous room")
+    }
+    
+    // MARK: - One-Way Portals
+    /// Add a one-way portal if this room has one
+    private func setupPortal(for roomNumber: Int) {
+        guard let destination = getPortalDestination() else { return }
+        
+        let portalPosition = GridCoordinate(x: 16, y: 5) // Bottom-center of room
+        let portal = SKLabelNode(text: "🌀")
+        portal.fontSize = 60
+        portal.fontName = "Arial"
+        portal.horizontalAlignmentMode = .center
+        portal.verticalAlignmentMode = .center
+        portal.position = gridService.gridToWorld(portalPosition)
+        portal.zPosition = 10
+        portal.name = "portal"
+        portal.isUserInteractionEnabled = false
+        addChild(portal)
+        
+        // Spinning animation
+        let spin = SKAction.repeatForever(
+            SKAction.rotate(byAngle: .pi * 2, duration: 4.0)
+        )
+        portal.run(spin, withKey: "portal_spin")
+        
+        // Subtle pulsing
+        let pulse = SKAction.repeatForever(
+            SKAction.sequence([
+                SKAction.scale(to: 1.15, duration: 1.5),
+                SKAction.scale(to: 0.9, duration: 1.5)
+            ])
+        )
+        portal.run(pulse, withKey: "portal_pulse")
+        
+        // Add hint showing destination room
+        let roomEmojis = ["", "🍄", "⛰️", "⭐", "💎", "🌳"]
+        let hintLabel = SKLabelNode(text: "→\(roomEmojis[destination])")
+        hintLabel.fontSize = 20
+        hintLabel.fontName = "Arial"
+        hintLabel.alpha = 0.5
+        hintLabel.horizontalAlignmentMode = .center
+        hintLabel.verticalAlignmentMode = .center
+        hintLabel.position = CGPoint(x: 0, y: -40)
+        hintLabel.zPosition = 1
+        portal.addChild(hintLabel)
+        
+        print("🌀 One-way portal placed in room \(roomNumber) → room \(destination)")
+    }
+    
+    /// Check if player is on the portal and trigger transition
+    func checkPortalCollision() {
+        guard let portal = childNode(withName: "portal"),
+              let destination = getPortalDestination() else { return }
+        
+        let distance = sqrt(
+            pow(character.position.x - portal.position.x, 2) +
+            pow(character.position.y - portal.position.y, 2)
+        )
+        
+        if distance < 40 {
+            print("🌀 Portal activated! Warping to room \(destination)")
+            transitionService.triggerHapticFeedback(type: .success)
+            transitionToRoom(destination)
+        }
+    }
+    
+    // MARK: - House Markers
+    /// Add 4 house markers to the current room
+    private func setupHouseMarkers(for roomNumber: Int) {
+        // 4 houses spread across the room in a loose grid
+        let housePositions: [GridCoordinate] = [
+            GridCoordinate(x: 8, y: 16),   // Top-left
+            GridCoordinate(x: 24, y: 16),  // Top-right
+            GridCoordinate(x: 8, y: 8),    // Bottom-left
+            GridCoordinate(x: 24, y: 8)    // Bottom-right
+        ]
+        
+        let residentManager = NPCResidentManager.shared
+        
+        for (index, gridPos) in housePositions.enumerated() {
+            let houseNumber = index + 1
+            
+            let house = SKLabelNode(text: "🏠")
+            house.fontSize = 35
+            house.fontName = "Arial"
+            house.horizontalAlignmentMode = .center
+            house.verticalAlignmentMode = .center
+            house.position = gridService.gridToWorld(gridPos)
+            house.zPosition = 3
+            house.name = "house_\(houseNumber)"
+            house.alpha = 0.7
+            addChild(house)
+            
+            // Check if an NPC lives in this house
+            let occupant = residentManager.getAllResidents().first {
+                $0.npcData.homeRoom == roomNumber && $0.homeHouse == houseNumber
+            }
+            
+            if let occupant = occupant {
+                // Add a small name tag below the house
+                let nameTag = SKLabelNode(text: occupant.npcData.name)
+                nameTag.fontSize = 10
+                nameTag.fontName = "Arial"
+                nameTag.fontColor = .white
+                nameTag.alpha = 0.6
+                nameTag.horizontalAlignmentMode = .center
+                nameTag.verticalAlignmentMode = .top
+                nameTag.position = CGPoint(x: 0, y: -25)
+                house.addChild(nameTag)
+            }
+        }
+        
+        print("🏠 4 house markers placed in room \(roomNumber)")
     }
 }

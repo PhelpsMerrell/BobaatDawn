@@ -34,7 +34,7 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
     internal var rightHintEmoji: SKLabelNode!
     
     // MARK: - NPC System (Internal - accessible to extensions)
-    internal var roomNPCs: [ForestNPC] = [] // NPCs in current room
+    internal var roomNPCs: [ForestNPCEntity] = [] // NPCs in current room
     
     // MARK: - Snail System
     private var snail: SnailNPC?
@@ -55,14 +55,13 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         
         // Validate world dimensions before creating sprites
         guard worldWidth > 0 && worldHeight > 0 else {
-            print("❌ ERROR: Invalid world dimensions: \\(worldWidth) x \\(worldHeight)")
+            Log.error(.forest, "Invalid world dimensions: \(worldWidth) x \(worldHeight)")
             return
         }
         
-        // Forest floor - FIXED: ensure positive size
         let floorSize = CGSize(width: worldWidth, height: worldHeight)
         guard floorSize.width > 0 && floorSize.height > 0 else {
-            print("❌ ERROR: Invalid floor size: \\(floorSize)")
+            Log.error(.forest, "Invalid floor size: \(floorSize)")
             return
         }
         
@@ -75,7 +74,7 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         // Forest boundaries (darker trees)
         setupForestBounds()
         
-        print("🌲 Forest world setup complete with validated sizes")
+        Log.info(.forest, "Forest world setup complete")
     }
     
     private func setupForestBounds() {
@@ -120,7 +119,7 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         // Set up physics contact delegate for snail detection
         physicsWorld.contactDelegate = self
         
-        print("🌲 Forest Scene initialized - Room \\(currentRoom): \\(roomEmojis[currentRoom])")
+        Log.info(.forest, "Forest scene initialized — Room \(currentRoom): \(roomEmojis[currentRoom])")
     }
     
     private func setupCurrentRoom() {
@@ -136,7 +135,7 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         // Notify resident manager of room change
         residentManager.forestRoomChanged(to: currentRoom, scene: self)
         
-        print("🌲 Room \\(currentRoom) setup complete: \\(roomEmojis[currentRoom])")
+        Log.debug(.forest, "Room \(currentRoom) setup complete")
     }
     
     // MARK: - NPC Management (Now handled by ResidentManager)
@@ -162,7 +161,7 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         
         // Validate world dimensions before creating misty sprites
         guard worldWidth > 0 && worldHeight > 0 else {
-            print("❌ ERROR: Invalid world dimensions for mist: \\(worldWidth) x \\(worldHeight)")
+            Log.error(.forest, "Invalid world dimensions for mist")
             return
         }
         
@@ -172,7 +171,7 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         // FIXED: Validate mist sizes before creating sprites
         let mistSize = CGSize(width: 133, height: worldHeight)
         guard mistSize.width > 0 && mistSize.height > 0 else {
-            print("❌ ERROR: Invalid mist size: \\(mistSize)")
+            Log.error(.forest, "Invalid mist size")
             return
         }
         
@@ -259,6 +258,13 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
             return true
         }
         
+        // Check for trash interaction
+        if touchedNode is Trash || touchedNode.parent is Trash {
+            let trashNode = (touchedNode as? Trash) ?? (touchedNode.parent as! Trash)
+            startLongPress(for: trashNode, at: location)
+            return true
+        }
+        
         // Forest movement - allow movement anywhere within bounds
         if isWithinForestBounds(location) {
             // Very light haptic for footsteps
@@ -266,7 +272,7 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
             
             // Move character directly to world position (no grid restrictions)
             character.handleTouchMovement(to: location)
-            print("👤 Character moving to forest position \\(location)")
+            print("🌲 Character moving to \(location)")
             return true
         } else {
             print("❌ Movement blocked - outside forest bounds")
@@ -279,6 +285,13 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
             // Haptic feedback for door interaction
             triggerSuccessFeedback()
             returnToShop()
+        } else if let trash = node as? Trash {
+            // Pick up trash in the forest
+            print("🗑 Picking up forest trash")
+            trash.pickUp {
+                print("🗑 ✅ Forest trash cleaned up!")
+            }
+            transitionService.triggerHapticFeedback(type: .light)
         }
     }
     
@@ -326,7 +339,16 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         return currentRoom == 5 ? 1 : currentRoom + 1 // Loop: Room 5 → Room 1
     }
     
-    private func transitionToRoom(_ newRoom: Int) {
+    /// One-way portal destinations. Returns target room or nil if no portal.
+    internal func getPortalDestination() -> Int? {
+        switch currentRoom {
+        case 4: return 2  // Room 4 → Room 2
+        case 3: return 5  // Room 3 → Room 5
+        default: return nil
+        }
+    }
+    
+    internal func transitionToRoom(_ newRoom: Int) {
         // Prevent multiple transitions
         guard !isTransitioning else { return }
         isTransitioning = true
@@ -361,7 +383,7 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
 
     
     private func returnToShop() {
-        print("🏠 Returning to boba shop")
+        Log.info(.forest, "Returning to boba shop")
         
         // Dismiss any active dialogue before leaving
         DialogueService.shared.dismissDialogue()
@@ -381,6 +403,7 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         // Only check transitions if not in cooldown
         if !isTransitioning && transitionCooldown <= 0 {
             checkForRoomTransitions()
+            checkPortalCollision()
         }
         
         // Update snail behavior
@@ -422,16 +445,15 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
     
     // MARK: - Snail System
     internal func setupSnail() {
-        // Create the snail with time service dependency
+        // Create the snail visual node with time service dependency
         let timeService = serviceContainer.resolve(TimeService.self)
         snail = SnailNPC(timeService: timeService)
         
-        // Position snail at a random location in the forest
-        let randomX = CGFloat.random(in: -worldWidth/3...worldWidth/3)
-        let randomY = CGFloat.random(in: -worldHeight/3...worldHeight/3)
-        snail?.position = CGPoint(x: randomX, y: randomY)
+        // Place at world state position (persists across scene loads)
+        let world = SnailWorldState.shared
+        snail?.position = world.roomPosition
         
-        // Add to scene
+        // Add to scene (visibility is controlled by syncWithWorldState)
         if let snail = snail {
             addChild(snail)
         }
@@ -445,25 +467,21 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
             self?.handleSnailCatch()
         }
         
-        print("🐌 The Snail has been unleashed in the forest...")
+        Log.debug(.forest, "Snail node added (world room: \(world.currentRoom), active: \(world.isActive))")
     }
     
     private func updateSnailBehavior() {
         guard let snail = snail else { return }
         
-        // Update snail with current game state
-        snail.updateHuntingBehavior(
-            playerInForest: true,
+        // The snail syncs its visibility/position with the persistent SnailWorldState
+        snail.syncWithWorldState(
             playerRoom: currentRoom,
             playerPosition: character?.position ?? .zero
         )
-        
-        // Update snail internal state
-        snail.update(deltaTime: 1.0/60.0)
     }
     
     private func handleSnailCatch() {
-        print("🐌 💀 PLAYER CAUGHT BY SNAIL - TELEPORTING TO SHOP!")
+        Log.info(.forest, "PLAYER CAUGHT BY SNAIL — teleporting to shop")
         
         // Create dramatic transition effect
         createSnailCatchTransition()

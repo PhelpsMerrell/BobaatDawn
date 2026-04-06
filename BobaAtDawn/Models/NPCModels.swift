@@ -2,7 +2,7 @@
 //  NPCModels.swift
 //  BobaAtDawn
 //
-//  Data models for NPC dialogue and character system
+//  Data models for NPC dialogue, character system, and shared enums
 //
 
 import Foundation
@@ -37,23 +37,23 @@ extension NPCData {
     /// Get emoji representation for this NPC's animal
     var emoji: String {
         switch animal.lowercased() {
-        case "deer": return "🦌"
-        case "rabbit": return "🐰" 
-        case "wolf": return "🐺"
-        case "mule": return "🐴" // Using horse for mule
+        case "deer":      return "🦌"
+        case "rabbit":    return "🐰"
+        case "wolf":      return "🐺"
+        case "mule":      return "🐴"
         case "pufferfish": return "🐡"
-        case "owl": return "🦉"
-        case "fox": return "🦊"
-        case "songbird": return "🐦"
-        case "bear": return "🐻"
-        case "mouse": return "🐭"
-        case "hedgehog": return "🦔"
-        case "frog": return "🐸"
-        case "duck": return "🦆"
-        case "raccoon": return "🦝"
-        case "squirrel": return "🐿️"
-        case "bat": return "🦇"
-        default: return "🦔" // Default hedgehog for unknown animals
+        case "owl":       return "🦉"
+        case "fox":       return "🦊"
+        case "songbird":  return "🐦"
+        case "bear":      return "🐻"
+        case "mouse":     return "🐭"
+        case "hedgehog":  return "🦔"
+        case "frog":      return "🐸"
+        case "duck":      return "🦆"
+        case "raccoon":   return "🦝"
+        case "squirrel":  return "🐿️"
+        case "bat":       return "🦇"
+        default:          return "🦔"
         }
     }
     
@@ -62,21 +62,21 @@ extension NPCData {
         let lines = isNight ? dialogue.night : dialogue.day
         return lines.randomElement() ?? "..."
     }
+    
+    /// Resolve the AnimalType enum for this NPC data
+    var animalType: AnimalType? {
+        AnimalType.allCases.first { $0.characterId == id }
+    }
 }
 
 // MARK: - NPC Database Extensions
 extension NPCDatabase {
-    /// Get all NPCs that live in a specific forest room
     func npcsInRoom(_ room: Int) -> [NPCData] {
-        return npcs.filter { $0.homeRoom == room }
+        npcs.filter { $0.homeRoom == room }
     }
     
-    /// Get all forest residents (all NPCs have homes)
-    var allResidents: [NPCData] {
-        return npcs
-    }
+    var allResidents: [NPCData] { npcs }
     
-    /// Get residents distributed across all rooms
     var roomDistribution: [Int: [NPCData]] {
         var distribution: [Int: [NPCData]] = [:]
         for room in 1...5 {
@@ -91,7 +91,67 @@ enum TimeContext {
     case day
     case night
     
-    var isNight: Bool {
-        return self == .night
+    var isNight: Bool { self == .night }
+}
+
+// MARK: - Forest Animals with Character Mapping
+enum AnimalType: String, CaseIterable {
+    case fox = "🦊"
+    case rabbit = "🐰"
+    case hedgehog = "🦔"
+    case frog = "🐸"
+    case duck = "🦆"
+    case bear = "🐻"
+    case raccoon = "🦝"
+    case squirrel = "🐿️"
+    case deer = "🦌"
+    case wolf = "🐺"
+    case mule = "🐴"
+    case pufferfish = "🐡"
+    case owl = "🦉"
+    case songbird = "🐦"
+    case mouse = "🐭"
+    case bat = "🦇"
+
+    static var dayAnimals: [AnimalType] {
+        [.fox, .rabbit, .hedgehog, .frog, .duck, .bear, .raccoon, .squirrel, .deer, .mule, .pufferfish, .songbird, .mouse]
     }
+
+    static var nightAnimals: [AnimalType] {
+        [.owl, .bat, .wolf]
+    }
+
+    static func random(isNight: Bool = false) -> AnimalType {
+        let pool = isNight ? nightAnimals : dayAnimals
+        return pool.randomElement() ?? .fox
+    }
+    
+    /// Maps animal types to character IDs from JSON dialogue data
+    var characterId: String? {
+        switch self {
+        case .deer:       return "qari_deer"
+        case .rabbit:     return "timothy_rabbit"
+        case .wolf:       return "gertrude_wolf"
+        case .mule:       return "stanuel_mule"
+        case .pufferfish: return "bb_james_pufferfish"
+        case .owl:        return "luna_owl"
+        case .fox:        return "finn_fox"
+        case .songbird:   return "ivy_songbird"
+        case .bear:       return "oscar_bear"
+        case .mouse:      return "mira_mouse"
+        case .hedgehog:   return "hazel_hedgehog"
+        case .frog:       return "rivet_frog"
+        case .duck:       return "della_duck"
+        case .raccoon:    return "rascal_raccoon"
+        case .squirrel:   return "nixie_squirrel"
+        case .bat:        return "echo_bat"
+        }
+    }
+}
+
+// MARK: - NPC Response Types (for dialogue interactions)
+enum NPCResponseType: String {
+    case dismiss = "dismiss"
+    case nice = "nice"
+    case mean = "mean"
 }

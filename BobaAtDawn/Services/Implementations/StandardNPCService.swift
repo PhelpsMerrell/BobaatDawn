@@ -15,110 +15,64 @@ class StandardNPCService: NPCService {
     init(gridService: GridService, timeService: TimeService) {
         self.gridService = gridService
         self.timeService = timeService
-        print("🦊 StandardNPCService initialized with injected dependencies")
+        Log.info(.npc, "StandardNPCService initialized")
     }
     
     // MARK: - NPC Lifecycle
     
-    func spawnNPC(animal: AnimalType? = nil, at position: GridCoordinate? = nil) -> NPC {
-        // Choose random animal if not specified
+    func spawnNPC(animal: AnimalType? = nil, at position: GridCoordinate? = nil) -> ShopNPC {
         let selectedAnimal = animal ?? selectAnimalForSpawn(isNight: timeService.currentPhase == .night)
+        let startPosition = position ?? GameConfig.World.doorGridPosition
         
-        // Default start position (at front door)
-        let doorPosition = GameConfig.World.doorGridPosition  // FIXED: Use new property name
-        let startPosition = position ?? doorPosition
+        let npc = ShopNPC(animal: selectedAnimal,
+                          startPosition: startPosition,
+                          gridService: gridService,
+                          npcService: self)
         
-        // Create NPC with dependencies injected
-        let npc = NPC(animal: selectedAnimal, 
-                      startPosition: startPosition,
-                      gridService: gridService,
-                      npcService: self)
-        
-        // Add entrance animation
         addEntranceAnimation(for: npc)
-        
-        print("🦊 ✨ SPAWNED \(selectedAnimal.rawValue) at \(startPosition)")
+        Log.info(.npc, "Spawned \(selectedAnimal.rawValue) at \(startPosition)")
         return npc
     }
     
-    func updateNPCs(_ npcs: inout [NPC], deltaTime: TimeInterval, currentTime: TimeInterval) {
-        // Update existing NPCs
-        for npc in npcs {
-            npc.update(deltaTime: deltaTime)
-        }
-        
-        // Clean up departed NPCs
+    func updateNPCs(_ npcs: inout [ShopNPC], deltaTime: TimeInterval, currentTime: TimeInterval) {
+        for npc in npcs { npc.update(deltaTime: deltaTime) }
         cleanupDepartedNPCs(&npcs)
     }
     
-    func cleanupDepartedNPCs(_ npcs: inout [NPC]) {
-        let initialCount = npcs.count
-        npcs.removeAll { npc in
-            if npc.parent == nil {
-                print("🦊 Cleaned up departed NPC \(npc.animalType.rawValue)")
-                return true
-            }
-            return false
-        }
-        
-        // Log if NPCs were cleaned up
-        if npcs.count < initialCount {
-            print("🦊 NPC cleanup: \(initialCount - npcs.count) NPCs removed, \(npcs.count) remain")
+    func cleanupDepartedNPCs(_ npcs: inout [ShopNPC]) {
+        let before = npcs.count
+        npcs.removeAll { $0.parent == nil }
+        if npcs.count < before {
+            Log.debug(.npc, "Cleanup: \(before - npcs.count) removed, \(npcs.count) remain")
         }
     }
     
     // MARK: - Spawn Logic
     
-    func shouldSpawnNPC(currentTime: TimeInterval, lastSpawnTime: TimeInterval, currentNPCCount: Int, maxNPCs: Int) -> Bool {
-        // Don't spawn if at capacity
+    func shouldSpawnNPC(currentTime: TimeInterval, lastSpawnTime: TimeInterval,
+                        currentNPCCount: Int, maxNPCs: Int) -> Bool {
         guard currentNPCCount < maxNPCs else { return false }
-        
-        // Calculate spawn interval based on time of day
-        let spawnInterval = getSpawnInterval(currentNPCCount: currentNPCCount, maxNPCs: maxNPCs)
-        let timeSinceLastSpawn = currentTime - lastSpawnTime
-        
-        return timeSinceLastSpawn > spawnInterval
+        let interval = getSpawnInterval(currentNPCCount: currentNPCCount, maxNPCs: maxNPCs)
+        return (currentTime - lastSpawnTime) > interval
     }
     
     func getSpawnInterval(currentNPCCount: Int, maxNPCs: Int) -> TimeInterval {
-        // Base interval based on time of day
-        let baseInterval: TimeInterval
-        
+        let base: TimeInterval
         switch timeService.currentPhase {
-        case .day:
-            baseInterval = GameConfig.NPC.daySpawnInterval
-        case .dusk:
-            baseInterval = GameConfig.NPC.duskSpawnInterval
-        case .night:
-            baseInterval = GameConfig.NPC.nightSpawnInterval
-        case .dawn:
-            return GameConfig.NPC.dawnSpawnInterval // No spawning during dawn
+        case .day:   base = GameConfig.NPC.daySpawnInterval
+        case .dusk:  base = GameConfig.NPC.duskSpawnInterval
+        case .night: base = GameConfig.NPC.nightSpawnInterval
+        case .dawn:  return GameConfig.NPC.dawnSpawnInterval
         }
-        
-        // Dynamic adjustments based on shop state
-        let currentOccupancy = Double(currentNPCCount) / Double(maxNPCs)
-        let occupancyMultiplier = 1.0 + (currentOccupancy * GameConfig.NPC.occupancyMultiplierMax)
-        
-        let finalInterval = baseInterval * occupancyMultiplier
-        
-        print("🦊 Spawn timing: base=\(baseInterval)s, occupancy=\(String(format: "%.1f", occupancyMultiplier))x, final=\(String(format: "%.1f", finalInterval))s")
-        
-        return finalInterval
+        let occupancy = Double(currentNPCCount) / Double(max(1, maxNPCs))
+        return base * (1.0 + occupancy * GameConfig.NPC.occupancyMultiplierMax)
     }
     
     func selectAnimalForSpawn(isNight: Bool) -> AnimalType {
-        if isNight {
-            // Night: 70% normal animals, 30% mysterious night visitors
-            if Int.random(in: 1...10) <= GameConfig.NPC.nightVisitorChance {
-                return AnimalType.nightAnimals.randomElement() ?? .owl
-            } else {
-                return AnimalType.dayAnimals.randomElement() ?? .fox
-            }
-        } else {
-            // Day/Dusk: mostly normal animals with some variety
-            let allDayAnimals = AnimalType.dayAnimals
-            return allDayAnimals.randomElement() ?? .fox
+        if isNight && Int.random(in: 1...10) <= GameConfig.NPC.nightVisitorChance {
+            return AnimalType.nightAnimals.randomElement() ?? .owl
         }
+        return AnimalType.dayAnimals.randomElement() ?? .fox
     }
     
     // MARK: - Scene Interaction
@@ -127,118 +81,84 @@ class StandardNPCService: NPCService {
         var tables: [RotatableObject] = []
         scene.enumerateChildNodes(withName: "table") { node, _ in
             if let table = node as? RotatableObject {
-                let tableGridPos = self.gridService.worldToGrid(table.position)
-                if tableGridPos.adjacentCells.contains(where: { self.gridService.isCellAvailable($0) }) {
+                let pos = self.gridService.worldToGrid(table.position)
+                if pos.adjacentCells.contains(where: { self.gridService.isCellAvailable($0) }) {
                     tables.append(table)
                 }
             }
         }
-        
-        print("🦊 Found \(tables.count) available tables in scene")
         return tables
     }
     
     func countTablesWithDrinks(in scene: SKScene) -> Int {
         var count = 0
         scene.enumerateChildNodes(withName: "table") { node, _ in
-            if let table = node as? RotatableObject {
-                if table.children.contains(where: { $0.name == "drink_on_table" }) {
-                    count += 1
-                }
+            if let table = node as? RotatableObject,
+               table.children.contains(where: { $0.name == "drink_on_table" }) {
+                count += 1
             }
         }
         return count
     }
     
-    // MARK: - NPC Behavior Helpers
+    // MARK: - Behavior Helpers
     
     func generateCandidateCells(from position: GridCoordinate, radius: Int) -> [GridCoordinate] {
         var candidates: [GridCoordinate] = []
+        let bounds = GameConfig.Grid.ShopBounds.self
         
         for dx in -radius...radius {
             for dy in -radius...radius {
-                if dx == 0 && dy == 0 { continue } // Skip current position
-                
-                let candidate = GridCoordinate(x: position.x + dx, y: position.y + dy)
-                
-                // Keep NPCs within shop bounds using configuration
-                let shopBounds = GameConfig.Grid.ShopBounds.self
-                
-                if candidate.x >= shopBounds.minX && candidate.x <= shopBounds.maxX &&
-                   candidate.y >= shopBounds.minY && candidate.y <= shopBounds.maxY &&
-                   candidate.isValid() && gridService.isCellAvailable(candidate) {
-                    candidates.append(candidate)
+                if dx == 0 && dy == 0 { continue }
+                let c = GridCoordinate(x: position.x + dx, y: position.y + dy)
+                if c.x >= bounds.minX && c.x <= bounds.maxX &&
+                   c.y >= bounds.minY && c.y <= bounds.maxY &&
+                   c.isValid() && gridService.isCellAvailable(c) {
+                    candidates.append(c)
                 }
             }
         }
-        
         return candidates
     }
     
     func findPathToExit(from position: GridCoordinate) -> GridCoordinate? {
-        // Move toward front door (exit) - improved pathfinding
-        let doorPosition = GameConfig.World.doorGridPosition  // FIXED: Use new property name
+        let door = GameConfig.World.doorGridPosition
+        let dx = door.x - position.x
+        let dy = door.y - position.y
+        let sx = dx != 0 ? (dx > 0 ? 1 : -1) : 0
+        let sy = dy != 0 ? (dy > 0 ? 1 : -1) : 0
         
-        // Calculate direction to door
-        let deltaX = doorPosition.x - position.x
-        let deltaY = doorPosition.y - position.y
-        
-        // Move one step closer (prioritize x movement to get to door area)
-        let stepX = deltaX != 0 ? (deltaX > 0 ? 1 : -1) : 0
-        let stepY = deltaY != 0 ? (deltaY > 0 ? 1 : -1) : 0
-        
-        // Try X movement first (toward door), then Y if needed
-        var targetCell: GridCoordinate
-        if abs(deltaX) > abs(deltaY) || deltaX != 0 {
-            targetCell = GridCoordinate(x: position.x + stepX, y: position.y)
+        let primary: GridCoordinate
+        if abs(dx) > abs(dy) || dx != 0 {
+            primary = GridCoordinate(x: position.x + sx, y: position.y)
         } else {
-            targetCell = GridCoordinate(x: position.x, y: position.y + stepY)
+            primary = GridCoordinate(x: position.x, y: position.y + sy)
         }
         
-        // Ensure target is valid and available
-        if targetCell.isValid() && gridService.isCellAvailable(targetCell) {
-            return targetCell
-        } else {
-            // If direct path blocked, try alternative
-            let alternativeCell = GridCoordinate(x: position.x + stepY, y: position.y + stepX)
-            if alternativeCell.isValid() && gridService.isCellAvailable(alternativeCell) {
-                return alternativeCell
-            }
-        }
+        if primary.isValid() && gridService.isCellAvailable(primary) { return primary }
+        
+        let alt = GridCoordinate(x: position.x + sy, y: position.y + sx)
+        if alt.isValid() && gridService.isCellAvailable(alt) { return alt }
         
         return nil
     }
     
     func isNearExit(_ position: GridCoordinate) -> Bool {
-        // FIXED: More forgiving exit detection
-        let doorPosition = GameConfig.World.doorGridPosition
-        let distanceToExit = sqrt(pow(Float(position.x - doorPosition.x), 2) + pow(Float(position.y - doorPosition.y), 2))
-        
-        // NPCs are "near exit" if within 3 grid cells of the door
-        let isNear = distanceToExit <= 3.0
-        
-        if isNear {
-            print("🚺 NPC at \(position) is near exit (distance: \(String(format: "%.1f", distanceToExit)) from door \(doorPosition))")
-        }
-        
-        return isNear
+        let door = GameConfig.World.doorGridPosition
+        let dist = hypot(Float(position.x - door.x), Float(position.y - door.y))
+        return dist <= 3.0
     }
     
-    // MARK: - Animations
+    // MARK: - Animation
     
-    private func addEntranceAnimation(for npc: NPC) {
-        // Subtle entrance effect
+    private func addEntranceAnimation(for npc: ShopNPC) {
         npc.alpha = GameConfig.NPC.Animations.entranceStartAlpha
         npc.setScale(GameConfig.NPC.Animations.entranceStartScale)
-        
-        let entranceAnimation = SKAction.group([
+        let anim = SKAction.group([
             SKAction.fadeIn(withDuration: GameConfig.NPC.Animations.entranceDuration),
             SKAction.scale(to: 1.0, duration: GameConfig.NPC.Animations.entranceDuration)
         ])
-        entranceAnimation.timingMode = .easeOut
-        
-        npc.run(entranceAnimation)
-        
-        print("🎭 Added entrance animation for \(npc.animalType.rawValue)")
+        anim.timingMode = .easeOut
+        npc.run(anim)
     }
 }

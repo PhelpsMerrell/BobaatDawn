@@ -270,41 +270,26 @@ class RotatableObject: SKSpriteNode {
     }
     
     var canBeCarried: Bool {
-        print("📦 Checking canBeCarried for \(objectType):")
-        print("📦   - name: \(name ?? "none")")
-        print("📦   - objectType: \(objectType)")
+        if objectType == .station { return false }
+        if name == "sacred_table" { return false }
         
-        // Stations cannot be carried (too heavy)
-        if objectType == .station {
-            print("📦   - Blocked: objectType is .station")
-            return false
-        }
-        
-        // Only specific table objects cannot be carried (check for exact table pattern)
         if name == "table" || name?.hasPrefix("table_") == true {
-            print("📦   - Blocked: this is an actual table object")
-            return false
+            return children.filter({ $0.name == "drink_on_table" }).isEmpty
         }
         
-        // Drinks, completed drinks, and small furniture CAN be carried
-        let canCarry = objectType == .drink || objectType == .completedDrink || objectType == .furniture
-        print("📦   - Result: \(canCarry) (drink:\(objectType == .drink), completedDrink:\(objectType == .completedDrink), furniture:\(objectType == .furniture))")
-        return canCarry
+        return objectType == .drink || objectType == .completedDrink || objectType == .furniture
     }
     
     var canBeArranged: Bool {
         return objectType == .furniture || objectType == .station
     }
     func fadeAway() {
-        let fadeOut = SKAction.sequence([
+        run(SKAction.sequence([
             SKAction.group([
                 SKAction.fadeOut(withDuration: 1.5),
                 SKAction.scale(to: 0.3, duration: 1.5)
             ]),
             SKAction.removeFromParent()
-        ])
-        
-        run(fadeOut)
-        print("🎵 Sacred harp fades as the dawn ends...")
+        ]))
     }
 }

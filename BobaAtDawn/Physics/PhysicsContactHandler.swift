@@ -30,7 +30,7 @@ class PhysicsContactHandler: NSObject, SKPhysicsContactDelegate {
     // MARK: - Initialization
     override init() {
         super.init()
-        print("⚡ PhysicsContactHandler initialized")
+        Log.debug(.physics, "PhysicsContactHandler initialized")
     }
     
     // MARK: - SKPhysicsContactDelegate
@@ -92,27 +92,25 @@ class PhysicsContactHandler: NSObject, SKPhysicsContactDelegate {
         switch otherCategory {
         case PhysicsCategory.station:
             contactDelegate?.characterContactedStation(otherNode)
-            print("⚡ Character contacted station: \(otherNode.name ?? "unnamed")")
+            Log.debug(.physics, "Character contacted station: \(otherNode.name ?? "unnamed")")
             
         case PhysicsCategory.door:
             contactDelegate?.characterContactedDoor(otherNode)
-            print("⚡ Character contacted door: \(otherNode.name ?? "unnamed")")
+            Log.debug(.physics, "Character contacted door: \(otherNode.name ?? "unnamed")")
             
         case PhysicsCategory.item:
             contactDelegate?.characterContactedItem(otherNode)
-            print("⚡ Character contacted item: \(otherNode.name ?? "unnamed")")
+            Log.debug(.physics, "Character contacted item: \(otherNode.name ?? "unnamed")")
             
         case PhysicsCategory.npc:
             contactDelegate?.characterContactedNPC(otherNode)
-            print("⚡ Character contacted NPC: \(otherNode.name ?? "unnamed")")
+            Log.debug(.physics, "Character contacted NPC: \(otherNode.name ?? "unnamed")")
             
         case PhysicsCategory.furniture:
-            // Handle furniture contact (could be used for interaction hints)
-            print("⚡ Character contacted furniture: \(otherNode.name ?? "unnamed")")
+            break
             
         case PhysicsCategory.wall:
-            // Wall contact (could be used for sound effects)
-            print("⚡ Character contacted wall")
+            break
             
         default:
             break
@@ -128,15 +126,14 @@ class PhysicsContactHandler: NSObject, SKPhysicsContactDelegate {
         switch otherCategory {
         case PhysicsCategory.door:
             contactDelegate?.npcContactedDoor(npcNode, door: otherNode)
-            print("⚡ NPC contacted door: \(npcNode.name ?? "unnamed")")
+            Log.debug(.physics, "NPC contacted door")
             
         case PhysicsCategory.character:
             // Already handled in character contact
             break
             
         case PhysicsCategory.furniture:
-            // NPC reached furniture (table, chair, etc.)
-            print("⚡ NPC \(npcNode.name ?? "unnamed") contacted furniture: \(otherNode.name ?? "unnamed")")
+            break
             
         default:
             break
@@ -156,7 +153,7 @@ class PhysicsContactHandler: NSObject, SKPhysicsContactDelegate {
         switch otherCategory {
         case PhysicsCategory.furniture:
             contactDelegate?.itemContactedFurniture(itemNode, furniture: otherNode)
-            print("⚡ Item contacted furniture: \(itemNode.name ?? "unnamed") -> \(otherNode.name ?? "unnamed")")
+            Log.debug(.physics, "Item contacted furniture")
             
         case PhysicsCategory.character:
             // Already handled in character contact
@@ -173,9 +170,8 @@ class PhysicsContactHandler: NSObject, SKPhysicsContactDelegate {
         
         let (bodyA, bodyB) = sortContactBodies(contact.bodyA, contact.bodyB)
         
-        // Example: Character moving away from station
         if bodyA.categoryBitMask == PhysicsCategory.character && bodyB.categoryBitMask == PhysicsCategory.station {
-            print("⚡ Character moved away from station")
+            // Character moved away from station
         }
     }
     

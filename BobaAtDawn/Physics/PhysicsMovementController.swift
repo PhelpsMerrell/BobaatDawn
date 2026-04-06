@@ -46,13 +46,13 @@ class PhysicsMovementController: MovementController {
         self.snapDistance = PhysicsConfig.Character.snapToGridThreshold
         self.enableGridSnapping = enableGridSnapping
         
-        print("🏃‍♂️ PhysicsMovementController initialized with max speed: \(maxSpeed)")
+        Log.debug(.physics, "PhysicsMovementController initialized, max speed: \(maxSpeed)")
     }
     
     // MARK: - Movement Methods
     func moveToward(target: CGPoint, deltaTime: TimeInterval) {
         guard let node = physicsBody.node else { 
-            print("⚠️ moveToward: node is nil, cannot move")
+            Log.warn(.physics, "moveToward: node is nil")
             stop()
             return 
         }
@@ -74,7 +74,7 @@ class PhysicsMovementController: MovementController {
             physicsBody.velocity = CGVector.zero
             currentTarget = nil
             isMoving = false
-            print("🎯 Arrived at destination, distance: \(String(format: "%.1f", distance))")
+            Log.debug(.physics, "Arrived at destination")
             return
         }
         
@@ -102,16 +102,11 @@ class PhysicsMovementController: MovementController {
         
         physicsBody.applyForce(force)
         limitMaximumSpeed()
-        
-        // Reduced logging frequency
-        if Int(distance) % 20 == 0 {
-            print("🏃‍♂️ Moving toward \(target), distance: \(String(format: "%.1f", distance))")
-        }
     }
     
     func moveToGrid(_ gridPosition: GridCoordinate, completion: (() -> Void)? = nil) {
         guard gridPosition.isValid() else {
-            print("❌ Invalid grid position: \(gridPosition)")
+            Log.error(.physics, "Invalid grid position: \(gridPosition)")
             completion?()
             return
         }
@@ -120,7 +115,7 @@ class PhysicsMovementController: MovementController {
         self.gridTarget = gridPosition
         self.completion = completion
         
-        print("🎯 Moving to grid \(gridPosition) = world \(worldTarget)")
+        Log.debug(.physics, "Moving to grid \(gridPosition)")
         
         currentTarget = worldTarget
         isMoving = true
@@ -128,8 +123,8 @@ class PhysicsMovementController: MovementController {
     
     func stop() {
         // Safety check before accessing physics body
-        guard let node = physicsBody.node else {
-            print("⚠️ stop: node is nil, using cleanup instead")
+        guard let node = physicsBody.node else { 
+            Log.warn(.physics, "stop: node is nil")
             cleanup()
             return
         }
@@ -140,19 +135,19 @@ class PhysicsMovementController: MovementController {
         // Use stopInternal to avoid calling handleGridArrival again
         stopInternal()
         
-        print("🛑 Movement stopped with complete velocity reset")
+        Log.debug(.physics, "Movement stopped")
     }
     
     func setMaxSpeed(_ speed: CGFloat) {
         maxSpeed = speed
-        print("🏃‍♂️ Max speed updated to \(speed)")
+        Log.debug(.physics, "Max speed updated to \(speed)")
     }
     
     // MARK: - Physics Update
     func update(deltaTime: TimeInterval) {
         guard isMoving, let target = currentTarget else { return }
         guard let node = physicsBody.node else { 
-            print("⚠️ PhysicsMovementController.update: node is nil, stopping movement")
+            Log.warn(.physics, "update: node is nil, stopping")
             stop()
             return 
         }
@@ -180,7 +175,7 @@ class PhysicsMovementController: MovementController {
     // MARK: - Grid Integration
     private func handleGridArrival(_ gridPosition: GridCoordinate) {
         guard let node = physicsBody.node else { 
-            print("⚠️ handleGridArrival: node is nil, character may have been deallocated")
+            Log.warn(.physics, "handleGridArrival: node is nil")
             cleanup()
             return 
         }
@@ -193,7 +188,7 @@ class PhysicsMovementController: MovementController {
             node.position = exactWorldPosition
             physicsBody.velocity = CGVector.zero
             
-            print("✅ Arrived at grid \(gridPosition) = world \(exactWorldPosition)")
+            Log.debug(.physics, "Arrived at grid \(gridPosition)")
             
             // Call completion callback safely
             let completionCallback = completion
@@ -203,7 +198,7 @@ class PhysicsMovementController: MovementController {
             lastGridPosition = gridPosition
             
         } catch {
-            print("⚠️ Error updating character position: \(error)")
+            Log.warn(.physics, "Error updating character position: \(error)")
             cleanup()
         }
         
@@ -228,11 +223,9 @@ class PhysicsMovementController: MovementController {
     
     private func updateGridSnapping() {
         guard let node = physicsBody.node else { return }
-        
         let currentGridPos = gridService.worldToGrid(node.position)
         if currentGridPos != lastGridPosition {
             lastGridPosition = currentGridPos
-            print("📍 Entered grid cell: \(currentGridPos)")
         }
     }
     
@@ -342,17 +335,17 @@ class NPCMovementController: PhysicsMovementController {
         currentTarget = randomTarget
         setMoving(true)  // Ensure movement state is properly set
         
-        print("🦊 NPC wandering to \(randomTarget)")
+        Log.debug(.physics, "NPC wandering to \(randomTarget)")
     }
     
     func returnToHome() {
         guard let home = homePosition else { return }
         moveToGrid(home)
-        print("🦊 NPC returning home to \(home)")
+        Log.debug(.physics, "NPC returning home to \(home)")
     }
     
     func setHomePosition(_ position: GridCoordinate) {
         homePosition = position
-        print("🦊 NPC home position set to \(position)")
+        Log.debug(.physics, "NPC home position set to \(position)")
     }
 }

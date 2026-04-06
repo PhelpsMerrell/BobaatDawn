@@ -40,8 +40,8 @@ class ServiceSetup {
             return StandardAnimationService(configService: configService)
         }
         
-        // Register NPC service with dependencies
-        container.register(NPCService.self) {
+        // Register NPC service with dependencies (FIXED: was non-singleton)
+        container.registerSingleton(NPCService.self) {
             let timeService = container.resolve(TimeService.self)
             let gridService = container.resolve(GridService.self)
             return StandardNPCService(gridService: gridService, timeService: timeService)
@@ -50,7 +50,7 @@ class ServiceSetup {
 
        
         
-        print("🎯 Game services registered successfully (including GameState)")
+        Log.info(.game, "Game services registered successfully")
         return container
     }
 }

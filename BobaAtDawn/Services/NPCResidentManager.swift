@@ -2,7 +2,8 @@
 //  NPCResidentManager.swift
 //  BobaAtDawn
 //
-//  Manages the living world where all NPCs are residents with homes in the forest
+//  Manages the living world where all NPCs are persistent residents
+//  with homes in the forest.
 //
 
 import SpriteKit
@@ -17,8 +18,8 @@ enum ResidentStatus: Equatable {
     var displayName: String {
         switch self {
         case .atHome(let room): return "At Home (Room \(room))"
-        case .inShop: return "In Shop"
-        case .traveling: return "Traveling"
+        case .inShop:           return "In Shop"
+        case .traveling:        return "Traveling"
         }
     }
 }
@@ -27,23 +28,23 @@ enum ResidentStatus: Equatable {
 class NPCResident {
     let npcData: NPCData
     var status: ResidentStatus
-    var shopNPC: NPC? // Reference to the actual NPC in shop
-    var forestNPC: ForestNPC? // Reference to the actual NPC in forest
+    var shopNPC: ShopNPC?
+    var forestNPC: ForestNPCEntity?
     var lastDrinkTime: TimeInterval?
     var drinkCooldown: TimeInterval = 0
+    var homeHouse: Int
     
     init(npcData: NPCData) {
         self.npcData = npcData
         self.status = .atHome(room: npcData.homeRoom)
+        self.homeHouse = 1
     }
     
     var isAvailableForShop: Bool {
-        return status == .atHome(room: npcData.homeRoom) && drinkCooldown <= 0
+        status == .atHome(room: npcData.homeRoom) && drinkCooldown <= 0
     }
     
-    var needsToGoHome: Bool {
-        return status == .inShop && drinkCooldown > 0
-    }
+    var address: String { "Room \(npcData.homeRoom), House \(homeHouse)" }
 }
 
 // MARK: - NPC Resident Manager
@@ -52,9 +53,8 @@ class NPCResidentManager {
     
     private var residents: [NPCResident] = []
     private let targetShopNPCs = 3
-    private let drinkCooldownDuration: TimeInterval = 300 // 5 minutes between shop visits
+    private let drinkCooldownDuration: TimeInterval = 60
     
-    // Scene references
     private weak var gameScene: GameScene?
     private weak var forestScene: ForestScene?
     
@@ -66,331 +66,250 @@ class NPCResidentManager {
     private func loadAllResidents() {
         let allNPCs = DialogueService.shared.getAllNPCs()
         residents = allNPCs.map { NPCResident(npcData: $0) }
-        
-        print("🏘️ Loaded \(residents.count) residents across forest rooms")
-        printResidentDistribution()
+        assignHouseNumbers()
+        restoreResidentStates()
+        Log.info(.resident, "Loaded \(residents.count) residents across forest rooms")
     }
     
-    private func printResidentDistribution() {
-        for room in 1...5 {
-            let roomResidents = residents.filter { $0.npcData.homeRoom == room }
-            let names = roomResidents.map { $0.npcData.name }.joined(separator: ", ")
-            print("🏠 Room \(room): \(names)")
+    private func assignHouseNumbers() {
+        var roomCounts: [Int: Int] = [:]
+        for resident in residents {
+            let room = resident.npcData.homeRoom
+            let house = (roomCounts[room] ?? 0) + 1
+            resident.homeHouse = ((house - 1) % 4) + 1
+            roomCounts[room] = house
         }
+    }
+    
+    private func restoreResidentStates() {
+        guard let saved = SaveService.shared.loadResidentStates() else { return }
+        for state in saved {
+            guard let id = state["id"] as? String,
+                  let resident = residents.first(where: { $0.npcData.id == id }) else { continue }
+            if let h = state["homeHouse"] as? Int     { resident.homeHouse = h }
+            if let c = state["drinkCooldown"] as? Double { resident.drinkCooldown = max(0, c) }
+            if let s = state["status"] as? String {
+                switch s {
+                case "inShop":    resident.status = .inShop
+                case "traveling": resident.status = .traveling
+                default:
+                    let room = state["statusRoom"] as? Int ?? resident.npcData.homeRoom
+                    resident.status = .atHome(room: room)
+                }
+            }
+        }
+        Log.info(.save, "Restored resident states from save")
     }
     
     // MARK: - Scene Registration
-    func registerGameScene(_ scene: GameScene) {
-        self.gameScene = scene
-        print("🏪 Game scene registered with resident manager")
-    }
-    
-    func registerForestScene(_ scene: ForestScene) {
-        self.forestScene = scene
-        print("🌲 Forest scene registered with resident manager")
-    }
+    func registerGameScene(_ scene: GameScene)   { gameScene = scene }
+    func registerForestScene(_ scene: ForestScene) { forestScene = scene }
     
     // MARK: - World Initialization
     func initializeWorld() {
-        // Start 3 NPCs in the shop
-        let initialShopNPCs = selectNPCsForShop(count: targetShopNPCs)
-        
-        for resident in initialShopNPCs {
-            moveResidentToShop(resident)
-        }
-        
-        // Place remaining NPCs in their home rooms
+        let initial = selectNPCsForShop(count: targetShopNPCs)
+        for r in initial { moveResidentToShop(r) }
         spawnAllForestNPCs()
-        
-        print("🌍 World initialized: \(getShopNPCCount()) NPCs in shop, \(getForestNPCCount()) NPCs in forest")
-        print("🌍 Starting time phase: \(lastKnownTimePhase.displayName)")
+        Log.info(.resident, "World initialized: \(getShopNPCCount()) shop, \(getForestNPCCount()) forest")
     }
     
     // MARK: - Shop NPC Management
     private func selectNPCsForShop(count: Int) -> [NPCResident] {
-        let availableResidents = residents.filter { 
-            $0.isAvailableForShop && !SaveService.shared.isNPCLiberated($0.npcData.id) 
+        let available = residents.filter {
+            $0.isAvailableForShop && !SaveService.shared.isNPCLiberated($0.npcData.id)
         }
-        return Array(availableResidents.shuffled().prefix(count))
+        return Array(available.shuffled().prefix(count))
     }
     
     private func moveResidentToShop(_ resident: NPCResident) {
-        guard let gameScene = gameScene else {
-            print("❌ Cannot move resident to shop - no game scene registered")
+        guard let scene = gameScene else {
+            Log.error(.resident, "Cannot move to shop — no game scene")
             return
         }
-        
-        // Remove from forest if present
         resident.forestNPC?.removeFromParent()
         resident.forestNPC = nil
         
-        // Create shop NPC
-        let animalType = AnimalType.allCases.first { $0.characterId == resident.npcData.id } ?? .fox
-        let shopNPC = gameScene.createShopNPC(animalType: animalType, resident: resident)
-        
+        let animal = resident.npcData.animalType ?? .fox
+        let shopNPC = scene.createShopNPC(animalType: animal, resident: resident)
         resident.shopNPC = shopNPC
         resident.status = .inShop
-        
-        print("🏪 \(resident.npcData.name) moved to shop")
+        Log.info(.resident, "\(resident.npcData.name) moved to shop")
     }
     
     private func moveResidentToForest(_ resident: NPCResident) {
-        // Remove from shop
         resident.shopNPC?.removeFromParent()
         resident.shopNPC = nil
-        
-        // Set cooldown
         resident.drinkCooldown = drinkCooldownDuration
         resident.lastDrinkTime = CACurrentMediaTime()
-        
-        // Move back to forest home
         resident.status = .atHome(room: resident.npcData.homeRoom)
         
-        // If forest scene is active and matches home room, spawn there
-        if let forestScene = forestScene, forestScene.currentRoom == resident.npcData.homeRoom {
-            spawnForestNPC(resident, in: forestScene)
+        if let forest = forestScene, forest.currentRoom == resident.npcData.homeRoom {
+            spawnForestNPC(resident, in: forest)
         }
-        
-        print("🏠 \(resident.npcData.name) returned home to room \(resident.npcData.homeRoom)")
+        Log.info(.resident, "\(resident.npcData.name) returned to room \(resident.npcData.homeRoom)")
     }
     
     // MARK: - Forest NPC Management
     private func spawnAllForestNPCs() {
-        guard let forestScene = forestScene else { return }
-        
-        let currentRoom = forestScene.currentRoom
-        let roomResidents = residents.filter { 
-            $0.npcData.homeRoom == currentRoom && 
-            $0.status == .atHome(room: currentRoom) &&
-            !SaveService.shared.isNPCLiberated($0.npcData.id) // Exclude liberated NPCs
+        guard let forest = forestScene else { return }
+        let room = forest.currentRoom
+        let roomResidents = residents.filter {
+            $0.npcData.homeRoom == room &&
+            $0.status == .atHome(room: room) &&
+            !SaveService.shared.isNPCLiberated($0.npcData.id)
         }
-        
-        for resident in roomResidents {
-            spawnForestNPC(resident, in: forestScene)
-        }
-        
-        print("🌲 Spawned \(roomResidents.count) forest NPCs in room \(currentRoom)")
+        for r in roomResidents { spawnForestNPC(r, in: forest) }
     }
     
     private func spawnForestNPC(_ resident: NPCResident, in scene: ForestScene) {
-        // Generate random position within forest bounds
-        let margin: CGFloat = 150
-        let worldWidth = scene.frame.width
-        let worldHeight = scene.frame.height
+        let housePositions: [GridCoordinate] = [
+            GridCoordinate(x: 8, y: 16), GridCoordinate(x: 24, y: 16),
+            GridCoordinate(x: 8, y: 8),  GridCoordinate(x: 24, y: 8)
+        ]
+        let idx = max(0, min(3, resident.homeHouse - 1))
+        let gridService = scene.gridService
+        let houseWorld = gridService.gridToWorld(housePositions[idx])
+        let pos = CGPoint(x: houseWorld.x + .random(in: -60...60),
+                          y: houseWorld.y + .random(in: -60...60))
         
-        let xRange = (-worldWidth/2 + margin)...(worldWidth/2 - margin)
-        let yRange = (-worldHeight/2 + margin)...(worldHeight/2 - margin)
-        
-        let randomX = CGFloat.random(in: xRange)
-        let randomY = CGFloat.random(in: yRange)
-        let position = CGPoint(x: randomX, y: randomY)
-        
-        // Create forest NPC
-        let forestNPC = ForestNPC(npcData: resident.npcData, at: position)
+        let forestNPC = ForestNPCEntity(npcData: resident.npcData, at: pos)
         resident.forestNPC = forestNPC
-        
         scene.addChild(forestNPC)
-        print("🏠 Spawned \(resident.npcData.name) in their home (room \(resident.npcData.homeRoom))")
+        Log.debug(.forest, "Spawned \(resident.npcData.name) near House \(resident.homeHouse)")
     }
     
     // MARK: - Time Phase Management
     private var lastKnownTimePhase: TimePhase = .day
-    private var currentRitualNPCId: String? = nil // Track which NPC is currently in ritual
+    private var currentRitualNPCId: String?
     
     func handleTimePhaseChange(_ newPhase: TimePhase) {
         guard newPhase != lastKnownTimePhase else { return }
-        
-        let oldPhase = lastKnownTimePhase
+        let old = lastKnownTimePhase
         lastKnownTimePhase = newPhase
-        
-        print("🌅 Time phase changed from \(oldPhase.displayName) to \(newPhase.displayName)")
+        Log.info(.time, "Phase changed: \(old.displayName) → \(newPhase.displayName)")
         
         switch newPhase {
         case .dusk, .night, .dawn:
-            // NPCs should leave the shop and go home (except ritual NPC during dawn)
-            let excludeRitual = newPhase == .dawn
-            print("🌅 Time phase: \(newPhase.displayName) - exclude ritual NPC: \(excludeRitual)")
-            sendAllShopNPCsHome(excludeRitualNPC: excludeRitual)
+            sendAllShopNPCsHome(excludeRitualNPC: newPhase == .dawn)
         case .day:
-            // NPCs can come to the shop
             maintainShopPopulation()
         }
     }
     
     private func sendAllShopNPCsHome(excludeRitualNPC: Bool = false) {
         let shopResidents = residents.filter { $0.status == .inShop }
-        
-        print("🌙 Sending \(shopResidents.count) NPCs home for the night...")
-        
-        if shopResidents.isEmpty {
-            print("🌙 No NPCs currently in shop to send home")
-            return
-        }
-        
-        for resident in shopResidents {
-            // Skip ritual NPC during dawn if specified
-            if excludeRitualNPC && resident.npcData.id == currentRitualNPCId {
-                print("🕯️ Keeping \(resident.npcData.name) in shop for dawn ritual")
-                continue
-            }
-            
-            if let shopNPC = resident.shopNPC {
-                // Force NPCs to leave satisfied when going home for night
-                print("🏠 \(resident.npcData.name) is heading home to room \(resident.npcData.homeRoom)")
-                shopNPC.startLeaving(satisfied: true)
+        for r in shopResidents {
+            if excludeRitualNPC && r.npcData.id == currentRitualNPCId { continue }
+            if let npc = r.shopNPC {
+                npc.startLeaving(satisfied: true)
             } else {
-                // If no shop NPC, just move them directly home
-                print("🏠 Moving \(resident.npcData.name) directly home (no shop NPC found)")
-                moveResidentToForest(resident)
+                moveResidentToForest(r)
             }
         }
     }
     
-    // MARK: - Update System
+    // MARK: - Update
     func update(deltaTime: TimeInterval) {
-        // Update cooldowns
-        for resident in residents {
-            if resident.drinkCooldown > 0 {
-                resident.drinkCooldown -= deltaTime
-            }
-        }
-        
-        // Only maintain shop population during day
-        if lastKnownTimePhase == .day {
-            maintainShopPopulation()
-        }
+        for r in residents where r.drinkCooldown > 0 { r.drinkCooldown -= deltaTime }
+        if lastKnownTimePhase == .day { maintainShopPopulation() }
     }
     
     private func maintainShopPopulation() {
-        // Don't send NPCs to shop during dusk/night/dawn
-        guard lastKnownTimePhase == .day else {
-            print("🌙 Not maintaining shop population during \(lastKnownTimePhase.displayName)")
-            return
-        }
+        guard lastKnownTimePhase == .day else { return }
+        let current = getShopNPCCount()
+        guard current < targetShopNPCs else { return }
         
-        let currentShopCount = getShopNPCCount()
-        
-        if currentShopCount < targetShopNPCs {
-            let neededCount = targetShopNPCs - currentShopCount
-            let availableResidents = residents.filter { $0.isAvailableForShop }
-            
-            if !availableResidents.isEmpty {
-                let newShopNPCs = Array(availableResidents.shuffled().prefix(neededCount))
-                
-                for resident in newShopNPCs {
-                    moveResidentToShop(resident)
-                }
-                
-                print("🏪 Sent \(newShopNPCs.count) NPCs to shop to maintain population")
-            }
-        }
+        let needed = targetShopNPCs - current
+        let available = residents.filter { $0.isAvailableForShop }
+        for r in available.shuffled().prefix(needed) { moveResidentToShop(r) }
     }
     
     // MARK: - NPC Lifecycle Events
-    func npcLeftShop(_ npc: NPC, satisfied: Bool) {
-        // Find the resident for this NPC
+    func npcLeftShop(_ npc: ShopNPC, satisfied: Bool) {
         guard let resident = residents.first(where: { $0.shopNPC === npc }) else {
-            print("❌ Could not find resident for departing NPC")
+            Log.error(.resident, "No resident found for departing NPC")
             return
         }
-        
-        print("🚪 \(resident.npcData.name) left shop (\(satisfied ? "satisfied" : "disappointed"))")
-        
-        // Move resident back to forest
+        if npc.hadDrink { scheduleForestTrash(for: resident) }
         moveResidentToForest(resident)
-        
-        // Trigger shop population maintenance
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            self.maintainShopPopulation()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.maintainShopPopulation()
         }
+    }
+    
+    // MARK: - Forest Trash
+    private var pendingForestTrash: [Int: Int] = [:]
+    
+    private func scheduleForestTrash(for resident: NPCResident) {
+        let room = resident.npcData.homeRoom
+        pendingForestTrash[room, default: 0] += 1
+    }
+    
+    func spawnPendingTrash(in scene: ForestScene, room: Int) {
+        guard let count = pendingForestTrash[room], count > 0 else { return }
+        let w = scene.frame.width; let h = scene.frame.height; let m: CGFloat = 150
+        for _ in 0..<count {
+            let pos = CGPoint(x: .random(in: (-w/2 + m)...(w/2 - m)),
+                              y: .random(in: (-h/2 + m)...(h/2 - m)))
+            scene.addChild(Trash(at: pos, location: .forest(room: room)))
+        }
+        pendingForestTrash[room] = 0
     }
     
     // MARK: - Forest Room Changes
     func forestRoomChanged(to newRoom: Int, scene: ForestScene) {
-        // Clear existing forest NPCs from scene
         clearForestNPCs(from: scene)
-        
-        // Update forest scene reference
         self.forestScene = scene
-        
-        // Spawn NPCs for the new room
         spawnRoomNPCs(room: newRoom, in: scene)
+        spawnPendingTrash(in: scene, room: newRoom)
     }
     
     private func clearForestNPCs(from scene: ForestScene) {
-        for resident in residents {
-            resident.forestNPC?.removeFromParent()
-            resident.forestNPC = nil
+        for r in residents {
+            r.forestNPC?.removeFromParent()
+            r.forestNPC = nil
         }
     }
     
     private func spawnRoomNPCs(room: Int, in scene: ForestScene) {
-        let roomResidents = residents.filter { 
-            $0.npcData.homeRoom == room && 
+        let roomResidents = residents.filter {
+            $0.npcData.homeRoom == room &&
             $0.status == .atHome(room: room) &&
-            !SaveService.shared.isNPCLiberated($0.npcData.id) // Exclude liberated NPCs
+            !SaveService.shared.isNPCLiberated($0.npcData.id)
         }
-        
-        for resident in roomResidents {
-            spawnForestNPC(resident, in: scene)
-        }
-        
-        print("🌲 Room \(room): Spawned \(roomResidents.count) residents")
+        for r in roomResidents { spawnForestNPC(r, in: scene) }
     }
     
     // MARK: - Status Queries
     func getShopNPCCount() -> Int {
-        return residents.filter { $0.status == .inShop }.count
+        residents.filter { $0.status == .inShop }.count
     }
     
     func getForestNPCCount() -> Int {
-        return residents.filter { 
-            if case .atHome = $0.status { return true }
-            return false
-        }.count
+        residents.filter { if case .atHome = $0.status { return true }; return false }.count
     }
     
     func getResidentsInRoom(_ room: Int) -> [NPCResident] {
-        return residents.filter { $0.npcData.homeRoom == room && $0.status == .atHome(room: room) }
+        residents.filter { $0.npcData.homeRoom == room && $0.status == .atHome(room: room) }
     }
     
-    func getAllResidents() -> [NPCResident] {
-        return residents
-    }
-    
-    // MARK: - Debug Info
-    func printStatus() {
-        print("🌍 === RESIDENT MANAGER STATUS ===")
-        print("🌅 Current Time Phase: \(lastKnownTimePhase.displayName)")
-        print("🏪 Shop NPCs: \(getShopNPCCount())/\(targetShopNPCs)")
-        print("🌲 Forest NPCs: \(getForestNPCCount())")
-        
-        for room in 1...5 {
-            let roomCount = getResidentsInRoom(room).count
-            print("🏠 Room \(room): \(roomCount) residents")
-        }
-        
-        print("🕒 Cooldown status:")
-        for resident in residents {
-            if resident.drinkCooldown > 0 {
-                let minutes = Int(resident.drinkCooldown / 60)
-                let seconds = Int(resident.drinkCooldown.truncatingRemainder(dividingBy: 60))
-                print("   \(resident.npcData.name): \(minutes)m \(seconds)s remaining")
-            }
-        }
-        print("================================")
-    }
+    func getAllResidents() -> [NPCResident] { residents }
     
     // MARK: - Ritual NPC Management
     func setRitualNPC(_ npcId: String) {
         currentRitualNPCId = npcId
-        print("🕯️ \(npcId) is now the ritual NPC")
+        Log.info(.ritual, "\(npcId) is now the ritual NPC")
     }
     
     func clearRitualNPC() {
-        if let ritualId = currentRitualNPCId {
-            print("🕯️ \(ritualId) is no longer the ritual NPC")
-        }
         currentRitualNPCId = nil
+    }
+    
+    // MARK: - Debug
+    func printStatus() {
+        Log.info(.resident, "=== RESIDENT STATUS ===")
+        Log.info(.resident, "Phase: \(lastKnownTimePhase.displayName)")
+        Log.info(.resident, "Shop: \(getShopNPCCount())/\(targetShopNPCs)")
+        Log.info(.resident, "Forest: \(getForestNPCCount())")
     }
 }

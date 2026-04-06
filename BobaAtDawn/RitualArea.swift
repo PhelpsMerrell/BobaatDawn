@@ -15,6 +15,19 @@ enum RitualState {
     case completed     // Ritual finished, cleanup
 }
 
+/// Whether the NPC is being liberated through divine grace or hellish judgement
+enum LiberationType {
+    case divine   // Satisfaction >= 80 — flash of golden light
+    case hellish  // Satisfaction <= 20 — eruption of hellish fire
+    
+    var displayName: String {
+        switch self {
+        case .divine: return "Divine Light"
+        case .hellish: return "Hellish Fire"
+        }
+    }
+}
+
 class RitualArea: SKNode {
     
     // MARK: - Properties
@@ -30,7 +43,8 @@ class RitualArea: SKNode {
     // Ritual management
     private var litCandleCount: Int = 0
     private var chosenNPC: NPCResident?
-    private var liberationNPC: NPC?
+    private var liberationNPC: ShopNPC?
+    private(set) var liberationType: LiberationType = .divine
     
     // Callbacks
     var onNPCSummoned: ((NPCResident) -> Void)?
@@ -46,7 +60,7 @@ class RitualArea: SKNode {
         self.name = "ritual_area"
         self.zPosition = ZLayers.ritualArea
         
-        print("🕯️ ✨ Ritual area created at grid \(centerPosition)")
+        Log.info(.ritual, "Ritual area created at grid \(centerPosition)")
     }
     
     required init?(coder aDecoder: NSCoder) {
@@ -56,7 +70,7 @@ class RitualArea: SKNode {
     // MARK: - Ritual Lifecycle
     func spawnRitual() {
         guard ritualState == .dormant else { 
-            print("⚠️ Ritual already active")
+            Log.warn(.ritual, "Ritual already active")
             return 
         }
         
@@ -71,7 +85,7 @@ class RitualArea: SKNode {
         // Spawn animation
         spawnAnimation()
         
-        print("🌅 ✨ DAWN RITUAL MANIFESTS - Sacred candles and harp appear!")
+        Log.info(.ritual, "DAWN RITUAL MANIFESTS — candles and harp appear")
     }
     
     private func createCandles() {
@@ -93,17 +107,17 @@ class RitualArea: SKNode {
             addChild(candle)
             candles.append(candle)
             
-            print("🕯️ Candle \(index + 1) placed at grid \(gridPos)")
+            Log.debug(.ritual, "Candle \(index + 1) placed at grid \(gridPos)")
         }
     }
     
     private func generateCandlePositions() -> [GridCoordinate] {
-        // 7 candles in a circle around center position
-        let radius = 2 // Grid cells
+        let radius = GameConfig.Ritual.candleRadius
+        let count = GameConfig.Ritual.candleCount
         var positions: [GridCoordinate] = []
         
-        for i in 0..<7 {
-            let angle = Double(i) * (2.0 * Double.pi / 7.0) - (Double.pi / 2.0) // Start from top
+        for i in 0..<count {
+            let angle = Double(i) * (2.0 * Double.pi / Double(count)) - (Double.pi / 2.0)
             let x = centerPosition.x + Int(round(Double(radius) * cos(angle)))
             let y = centerPosition.y + Int(round(Double(radius) * sin(angle)))
             positions.append(GridCoordinate(x: x, y: y))
@@ -123,29 +137,35 @@ class RitualArea: SKNode {
         }
         
         addChild(sacredHarp)
-        print("🎵 Sacred harp placed at center grid \(centerPosition)")
+        Log.debug(.ritual, "Sacred harp placed at center")
     }
     
     private func createSacredTable() {
-        // Sacred table positioned near the ritual circle
-        let tablePosition = GridCoordinate(x: centerPosition.x, y: centerPosition.y - 4)
+        // FIXED: Use centralized position from GameConfig
+        let tablePosition = GameConfig.Ritual.sacredTablePosition
         let worldPos = gridService.gridToWorld(tablePosition)
         
         sacredTable = RotatableObject(type: .furniture, color: SKColor.gold, shape: "table")
         sacredTable.position = worldPos
-        sacredTable.name = "sacred_table"  // Special name for ritual table
+        sacredTable.name = "sacred_table"  // CRITICAL: Special name for ritual table
         sacredTable.zPosition = ZLayers.tables
         
         addChild(sacredTable)
-        print("🔮 Sacred table placed at grid \(tablePosition)")
+        Log.debug(.ritual, "Sacred table at grid \(tablePosition)")
+        
+        // FIXED: Reserve the grid cell for the sacred table
+        gridService.reserveCell(tablePosition)
+        let gameObject = GameObject(skNode: sacredTable, gridPosition: tablePosition, objectType: .furniture, gridService: gridService)
+        gridService.occupyCell(tablePosition, with: gameObject)
+        Log.debug(.ritual, "Sacred table registered in grid")
     }
     
     // MARK: - Ritual Progression
     private func candleLit() {
         litCandleCount += 1
-        print("🔥 Candle lit! (\(litCandleCount)/7)")
+        Log.info(.ritual, "Candle lit (\(litCandleCount)/\(GameConfig.Ritual.candleCount))")
         
-        if litCandleCount >= 7 {
+        if litCandleCount >= GameConfig.Ritual.candleCount {
             allCandlesLit()
         }
     }
@@ -158,7 +178,7 @@ class RitualArea: SKNode {
         // Activate the sacred harp
         sacredHarp.activate()
         
-        print("🔥 ✨ ALL SEVEN CANDLES BURN BRIGHT! The sacred harp awakens...")
+        Log.info(.ritual, "ALL CANDLES LIT — sacred harp awakens")
     }
     
     private func harpPlayed() {
@@ -169,20 +189,19 @@ class RitualArea: SKNode {
         // Find and summon the chosen NPC
         summonChosenNPC()
         
-        print("🎵 ✨ LIBERATION SONG ECHOES! A soul responds to the sacred call...")
+        Log.info(.ritual, "LIBERATION SONG — a soul responds")
     }
     
     private func summonChosenNPC() {
-        // Find highest satisfaction NPC in range 45-75
         chosenNPC = selectNPCForLiberation()
         
         guard let chosenResident = chosenNPC else {
-            print("❌ No eligible NPC found for liberation")
+            Log.error(.ritual, "No eligible NPC for liberation")
             cleanupRitual()
             return
         }
         
-        print("👻 ✨ \(chosenResident.npcData.name) (\(chosenResident.npcData.emoji)) answers the sacred call!")
+        Log.info(.ritual, "\(chosenResident.npcData.name) answers the sacred call (\(liberationType.displayName))")
         
         // Notify game scene to create liberation NPC
         onNPCSummoned?(chosenResident)
@@ -190,7 +209,6 @@ class RitualArea: SKNode {
     
     // MARK: - NPC Selection
     private func selectNPCForLiberation() -> NPCResident? {
-        // Get all NPCs and their satisfaction scores
         let allNPCs = DialogueService.shared.getAllNPCs()
         
         var eligibleNPCs: [(NPCData, Int)] = []
@@ -203,17 +221,22 @@ class RitualArea: SKNode {
             
             if let memory = SaveService.shared.getOrCreateNPCMemory(npcData.id, name: npcData.name, animalType: npcData.animal) {
                 let satisfaction = memory.satisfactionScore
-                if satisfaction >= 45 && satisfaction <= 75 {
+                // Eligible if OUTSIDE the normal range: below 20 or above 80
+                if satisfaction <= 20 || satisfaction >= 80 {
                     eligibleNPCs.append((npcData, satisfaction))
                 }
             }
         }
         
-        // Sort by satisfaction score (highest first)
-        eligibleNPCs.sort { $0.1 > $1.1 }
+        // Sort by extremity — furthest from center (50) first
+        eligibleNPCs.sort { abs($0.1 - 50) > abs($1.1 - 50) }
         
         if let chosenData = eligibleNPCs.first {
-            print("👻 Selected \(chosenData.0.name) for liberation (satisfaction: \(chosenData.1))")
+            // Determine liberation type based on satisfaction
+            liberationType = chosenData.1 >= 80 ? .divine : .hellish
+            
+            let direction = liberationType == .divine ? "divine (high satisfaction)" : "hellish (low satisfaction)"
+            Log.debug(.ritual, "Selected \(chosenData.0.name) for \(direction) liberation (satisfaction: \(chosenData.1))")
             return NPCResident(npcData: chosenData.0)
         }
         
@@ -221,9 +244,9 @@ class RitualArea: SKNode {
     }
     
     // MARK: - Final Service
-    func npcArrivedAtTable(_ npc: NPC) {
+    func npcArrivedAtTable(_ npc: ShopNPC) {
         liberationNPC = npc
-        print("👻 \(npc.animalType.rawValue) has arrived at the sacred table")
+        Log.debug(.ritual, "\(npc.animalType.rawValue) arrived at sacred table")
     }
     
     func finalBobaServed() {
@@ -231,18 +254,16 @@ class RitualArea: SKNode {
         
         ritualState = .completed
         
-        // Mark as liberated in save system
-        SaveService.shared.markNPCAsLiberated(chosenResident.npcData.id)
-        
-        // Notify completion
+        // NOTE: Save system marking is handled by GameScene.completeRitualLiberation()
+        // RitualArea only manages its own visual state and fires the callback.
         onRitualCompleted?(chosenResident)
         
         // Cleanup ritual after delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 8.0) { // Longer delay for full sequence
+        DispatchQueue.main.asyncAfter(deadline: .now() + GameConfig.Ritual.cleanupDelay) {
             self.cleanupRitual()
         }
         
-        print("🕯️ ✨ Final boba served - liberation ritual initiated")
+        Log.info(.ritual, "Final boba served — \(liberationType.displayName) liberation initiated")
     }
     
     // MARK: - Animations
@@ -286,7 +307,7 @@ class RitualArea: SKNode {
         
         candles.removeAll()
         
-        print("🌅 Dawn ritual fades as the sun rises... until next dawn")
+        Log.info(.ritual, "Dawn ritual fades — until next dawn")
     }
     
     // MARK: - Public Interface
@@ -294,14 +315,14 @@ class RitualArea: SKNode {
         let allNPCs = DialogueService.shared.getAllNPCs()
         
         for npcData in allNPCs {
-            // Skip already liberated NPCs
             if SaveService.shared.isNPCLiberated(npcData.id) {
                 continue
             }
             
             if let memory = SaveService.shared.getOrCreateNPCMemory(npcData.id, name: npcData.name, animalType: npcData.animal) {
                 let satisfaction = memory.satisfactionScore
-                if satisfaction >= 45 && satisfaction <= 75 {
+                // Eligible if OUTSIDE the normal range
+                if satisfaction <= 20 || satisfaction >= 80 {
                     return true
                 }
             }
