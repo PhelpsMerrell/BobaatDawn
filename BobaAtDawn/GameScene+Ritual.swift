@@ -62,12 +62,23 @@ extension GameScene {
     func handleRitualTimePhaseChange(_ phase: TimePhase) {
         switch phase {
         case .dawn:
-            timeService.advanceDay()
+            // Only host advances the day counter — guest receives
+            // day count via timeSync/hostHandshake.
+            if !MultiplayerService.shared.isGuest {
+                timeService.advanceDay()
+            }
             
             if timeService.isRitualDay && ritualArea.hasEligibleNPCs() {
                 ritualArea.spawnRitual()
                 isRitualActive = true
                 Log.info(.ritual, "DAY \(timeService.dayCount) — RITUAL DAY! Sacred ritual manifests")
+                
+                // Broadcast ritual spawn to guest
+                if MultiplayerService.shared.isHost {
+                    MultiplayerService.shared.send(type: .ritualStateSync, payload: RitualStateSyncMessage(
+                        isActive: true, currentStep: "available", ritualNPCId: nil
+                    ))
+                }
             } else if timeService.isRitualDay {
                 Log.info(.ritual, "Day \(timeService.dayCount) is a ritual day, but no souls are ready")
             } else {
@@ -81,6 +92,13 @@ extension GameScene {
                 isRitualActive = false
                 residentManager.clearRitualNPC()
                 Log.info(.ritual, "Ritual fades as \(phase.displayName) begins")
+                
+                // Broadcast ritual cleanup to guest
+                if MultiplayerService.shared.isHost {
+                    MultiplayerService.shared.send(type: .ritualStateSync, payload: RitualStateSyncMessage(
+                        isActive: false, currentStep: nil, ritualNPCId: nil
+                    ))
+                }
             }
         }
     }
@@ -279,6 +297,12 @@ extension GameScene {
         
         if let characterId = npc.animalType.characterId {
             SaveService.shared.markNPCAsLiberated(characterId)
+            
+            // Broadcast liberation to other player
+            let libType = ritualArea.liberationType == .divine ? "divine" : "hellish"
+            MultiplayerService.shared.send(type: .npcLiberated, payload: NPCLiberatedMessage(
+                npcID: characterId, liberationType: libType
+            ))
         }
         
         npc.clearRitualMode()

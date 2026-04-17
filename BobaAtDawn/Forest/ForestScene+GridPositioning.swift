@@ -18,6 +18,9 @@ struct ForestRoomConfig {
     let leftHintPosition: GridCoordinate
     let rightHintPosition: GridCoordinate
     
+    // Structure entrances (only populated for rooms that have one)
+    let oakTreeEntrancePosition: GridCoordinate?  // Only Room 4
+    
     // Special object positions
     let specialObjects: [String: GridCoordinate]
     
@@ -33,6 +36,7 @@ struct ForestRoomConfig {
                 backDoorPosition: GridCoordinate(x: 16, y: 20),
                 leftHintPosition: GridCoordinate(x: 3, y: 12),
                 rightHintPosition: GridCoordinate(x: 29, y: 12),
+                oakTreeEntrancePosition: nil,
                 specialObjects: [:] // No special objects - clean look
             )
             
@@ -44,6 +48,7 @@ struct ForestRoomConfig {
                 backDoorPosition: nil,
                 leftHintPosition: GridCoordinate(x: 3, y: 12),
                 rightHintPosition: GridCoordinate(x: 29, y: 12),
+                oakTreeEntrancePosition: nil,
                 specialObjects: [:] // No special objects - clean look
             )
             
@@ -55,6 +60,7 @@ struct ForestRoomConfig {
                 backDoorPosition: nil,
                 leftHintPosition: GridCoordinate(x: 3, y: 12),
                 rightHintPosition: GridCoordinate(x: 29, y: 12),
+                oakTreeEntrancePosition: nil,
                 specialObjects: [:] // No special objects - clean look
             )
             
@@ -66,6 +72,7 @@ struct ForestRoomConfig {
                 backDoorPosition: nil,
                 leftHintPosition: GridCoordinate(x: 3, y: 12),
                 rightHintPosition: GridCoordinate(x: 29, y: 12),
+                oakTreeEntrancePosition: GridCoordinate(x: 16, y: 18),  // Entry to the Big Oak Tree
                 specialObjects: [:] // No special objects - clean look
             )
             
@@ -77,6 +84,7 @@ struct ForestRoomConfig {
                 backDoorPosition: nil,
                 leftHintPosition: GridCoordinate(x: 3, y: 12),
                 rightHintPosition: GridCoordinate(x: 29, y: 12),
+                oakTreeEntrancePosition: nil,
                 specialObjects: [:] // No special objects - clean look
             )
             
@@ -97,6 +105,7 @@ extension ForestScene {
         // Remove previous room elements
         roomIdentifier?.removeFromParent()
         backDoor?.removeFromParent()
+        oakTreeEntrance?.removeFromParent()
         leftHintEmoji?.removeFromParent()
         rightHintEmoji?.removeFromParent()
         
@@ -126,6 +135,21 @@ extension ForestScene {
             addChild(backDoor!)
             
             print("🚪 Back door positioned at grid \\(doorPos)")
+        }
+        
+        // Big Oak Tree entrance (only in Room 4)
+        if let entrancePos = config.oakTreeEntrancePosition {
+            oakTreeEntrance = SKLabelNode(text: "🌳")
+            oakTreeEntrance!.fontSize = 100
+            oakTreeEntrance!.fontName = "Arial"
+            oakTreeEntrance!.horizontalAlignmentMode = .center
+            oakTreeEntrance!.verticalAlignmentMode = .center
+            oakTreeEntrance!.position = gridService.gridToWorld(entrancePos)
+            oakTreeEntrance!.zPosition = 10
+            oakTreeEntrance!.name = "oak_tree_entrance"
+            addChild(oakTreeEntrance!)
+            
+            print("🌳 Big Oak Tree entrance placed at grid \\(entrancePos)")
         }
         
         // Hint emojis

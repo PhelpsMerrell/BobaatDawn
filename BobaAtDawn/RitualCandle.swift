@@ -88,16 +88,37 @@ class RitualCandle: SKLabelNode {
     private func lightCandle() {
         guard !isLit else { return }
         
+        performLightVisuals()
+        
+        // Notify that this candle was lit
+        onLit?()
+        
+        // Broadcast to other player
+        if MultiplayerService.shared.isConnected {
+            MultiplayerService.shared.send(type: .ritualStepCompleted, payload: RitualStepMessage(
+                step: "candle_lit", npcID: nil
+            ))
+        }
+        
+        print("🔥 Candle lit! Sacred flame burns bright")
+    }
+    
+    /// Called from network sync — visual only, no callback or broadcast.
+    func lightFromNetwork() {
+        guard !isLit else { return }
+        performLightVisuals()
+        print("🔥 [Remote] Candle lit")
+    }
+    
+    private func performLightVisuals() {
         isLit = true
         text = litEmoji
         
-        // Lighting animation
         let lightingEffect = SKAction.sequence([
             SKAction.scale(to: 1.3, duration: 0.2),
             SKAction.scale(to: 1.0, duration: 0.3)
         ])
         
-        // Add warm glow effect
         let warmGlow = SKAction.repeatForever(
             SKAction.sequence([
                 SKAction.scale(to: 1.05, duration: 1.0),
@@ -108,11 +129,6 @@ class RitualCandle: SKLabelNode {
         run(lightingEffect) {
             self.run(warmGlow, withKey: "candle_glow")
         }
-        
-        // Notify that this candle was lit
-        onLit?()
-        
-        print("🔥 Candle lit! Sacred flame burns bright")
     }
     
     // MARK: - Ritual Cleanup

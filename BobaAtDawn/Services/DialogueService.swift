@@ -15,6 +15,10 @@ class DialogueService {
 
     private var npcDatabase: NPCDatabase?
     private var activeBubble: DialogueBubble?
+    
+    /// Flag to prevent re-broadcasting when a dialogue action was triggered
+    /// by a network message. Set true before local action, reset after.
+    private var suppressNetworkBroadcast: Bool = false
 
     private init() {
         loadNPCData()
@@ -72,6 +76,16 @@ class DialogueService {
         activeBubble = bubble
         scene.addChild(bubble)
         Log.info(.dialogue, "\(npcData.name): \(text)")
+        
+        // Broadcast to other player so they see the bubble too
+        if !suppressNetworkBroadcast && MultiplayerService.shared.isConnected {
+            MultiplayerService.shared.send(type: .dialogueShown, payload: DialogueShownMessage(
+                npcID: charId,
+                speakerName: npcData.name,
+                text: text,
+                position: CodablePoint(presenter.position)
+            ))
+        }
     }
 
     // MARK: - Custom Dialogue (ritual farewells)
@@ -109,10 +123,54 @@ class DialogueService {
         if let scene = currentScene {
             unfreezeAllNPCs(in: scene)
         }
+        
+        // Broadcast dismissal to other player
+        if !suppressNetworkBroadcast && MultiplayerService.shared.isConnected {
+            MultiplayerService.shared.send(type: .dialogueDismissed, payload: DialogueDismissedMessage())
+        }
     }
 
     func isDialogueActive() -> Bool {
         activeBubble != nil
+    }
+    
+    // MARK: - Network Dialogue (read-only bubble from other player)
+    
+    /// Show a read-only dialogue bubble triggered by the remote player.
+    /// Uses suppressNetworkBroadcast to prevent a re-broadcast loop.
+    func showRemoteDialogue(npcID: String, speakerName: String, text: String,
+                            at position: CGPoint, in scene: SKScene) {
+        suppressNetworkBroadcast = true
+        dismissDialogue()
+        
+        let bubble = DialogueBubble(
+            text: text,
+            speakerName: speakerName,
+            position: position,
+            npcID: npcID,
+            showResponseButtons: false
+        )
+        
+        activeBubble = bubble
+        scene.addChild(bubble)
+        
+        // Freeze the matching NPC on this side too
+        scene.enumerateChildNodes(withName: "npc_*") { node, _ in
+            if let npc = node as? BaseNPC,
+               npc.dialogueCharacterId == npcID {
+                npc.freeze()
+            }
+        }
+        
+        suppressNetworkBroadcast = false
+        Log.info(.dialogue, "[Remote] \(speakerName): \(text)")
+    }
+    
+    /// Dismiss dialogue triggered by the remote player's dismissal.
+    func dismissRemoteDialogue() {
+        suppressNetworkBroadcast = true
+        dismissDialogue()
+        suppressNetworkBroadcast = false
     }
 
     // MARK: - NPC Management
@@ -243,6 +301,11 @@ class DialogueBubble: SKNode {
 
     private func handleResponse(_ type: NPCResponseType) {
         SaveService.shared.recordNPCInteraction(npcID, responseType: type)
+        
+        // Broadcast NPC interaction to other player
+        MultiplayerService.shared.send(type: .npcInteraction, payload: NPCInteractionMessage(
+            npcID: npcID, responseType: type.rawValue
+        ))
 
         if let btn = responseButtons.childNode(withName: "response_\(type.rawValue)") {
             btn.run(SKAction.sequence([

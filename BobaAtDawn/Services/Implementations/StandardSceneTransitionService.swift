@@ -84,6 +84,41 @@ class StandardSceneTransitionService: SceneTransitionService {
         transition(from: forestScene, to: .game, config: nil, completion: completion)
     }
     
+    func transitionToBigOakTree(from currentScene: SKScene, completion: (() -> Void)? = nil) {
+        print("🌳 Entering Big Oak Tree...")
+        transition(from: currentScene, to: .bigOakTree, config: nil, completion: completion)
+    }
+    
+    func transitionToForestRoom(from currentScene: SKScene,
+                                targetRoom: Int,
+                                completion: (() -> Void)? = nil) {
+        let config = defaultSceneTransitionConfig
+        if config.hapticFeedback {
+            triggerHapticFeedback(type: .success)
+        }
+        print("🌲 Transitioning to Forest at Room \(targetRoom)...")
+        
+        let fadeOut = SKAction.fadeOut(withDuration: config.fadeOutDuration)
+        currentScene.run(fadeOut) { [weak self] in
+            guard let self = self else { return }
+            
+            // Create ForestScene directly so we can set its starting room
+            // BEFORE didMove(to:) runs (setupSpecificContent reads currentRoom).
+            let newScene = ForestScene(size: currentScene.size)
+            newScene.scaleMode = .aspectFill
+            let clamped = max(1, min(5, targetRoom))
+            newScene.currentRoom = clamped
+            
+            if let transition = config.transitionType {
+                currentScene.view?.presentScene(newScene, transition: transition)
+            } else {
+                let fade = SKTransition.fade(withDuration: config.fadeInDuration)
+                currentScene.view?.presentScene(newScene, transition: fade)
+            }
+            completion?()
+        }
+    }
+    
     // MARK: - Forest Room Transitions
     func transitionForestRoom(in forestScene: SKScene,
                              from fromRoom: Int,
@@ -173,6 +208,73 @@ class StandardSceneTransitionService: SceneTransitionService {
         blackOverlay.run(transitionSequence)
     }
     
+    // MARK: - Interior Room Transition (generic, explicit spawn)
+    func transitionInteriorRoom(in scene: SKScene,
+                                character: SKNode,
+                                camera: SKCameraNode,
+                                spawnPosition: CGPoint,
+                                roomSetupAction: @escaping () -> Void,
+                                completion: (() -> Void)? = nil) {
+        
+        let config = defaultForestRoomTransitionConfig
+        
+        if config.hapticFeedback {
+            triggerHapticFeedback(type: .light)
+        }
+        
+        let overlaySize = CGSize(width: 4000, height: 3000)
+        guard overlaySize.width > 0 && overlaySize.height > 0 else {
+            print("❌ ERROR: Invalid overlay size: \(overlaySize)")
+            return
+        }
+        
+        let blackOverlay = SKSpriteNode(color: .black, size: overlaySize)
+        blackOverlay.zPosition = 1000
+        blackOverlay.alpha = 0
+        scene.addChild(blackOverlay)
+        
+        func updateOverlayPosition() {
+            blackOverlay.position = camera.position
+        }
+        updateOverlayPosition()
+        
+        let fadeToBlack = SKAction.fadeAlpha(to: 1.0, duration: config.fadeOutDuration)
+        let waitInDarkness = SKAction.wait(forDuration: 0.1)
+        
+        let repositionEverything = SKAction.run {
+            // Rebuild room contents
+            roomSetupAction()
+            
+            // Snap character and camera to explicit spawn position
+            character.position = spawnPosition
+            camera.position = spawnPosition
+            updateOverlayPosition()
+        }
+        
+        let waitAfterReposition = SKAction.wait(forDuration: 0.1)
+        let fadeFromBlack = SKAction.fadeAlpha(to: 0.0, duration: config.fadeInDuration)
+        
+        let cleanup = SKAction.run {
+            blackOverlay.removeFromParent()
+        }
+        
+        let finishTransition = SKAction.run {
+            completion?()
+        }
+        
+        let transitionSequence = SKAction.sequence([
+            fadeToBlack,
+            waitInDarkness,
+            repositionEverything,
+            waitAfterReposition,
+            fadeFromBlack,
+            cleanup,
+            finishTransition
+        ])
+        
+        blackOverlay.run(transitionSequence)
+    }
+    
     // MARK: - Scene Creation
     func createScene(type: GameSceneType, size: CGSize) -> SKScene {
         switch type {
@@ -182,9 +284,10 @@ class StandardSceneTransitionService: SceneTransitionService {
             return ForestScene(size: size)
         case .title:
             return TitleScene(size: size)
+        case .bigOakTree:
+            return BigOakTreeScene(size: size)
         }
     }
-    
     // MARK: - Haptic Feedback
     func triggerHapticFeedback(type: HapticFeedbackType) {
         switch type {

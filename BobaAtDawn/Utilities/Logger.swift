@@ -46,6 +46,7 @@ enum LogCategory: String {
     case drink     = "🧋"
     case forest    = "🌲"
     case resident  = "🏘️"
+    case network   = "📡"
 }
 
 // MARK: - Logger

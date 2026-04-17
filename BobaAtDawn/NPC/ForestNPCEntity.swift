@@ -15,6 +15,13 @@ class ForestNPCEntity: BaseNPC {
     private let wanderInterval: TimeInterval = 3.0
     private let originalPosition: CGPoint
 
+    // MARK: - Network Control
+    /// When true, local wandering is stopped and positions come from the
+    /// host via `applyNetworkPosition`. Set by the guest when receiving
+    /// forest NPC sync in the same room as the host.
+    private(set) var isNetworkControlled: Bool = false
+    private var networkTargetPosition: CGPoint = .zero
+
     // MARK: - Init
     init(npcData: NPCData, at position: CGPoint) {
         self.originalPosition = position
@@ -38,6 +45,7 @@ class ForestNPCEntity: BaseNPC {
 
     private func startWandering() {
         guard !isFrozen else { return }
+        guard !isNetworkControlled else { return }
 
         let sequence = SKAction.sequence([
             SKAction.wait(forDuration: wanderInterval, withRange: 1.0),
@@ -53,6 +61,7 @@ class ForestNPCEntity: BaseNPC {
 
     private func wander() {
         guard !isFrozen else { return }
+        guard !isNetworkControlled else { return }
 
         let angle = Double.random(in: 0...(2 * .pi))
         let dist  = CGFloat.random(in: 30...wanderRadius)
@@ -72,6 +81,10 @@ class ForestNPCEntity: BaseNPC {
     }
 
     override func onUnfreeze() {
+        // Don't resume local wandering if positions are being driven by
+        // the host via network sync.
+        guard !isNetworkControlled else { return }
+        
         // Resume after a brief pause
         let resume = SKAction.sequence([
             SKAction.wait(forDuration: 1.0),
@@ -93,4 +106,31 @@ class ForestNPCEntity: BaseNPC {
     // while we migrate call-sites. TODO: remove once migration is done.
 
     var npcId: String { npcData.id }
+
+    // MARK: - Network Control Methods
+
+    /// Switch this NPC to network-controlled mode. Stops local wandering
+    /// and positions will be driven by `applyNetworkPosition` calls from
+    /// the multiplayer sync handler.
+    func setNetworkControlled(_ controlled: Bool) {
+        guard controlled != isNetworkControlled else { return }
+        isNetworkControlled = controlled
+        if controlled {
+            stopWandering()
+        } else {
+            startWandering()
+        }
+    }
+
+    /// Lerp toward the host-broadcast position. Called every frame (or
+    /// every sync tick) by the guest's multiplayer handler.
+    func applyNetworkPosition(_ target: CGPoint, lerp factor: CGFloat = 0.2) {
+        networkTargetPosition = target
+        let dx = target.x - position.x
+        let dy = target.y - position.y
+        position = CGPoint(
+            x: position.x + dx * factor,
+            y: position.y + dy * factor
+        )
+    }
 }

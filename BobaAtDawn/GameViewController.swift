@@ -8,6 +8,7 @@
 import UIKit
 import SpriteKit
 import GameplayKit
+import GameKit
 
 class GameViewController: UIViewController {
 
@@ -19,6 +20,9 @@ class GameViewController: UIViewController {
             print("❌ ERROR: View is not an SKView")
             return
         }
+        
+        // Authenticate Game Center (silent on iOS 16+)
+        MultiplayerService.shared.authenticate(presenting: self)
         
         // START WITH TITLE SCENE instead of going directly to game - FIXED: Pass size parameter
         let titleScene = TitleScene(size: skView.bounds.size)

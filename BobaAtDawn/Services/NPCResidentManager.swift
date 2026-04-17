@@ -107,6 +107,11 @@ class NPCResidentManager {
     
     // MARK: - World Initialization
     func initializeWorld() {
+        // Guest receives NPC state from host — don't spawn independently.
+        guard !MultiplayerService.shared.isGuest else {
+            Log.info(.resident, "Guest mode — skipping local NPC spawning, waiting for host sync")
+            return
+        }
         let initial = selectNPCsForShop(count: targetShopNPCs)
         for r in initial { moveResidentToShop(r) }
         spawnAllForestNPCs()
@@ -211,7 +216,10 @@ class NPCResidentManager {
     // MARK: - Update
     func update(deltaTime: TimeInterval) {
         for r in residents where r.drinkCooldown > 0 { r.drinkCooldown -= deltaTime }
-        if lastKnownTimePhase == .day { maintainShopPopulation() }
+        // Guest doesn't run spawn maintenance — NPCs come from host.
+        if !MultiplayerService.shared.isGuest && lastKnownTimePhase == .day {
+            maintainShopPopulation()
+        }
     }
     
     private func maintainShopPopulation() {

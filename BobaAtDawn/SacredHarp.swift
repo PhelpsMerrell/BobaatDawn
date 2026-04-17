@@ -131,6 +131,29 @@ class SacredHarp: SKLabelNode {
     private func playHarp() {
         guard isActive else { return }
         
+        performPlayVisuals()
+        
+        // Notify that the harp was played
+        onPlayed?()
+        
+        // Broadcast to other player
+        if MultiplayerService.shared.isConnected {
+            MultiplayerService.shared.send(type: .ritualStepCompleted, payload: RitualStepMessage(
+                step: "harp_played", npcID: nil
+            ))
+        }
+        
+        print("🎵 ✨ LIBERATION SONG PLAYED! The sacred melody calls to a worthy soul...")
+    }
+    
+    /// Called from network sync — visual only, no callback or broadcast.
+    func playFromNetwork() {
+        guard isActive else { return }
+        performPlayVisuals()
+        print("🎵 [Remote] Liberation song played")
+    }
+    
+    private func performPlayVisuals() {
         // Magnificent liberation song effect
         let songEffect = SKAction.sequence([
             SKAction.group([
@@ -147,11 +170,6 @@ class SacredHarp: SKLabelNode {
         createSoundRipples()
         
         run(songEffect)
-        
-        // Notify that the harp was played
-        onPlayed?()
-        
-        print("🎵 ✨ LIBERATION SONG PLAYED! The sacred melody calls to a worthy soul...")
     }
     
     private func createSoundRipples() {

@@ -19,6 +19,7 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
     // MARK: - Room Elements (Internal - accessible to extensions)
     internal var roomIdentifier: SKLabelNode! // Big emoji in center
     internal var backDoor: SKLabelNode! // Return to shop (Room 1 only)
+    internal var oakTreeEntrance: SKLabelNode? // Entrance to Big Oak Tree (Room 4 only)
     
     // MARK: - Transition Control
     private var isTransitioning: Bool = false
@@ -39,6 +40,9 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
     // MARK: - Snail System
     private var snail: SnailNPC?
     private var snailContactObserver: NSObjectProtocol?
+    /// Grace period flag — when true, snail contact is suppressed to give
+    /// the player a moment to orient after entering the forest.
+    private var snailGracePeriodActive: Bool = true
     
     // Public access for extensions
     var currentSnail: SnailNPC? {
@@ -118,6 +122,8 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         
         // Set up physics contact delegate for snail detection
         physicsWorld.contactDelegate = self
+        
+        setupForestMultiplayer()  // → ForestScene+Multiplayer.swift
         
         Log.info(.forest, "Forest scene initialized — Room \(currentRoom): \(roomEmojis[currentRoom])")
     }
@@ -258,6 +264,12 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
             return true
         }
         
+        // Check for Big Oak Tree entrance (only in Room 4)
+        if currentRoom == 4 && touchedNode.name == "oak_tree_entrance" {
+            startLongPress(for: touchedNode, at: location)
+            return true
+        }
+        
         // Check for trash interaction
         if touchedNode is Trash || touchedNode.parent is Trash {
             let trashNode = (touchedNode as? Trash) ?? (touchedNode.parent as! Trash)
@@ -285,42 +297,30 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
             // Haptic feedback for door interaction
             triggerSuccessFeedback()
             returnToShop()
+        } else if node.name == "oak_tree_entrance" {
+            // Haptic feedback for entering the oak tree
+            triggerSuccessFeedback()
+            enterBigOakTree()
         } else if let trash = node as? Trash {
             // Pick up trash in the forest
             print("🗑 Picking up forest trash")
+            let trashPos = trash.position
             trash.pickUp {
                 print("🗑 ✅ Forest trash cleaned up!")
             }
             transitionService.triggerHapticFeedback(type: .light)
+            
+            // Broadcast trash cleaned
+            MultiplayerService.shared.send(type: .trashCleaned, payload: TrashCleanedMessage(
+                position: CodablePoint(trashPos), location: "forest_room_\(self.currentRoom)"
+            ))
         }
     }
     
-    // MARK: - Long Press System (For Door)
-    internal override func startLongPress(for node: SKNode, at location: CGPoint) {
-        longPressTarget = node
-        longPressTimer = Timer.scheduledTimer(withTimeInterval: longPressDuration, repeats: false) { [weak self] _ in
-            self?.handleLongPress(on: node, at: location)
-        }
-        
-        print("🚪 Long press started on door")
-    }
-    
-    internal override func cancelLongPress() {
-        longPressTimer?.invalidate()
-        longPressTimer = nil
-        longPressTarget = nil
-    }
-    
-    private func handleLongPress(on node: SKNode, at location: CGPoint) {
-        if node.name == "back_door" {
-            // Haptic feedback for door interaction
-            transitionService.triggerHapticFeedback(type: .success)
-            returnToShop()
-        }
-        
-        longPressTimer = nil
-        longPressTarget = nil
-    }
+    // Long-press plumbing is inherited from BaseGameScene (startLongPress /
+    // cancelLongPress / handleLongPress). Base's handleLongPress calls
+    // handleSceneSpecificLongPress above, which handles ALL long-press
+    // targets in the forest (back door, oak tree entrance, trash).
     
     // MARK: - Room Transition System (Internal - accessible to extensions)
     private func isNearLeftEdge(_ location: CGPoint) -> Bool {
@@ -394,6 +394,18 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         }
     }
     
+    private func enterBigOakTree() {
+        Log.info(.forest, "Entering Big Oak Tree from Room \(currentRoom)")
+        
+        // Dismiss any active dialogue before leaving
+        DialogueService.shared.dismissDialogue()
+        
+        // Use transition service to enter the oak tree interior
+        transitionService.transitionToBigOakTree(from: self) {
+            print("🌳 Successfully entered the Big Oak Tree")
+        }
+    }
+    
     override open func updateSpecificContent(_ currentTime: TimeInterval) {
         // Update transition cooldown
         if transitionCooldown > 0 {
@@ -408,6 +420,15 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         
         // Update snail behavior
         updateSnailBehavior()
+        
+        // HOST: Broadcast forest NPC positions to guest every ~0.5s
+        if MultiplayerService.shared.isHost && MultiplayerService.shared.isConnected {
+            forestNpcSyncFrameCounter += 1
+            if forestNpcSyncFrameCounter >= 30 {
+                forestNpcSyncFrameCounter = 0
+                broadcastForestNpcSync()
+            }
+        }
     }
     
     // MARK: - Character Position Monitoring
@@ -451,7 +472,33 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         
         // Place at world state position (persists across scene loads)
         let world = SnailWorldState.shared
+        
+        // SAFE-SPAWN: If the snail is active and in the player's starting
+        // room, check whether its persisted position is dangerously close
+        // to the character's spawn point. If so, relocate it to the
+        // opposite side of the room so the player doesn't get caught on
+        // the first frame.
+        let characterSpawn = gridService.gridToWorld(configService.characterStartPosition)
+        if world.isActive && world.currentRoom == currentRoom {
+            let dx = world.roomPosition.x - characterSpawn.x
+            let dy = world.roomPosition.y - characterSpawn.y
+            let distToSpawn = sqrt(dx * dx + dy * dy)
+            let safeDistance: CGFloat = 300 // Minimum gap on scene load
+            
+            if distToSpawn < safeDistance {
+                // Push snail to the far side of the room
+                let relocatedX: CGFloat = world.roomPosition.x >= 0 ? -500 : 500
+                let relocatedY = CGFloat.random(in: -300...300)
+                world.roomPosition = CGPoint(x: relocatedX, y: relocatedY)
+                Log.info(.forest, "Snail was too close to spawn (\(Int(distToSpawn))pt) — relocated to \(world.roomPosition)")
+            }
+        }
+        
         snail?.position = world.roomPosition
+        
+        // Ensure contact starts DISABLED (SnailNPC init already does this,
+        // but belt-and-suspenders for the grace period).
+        snail?.setContactEnabled(false)
         
         // Add to scene (visibility is controlled by syncWithWorldState)
         if let snail = snail {
@@ -467,8 +514,36 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
             self?.handleSnailCatch()
         }
         
+        // GRACE PERIOD: Keep snail contact disabled for 1.5 seconds after
+        // the scene loads, regardless of night/active state. This covers
+        // any edge case where the snail position happens to overlap the
+        // player on the very first physics step.
+        snailGracePeriodActive = true
+        snail?.setContactEnabled(false)
+        let graceAction = SKAction.sequence([
+            SKAction.wait(forDuration: 1.5),
+            SKAction.run { [weak self] in
+                guard let self = self else { return }
+                self.snailGracePeriodActive = false
+                // Re-enable contact now if the snail is currently visible
+                // and active. During grace, fadeIn() was allowed to show
+                // the snail but its setContactEnabled(true) was overridden
+                // every frame. Now that grace is over, restore it.
+                if let snail = self.snail,
+                   !snail.isHidden,
+                   SnailWorldState.shared.isActive {
+                    snail.setContactEnabled(true)
+                }
+                Log.debug(.forest, "Snail grace period ended")
+            }
+        ])
+        run(graceAction, withKey: "snail_grace_period")
+        
         Log.debug(.forest, "Snail node added (world room: \(world.currentRoom), active: \(world.isActive))")
     }
+    
+    private var snailSyncFrameCounter: Int = 0
+    private var forestNpcSyncFrameCounter: Int = 0
     
     private func updateSnailBehavior() {
         guard let snail = snail else { return }
@@ -477,6 +552,50 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         snail.syncWithWorldState(
             playerRoom: currentRoom,
             playerPosition: character?.position ?? .zero
+        )
+        
+        // GRACE PERIOD OVERRIDE: syncWithWorldState may call fadeIn() which
+        // enables contact. If the grace period is still active, force
+        // contact back off so the player can't be caught during the first
+        // 1.5 seconds after scene load.
+        if snailGracePeriodActive {
+            snail.setContactEnabled(false)
+        }
+        
+        // HOST: Broadcast snail sync to guest from the forest too
+        // (GameScene broadcasts when host is in the shop, this covers the forest).
+        if MultiplayerService.shared.isHost && MultiplayerService.shared.isConnected {
+            snailSyncFrameCounter += 1
+            if snailSyncFrameCounter >= 15 {
+                snailSyncFrameCounter = 0
+                let world = SnailWorldState.shared
+                MultiplayerService.shared.send(type: .snailSync, payload: SnailSyncMessage(
+                    room: world.currentRoom,
+                    position: CodablePoint(world.roomPosition),
+                    isActive: world.isActive
+                ))
+            }
+        }
+    }
+    
+    // MARK: - Forest NPC Sync (Host Broadcast)
+    
+    /// Collect all ForestNPCEntity children in this scene and broadcast
+    /// their positions to the guest so wandering is visually consistent.
+    private func broadcastForestNpcSync() {
+        let forestNPCs = children.compactMap { $0 as? ForestNPCEntity }
+        guard !forestNPCs.isEmpty else { return }
+        
+        let entries: [ForestNpcSyncEntry] = forestNPCs.compactMap { npc in
+            ForestNpcSyncEntry(
+                npcID: npc.npcData.id,
+                position: CodablePoint(npc.position)
+            )
+        }
+        
+        MultiplayerService.shared.send(
+            type: .forestNpcSync,
+            payload: ForestNpcSyncMessage(room: currentRoom, entries: entries)
         )
     }
     
@@ -540,6 +659,14 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         
         let bodyA = contact.bodyA
         let bodyB = contact.bodyB
+        
+        // FIXED: Ignore snail contacts while the grace period is active or
+        // while the snail is hidden/inactive. This prevents the invisible
+        // snail (stale persisted position overlapping the player's spawn)
+        // from triggering an instant catch on scene load.
+        if snailGracePeriodActive { return }
+        if snail?.isHidden == true { return }
+        if !SnailWorldState.shared.isActive { return }
         
         // Check if character contacted snail
         if (bodyA.categoryBitMask == PhysicsCategory.character && bodyB.categoryBitMask == PhysicsCategory.snail) ||

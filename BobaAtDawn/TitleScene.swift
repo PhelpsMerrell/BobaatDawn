@@ -25,6 +25,9 @@ class TitleScene: SKScene {
     private var startButton: SKSpriteNode!
     private var startButtonLabel: SKLabelNode!
     private var backgroundGradient: SKSpriteNode!
+    private var hostButton: SKSpriteNode!
+    private var joinButton: SKSpriteNode!
+    private var multiplayerStatusLabel: SKLabelNode!
     
     // MARK: - Animation Properties
     private var floatingBoba: [SKSpriteNode] = []
@@ -35,26 +38,41 @@ class TitleScene: SKScene {
         setupBackground()
         setupTitle()
         setupStartButton()
+        setupMultiplayerButtons()
         setupFloatingBoba()
         setupInitialAnimations()
         
-        print("🎬 Title screen loaded")
+        MultiplayerService.shared.delegate = self
+        
+        // Authenticate with Game Center immediately on scene load.
+        // This ensures the player is signed in BEFORE they tap Host/Join,
+        // and also registers for invite notifications so invites work.
+        if let vc = view.window?.rootViewController {
+            MultiplayerService.shared.authenticate(presenting: vc)
+        } else {
+            // Window might not be ready yet in didMove — retry shortly
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                if let vc = self?.view?.window?.rootViewController {
+                    MultiplayerService.shared.authenticate(presenting: vc)
+                }
+            }
+        }
+        
+        print("\u{1F3AC} Title screen loaded")
     }
     
     // MARK: - Background Setup
     private func setupBackground() {
-        // Create gradient background
-        backgroundGradient = SKSpriteNode(color: SKColor(red: 0.2, green: 0.3, blue: 0.5, alpha: 1.0), 
+        backgroundGradient = SKSpriteNode(color: SKColor(red: 0.2, green: 0.3, blue: 0.5, alpha: 1.0),
                                         size: size)
         backgroundGradient.position = CGPoint(x: size.width/2, y: size.height/2)
         backgroundGradient.zPosition = -10
         addChild(backgroundGradient)
         
-        // Add subtle color animation
         let colorShift = SKAction.sequence([
-            SKAction.colorize(with: SKColor(red: 0.3, green: 0.2, blue: 0.6, alpha: 1.0), 
+            SKAction.colorize(with: SKColor(red: 0.3, green: 0.2, blue: 0.6, alpha: 1.0),
                             colorBlendFactor: 0.3, duration: 3.0),
-            SKAction.colorize(with: SKColor(red: 0.2, green: 0.4, blue: 0.5, alpha: 1.0), 
+            SKAction.colorize(with: SKColor(red: 0.2, green: 0.4, blue: 0.5, alpha: 1.0),
                             colorBlendFactor: 0.3, duration: 3.0)
         ])
         backgroundGradient.run(SKAction.repeatForever(colorShift))
@@ -62,7 +80,6 @@ class TitleScene: SKScene {
     
     // MARK: - Title Setup
     private func setupTitle() {
-        // Main title
         titleLabel = SKLabelNode(fontNamed: "Helvetica-Bold")
         titleLabel.text = "Boba at Dawn"
         titleLabel.fontSize = 48
@@ -71,7 +88,6 @@ class TitleScene: SKScene {
         titleLabel.zPosition = 10
         addChild(titleLabel)
         
-        // Subtitle
         let subtitleLabel = SKLabelNode(fontNamed: "Helvetica-Light")
         subtitleLabel.text = "A Cozy Brewing Adventure"
         subtitleLabel.fontSize = 20
@@ -80,7 +96,6 @@ class TitleScene: SKScene {
         subtitleLabel.zPosition = 10
         addChild(subtitleLabel)
         
-        // Title breathing animation
         let breathe = SKAction.sequence([
             SKAction.scale(to: 1.05, duration: 2.0),
             SKAction.scale(to: 1.0, duration: 2.0)
@@ -90,15 +105,13 @@ class TitleScene: SKScene {
     
     // MARK: - Start Button Setup
     private func setupStartButton() {
-        // Button background
-        startButton = SKSpriteNode(color: SKColor(red: 0.8, green: 0.6, blue: 0.4, alpha: 0.9), 
+        startButton = SKSpriteNode(color: SKColor(red: 0.8, green: 0.6, blue: 0.4, alpha: 0.9),
                                   size: CGSize(width: 200, height: 60))
         startButton.position = CGPoint(x: size.width/2, y: size.height * 0.4)
         startButton.zPosition = 5
         startButton.name = "startButton"
         
-        // Add rounded corners effect with border
-        let border = SKShapeNode(rect: CGRect(x: -100, y: -30, width: 200, height: 60), 
+        let border = SKShapeNode(rect: CGRect(x: -100, y: -30, width: 200, height: 60),
                                 cornerRadius: 10)
         border.fillColor = SKColor.clear
         border.strokeColor = SKColor.white.withAlphaComponent(0.7)
@@ -107,16 +120,14 @@ class TitleScene: SKScene {
         
         addChild(startButton)
         
-        // Button text
         startButtonLabel = SKLabelNode(fontNamed: "Helvetica-Bold")
         startButtonLabel.text = "Start Brewing"
         startButtonLabel.fontSize = 24
         startButtonLabel.fontColor = SKColor.white
-        startButtonLabel.position = CGPoint(x: 0, y: -8) // Vertically center text
+        startButtonLabel.position = CGPoint(x: 0, y: -8)
         startButtonLabel.zPosition = 1
         startButton.addChild(startButtonLabel)
         
-        // Button hover/pulse animation
         let pulse = SKAction.sequence([
             SKAction.scale(to: 1.1, duration: 1.5),
             SKAction.scale(to: 1.0, duration: 1.5)
@@ -134,7 +145,6 @@ class TitleScene: SKScene {
     }
     
     private func createFloatingBoba(index: Int) -> SKSpriteNode {
-        // Create simple colored circle for now (replace with your boba art later)
         let colors = [
             SKColor.brown.withAlphaComponent(0.6),
             SKColor.orange.withAlphaComponent(0.5),
@@ -142,16 +152,14 @@ class TitleScene: SKScene {
             SKColor.green.withAlphaComponent(0.5)
         ]
         
-        let boba = SKSpriteNode(color: colors[index % colors.count], 
+        let boba = SKSpriteNode(color: colors[index % colors.count],
                                size: CGSize(width: 20, height: 20))
         
-        // Random starting position
         let randomX = CGFloat.random(in: 50...(size.width - 50))
         let randomY = CGFloat.random(in: 100...(size.height - 100))
         boba.position = CGPoint(x: randomX, y: randomY)
         boba.zPosition = 1
         
-        // Make it circular
         let circle = SKShapeNode(circleOfRadius: 10)
         circle.fillColor = colors[index % colors.count]
         circle.strokeColor = SKColor.clear
@@ -162,7 +170,6 @@ class TitleScene: SKScene {
     
     // MARK: - Initial Animations
     private func setupInitialAnimations() {
-        // Animate floating boba
         for (index, boba) in floatingBoba.enumerated() {
             let delay = Double(index) * 0.3
             
@@ -170,11 +177,11 @@ class TitleScene: SKScene {
                 SKAction.wait(forDuration: delay),
                 SKAction.repeatForever(
                     SKAction.sequence([
-                        SKAction.moveBy(x: CGFloat.random(in: -30...30), 
-                                      y: CGFloat.random(in: -20...20), 
+                        SKAction.moveBy(x: CGFloat.random(in: -30...30),
+                                      y: CGFloat.random(in: -20...20),
                                       duration: 4.0 + Double.random(in: -1...1)),
-                        SKAction.moveBy(x: CGFloat.random(in: -30...30), 
-                                      y: CGFloat.random(in: -20...20), 
+                        SKAction.moveBy(x: CGFloat.random(in: -30...30),
+                                      y: CGFloat.random(in: -20...20),
                                       duration: 4.0 + Double.random(in: -1...1))
                     ])
                 )
@@ -188,7 +195,6 @@ class TitleScene: SKScene {
             boba.run(rotate)
         }
         
-        // Title entrance animation
         titleLabel.alpha = 0
         titleLabel.setScale(0.5)
         
@@ -198,7 +204,6 @@ class TitleScene: SKScene {
         ])
         titleLabel.run(titleEntrance)
         
-        // Button entrance animation (delayed)
         startButton.alpha = 0
         startButton.setScale(0.8)
         
@@ -218,16 +223,18 @@ class TitleScene: SKScene {
         let location = touch.location(in: self)
         let touchedNode = atPoint(location)
         
-        // Check if start button was touched
         if touchedNode.name == "startButton" || touchedNode.parent?.name == "startButton" {
             handleStartButtonTapped()
+        } else if touchedNode.name == "hostButton" || touchedNode.parent?.name == "hostButton" {
+            handleHostTapped()
+        } else if touchedNode.name == "joinButton" || touchedNode.parent?.name == "joinButton" {
+            handleJoinTapped()
         }
     }
     
     private func handleStartButtonTapped() {
-        print("🎯 Start button tapped!")
+        print("\u{1F3AF} Start button tapped!")
         
-        // Button press animation
         let pressDown = SKAction.scale(to: 0.95, duration: 0.1)
         let pressUp = SKAction.scale(to: 1.0, duration: 0.1)
         let buttonPress = SKAction.sequence([pressDown, pressUp])
@@ -238,20 +245,123 @@ class TitleScene: SKScene {
     }
     
     private func transitionToGame() {
-        print("🚀 Transitioning to game scene...")
+        print("\u{1F680} Transitioning to game scene...")
         
-        // Create transition effect
         let fadeOut = SKAction.fadeOut(withDuration: 0.5)
         let scaleDown = SKAction.scale(to: 0.8, duration: 0.5)
         let exitAnimation = SKAction.group([fadeOut, scaleDown])
         
         run(exitAnimation) {
-            // Create and transition to game scene - FIXED: Pass size parameter
             let gameScene = GameScene(size: self.size)
             gameScene.scaleMode = .aspectFill
             
             let transition = SKTransition.fade(withDuration: 0.5)
             self.view?.presentScene(gameScene, transition: transition)
         }
+    }
+    
+    // MARK: - Multiplayer Buttons
+    
+    private func setupMultiplayerButtons() {
+        let buttonWidth: CGFloat = 140
+        let buttonHeight: CGFloat = 50
+        let buttonY = size.height * 0.28
+        let gap: CGFloat = 20
+        
+        hostButton = SKSpriteNode(color: SKColor(red: 0.3, green: 0.6, blue: 0.4, alpha: 0.9),
+                                  size: CGSize(width: buttonWidth, height: buttonHeight))
+        hostButton.position = CGPoint(x: size.width/2 - buttonWidth/2 - gap/2, y: buttonY)
+        hostButton.zPosition = 5
+        hostButton.name = "hostButton"
+        hostButton.alpha = 0
+        addChild(hostButton)
+        
+        let hostLabel = SKLabelNode(fontNamed: "Helvetica-Bold")
+        hostLabel.text = "Host Game"
+        hostLabel.fontSize = 18
+        hostLabel.fontColor = .white
+        hostLabel.position = CGPoint(x: 0, y: -6)
+        hostLabel.zPosition = 1
+        hostButton.addChild(hostLabel)
+        
+        joinButton = SKSpriteNode(color: SKColor(red: 0.4, green: 0.4, blue: 0.7, alpha: 0.9),
+                                  size: CGSize(width: buttonWidth, height: buttonHeight))
+        joinButton.position = CGPoint(x: size.width/2 + buttonWidth/2 + gap/2, y: buttonY)
+        joinButton.zPosition = 5
+        joinButton.name = "joinButton"
+        joinButton.alpha = 0
+        addChild(joinButton)
+        
+        let joinLabel = SKLabelNode(fontNamed: "Helvetica-Bold")
+        joinLabel.text = "Join Game"
+        joinLabel.fontSize = 18
+        joinLabel.fontColor = .white
+        joinLabel.position = CGPoint(x: 0, y: -6)
+        joinLabel.zPosition = 1
+        joinButton.addChild(joinLabel)
+        
+        multiplayerStatusLabel = SKLabelNode(fontNamed: "Helvetica-Light")
+        multiplayerStatusLabel.text = ""
+        multiplayerStatusLabel.fontSize = 14
+        multiplayerStatusLabel.fontColor = .lightGray
+        multiplayerStatusLabel.position = CGPoint(x: size.width/2, y: buttonY - 40)
+        multiplayerStatusLabel.zPosition = 10
+        addChild(multiplayerStatusLabel)
+        
+        let fadeIn = SKAction.sequence([
+            SKAction.wait(forDuration: 0.8),
+            SKAction.fadeIn(withDuration: 0.5)
+        ])
+        hostButton.run(fadeIn)
+        joinButton.run(fadeIn)
+    }
+    
+    // MARK: - Multiplayer Actions
+    
+    private func handleHostTapped() {
+        guard MultiplayerService.shared.isAuthenticated else {
+            multiplayerStatusLabel.text = "Signing into Game Center..."
+            // Retry auth if it hasn't completed yet
+            if let vc = view?.window?.rootViewController {
+                MultiplayerService.shared.authenticate(presenting: vc)
+            }
+            return
+        }
+        multiplayerStatusLabel.text = "Waiting for player..."
+        MultiplayerService.shared.hostGame()
+    }
+    
+    private func handleJoinTapped() {
+        guard MultiplayerService.shared.isAuthenticated else {
+            multiplayerStatusLabel.text = "Signing into Game Center..."
+            if let vc = view?.window?.rootViewController {
+                MultiplayerService.shared.authenticate(presenting: vc)
+            }
+            return
+        }
+        multiplayerStatusLabel.text = "Looking for game..."
+        MultiplayerService.shared.joinGame()
+    }
+}
+
+// MARK: - MultiplayerServiceDelegate
+
+extension TitleScene: MultiplayerServiceDelegate {
+    func multiplayerDidConnect(isHost: Bool) {
+        let role = isHost ? "HOST" : "GUEST"
+        multiplayerStatusLabel.text = "Connected as \(role)! Starting..."
+        run(SKAction.wait(forDuration: 0.8)) {
+            self.transitionToGame()
+        }
+    }
+    
+    func multiplayerDidDisconnect() {
+        multiplayerStatusLabel.text = "Disconnected."
+    }
+    
+    func multiplayerDidReceive(_ envelope: NetworkEnvelope) { }
+    
+    func multiplayerDidFail(error: String) {
+        multiplayerStatusLabel.text = error
     }
 }

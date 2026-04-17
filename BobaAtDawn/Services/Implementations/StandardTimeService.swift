@@ -59,6 +59,14 @@ class StandardTimeService: TimeService {
         Log.info(.time, "NEW DAY \(_dayCount) — ritual day: \(isRitualDay)")
     }
     
+    /// Update the runtime day count cache from a network source.
+    /// Does NOT persist — the host owns persistence.
+    func syncDayCount(_ count: Int) {
+        guard count != _dayCount else { return }
+        _dayCount = count
+        Log.info(.time, "Day count synced from network: \(_dayCount) — ritual day: \(isRitualDay)")
+    }
+    
     // MARK: - Debug
     func setDebugPhase(_ phase: TimePhase) {
         let currentTime = CFAbsoluteTimeGetCurrent()

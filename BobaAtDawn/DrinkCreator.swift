@@ -174,4 +174,57 @@ class DrinkCreator: SKNode {
         
         Log.info(.drink, "Stations reset — ready for next drink")
     }
+    
+    // MARK: - Live Carried-Drink Update
+    
+    /// Rebuild the visual layers of a drink the player is currently carrying
+    /// so it reflects the current station state. Called every time a station
+    /// is toggled while the player is holding a drink.
+    func rebuildCarriedDrink(_ carried: RotatableObject, from stations: [IngredientStation]) {
+        var hasIce = false, hasBoba = false, hasFoam = false, hasTea = false, hasLid = false
+        for s in stations {
+            switch s.stationType {
+            case .ice:  hasIce  = s.hasIce
+            case .boba: hasBoba = s.hasBoba
+            case .foam: hasFoam = s.hasFoam
+            case .tea:  hasTea  = s.hasTea
+            case .lid:  hasLid  = s.hasLid
+            }
+        }
+        
+        // Strip existing sprite layers
+        carried.removeAllChildren()
+        
+        // Rebuild using the same atlas/scale logic as buildPortableDrink
+        let atlas = SKTextureAtlas(named: "Boba")
+        let cupTex = atlas.textureNamed("cup_empty")
+        let scale = 25.0 / cupTex.size().width
+        
+        func addLayer(_ texName: String, z: CGFloat) {
+            guard atlas.textureNames.contains(texName) else { return }
+            let tex = atlas.textureNamed(texName)
+            tex.filteringMode = .nearest
+            let node = SKSpriteNode(texture: tex)
+            node.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+            node.position = .zero
+            node.setScale(scale)
+            node.zPosition = z
+            node.blendMode = .alpha
+            node.name = texName
+            carried.addChild(node)
+        }
+        
+        addLayer("cup_empty",       z: 0)
+        if hasTea  { addLayer("tea_black",       z: 1) }
+        if hasIce  { addLayer("ice_cubes",       z: 2) }
+        if hasBoba { addLayer("topping_tapioca", z: 3) }
+        if hasFoam { addLayer("foam_cheese",     z: 4) }
+        if hasLid  { addLayer("lid_straw",       z: 5) }
+        
+        // Update the carried drink's name based on completeness
+        let complete = hasTea && hasLid
+        carried.name = complete ? "completed_drink" : "picked_up_drink"
+        
+        Log.debug(.drink, "Carried drink rebuilt: tea=\(hasTea) ice=\(hasIce) boba=\(hasBoba) foam=\(hasFoam) lid=\(hasLid)")
+    }
 }

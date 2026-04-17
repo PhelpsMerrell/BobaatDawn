@@ -374,6 +374,114 @@ final class SaveService {
         }
     }
     
+    // MARK: - Shared World Sync (Export / Import)
+    
+    /// Get the timestamp of the last save for comparison with the other player.
+    func getSaveTimestamp() -> Double {
+        loadGameState()?.lastSaved.timeIntervalSince1970 ?? 0
+    }
+    
+    /// Export the full world state + all NPC memories for network transfer.
+    func exportWorldSync(timeService: TimeService) -> WorldSyncMessage {
+        let worldState = loadGameState()
+        
+        // Gather all NPC memories
+        var memoryEntries: [NPCMemoryEntry] = []
+        if let context = modelContext {
+            do {
+                let allMemories = try context.fetch(FetchDescriptor<NPCMemory>())
+                memoryEntries = allMemories.map { m in
+                    NPCMemoryEntry(
+                        npcID: m.npcID,
+                        name: m.name,
+                        animalType: m.animalType,
+                        satisfactionScore: m.satisfactionScore,
+                        totalInteractions: m.totalInteractions,
+                        totalDrinksReceived: m.totalDrinksReceived,
+                        niceTreatmentCount: m.niceTreatmentCount,
+                        meanTreatmentCount: m.meanTreatmentCount,
+                        isLiberated: m.isLiberated,
+                        liberationDate: m.liberationDate?.timeIntervalSince1970
+                    )
+                }
+            } catch {
+                Log.error(.save, "Failed to export NPC memories: \(error)")
+            }
+        }
+        
+        return WorldSyncMessage(
+            dayCount: timeService.dayCount,
+            timePhase: timeService.currentPhase.displayName,
+            timeProgress: timeService.phaseProgress,
+            npcStatesJSON: worldState?.npcStatesJSON ?? "{}",
+            npcMemories: memoryEntries,
+            saveTimestamp: worldState?.lastSaved.timeIntervalSince1970 ?? 0
+        )
+    }
+    
+    /// Import a full world state from the other player, overwriting local data.
+    /// Called when the other player's save is newer than ours.
+    func importWorldSync(_ msg: WorldSyncMessage) {
+        guard let context = modelContext else {
+            Log.error(.save, "Cannot import world sync - SwiftData not initialized")
+            return
+        }
+        
+        do {
+            // Update world state
+            let worldState = getOrCreateWorldState()
+            worldState.dayCount = msg.dayCount
+            worldState.currentTimePhase = msg.timePhase
+            worldState.timeProgress = msg.timeProgress
+            worldState.npcStatesJSON = msg.npcStatesJSON
+            worldState.lastSaved = Date(timeIntervalSince1970: msg.saveTimestamp)
+            
+            // Import NPC memories (overwrite existing, create missing)
+            for entry in msg.npcMemories {
+                let descriptor = FetchDescriptor<NPCMemory>(
+                    predicate: #Predicate { $0.npcID == entry.npcID }
+                )
+                let memory: NPCMemory
+                if let existing = try context.fetch(descriptor).first {
+                    memory = existing
+                } else {
+                    memory = NPCMemory(npcID: entry.npcID, name: entry.name, animalType: entry.animalType)
+                    context.insert(memory)
+                }
+                
+                memory.satisfactionScore = entry.satisfactionScore
+                memory.totalInteractions = entry.totalInteractions
+                memory.totalDrinksReceived = entry.totalDrinksReceived
+                memory.niceTreatmentCount = entry.niceTreatmentCount
+                memory.meanTreatmentCount = entry.meanTreatmentCount
+                memory.isLiberated = entry.isLiberated
+                memory.liberationDate = entry.liberationDate.map { Date(timeIntervalSince1970: $0) }
+            }
+            
+            try context.save()
+            Log.info(.save, "World sync imported: day \(msg.dayCount), \(msg.npcMemories.count) NPC memories")
+            
+        } catch {
+            Log.error(.save, "Failed to import world sync: \(error)")
+        }
+    }
+    
+    /// Quick auto-save that touches the timestamp. Call on disconnect.
+    func autoSave(timeService: TimeService) {
+        let worldState = getOrCreateWorldState()
+        worldState.dayCount = timeService.dayCount
+        worldState.currentTimePhase = timeService.currentPhase.displayName
+        worldState.timeProgress = timeService.phaseProgress
+        worldState.lastSaved = Date()
+        
+        do {
+            try modelContext?.save()
+            Log.info(.save, "Auto-saved on disconnect (day \(worldState.dayCount))")
+        } catch {
+            Log.error(.save, "Auto-save failed: \(error)")
+        }
+    }
+    
     // MARK: - Debug
     func inspectSwiftDataContents() {
         guard let context = modelContext else {

@@ -64,6 +64,8 @@ class GameScene: BaseGameScene {
         
         if showGridOverlay { addGridOverlay() }
         
+        setupMultiplayer()  // → GameScene+Multiplayer.swift
+        
         gridService.printGridState()
         Log.info(.scene, "GameScene setup complete")
     }
@@ -275,6 +277,12 @@ class GameScene: BaseGameScene {
         Log.info(.time, "Phase monitoring initialized at \(lastTimePhase.displayName)")
     }
     
+    // MARK: - Multiplayer Sync Counters
+    private var npcSyncFrameCounter: Int = 0
+    private var snailSyncFrameCounter: Int = 0
+    private var timeSyncFrameCounter: Int = 0
+    private var autoSaveFrameCounter: Int = 0
+    
     // MARK: - Update Loop
     
     override open func updateSpecificContent(_ currentTime: TimeInterval) {
@@ -282,10 +290,26 @@ class GameScene: BaseGameScene {
         
         let currentPhase = timeService.currentPhase
         if currentPhase != lastTimePhase {
-            Log.info(.time, "Phase changed: \(lastTimePhase.displayName) → \(currentPhase.displayName)")
-            lastTimePhase = currentPhase
-            residentManager.handleTimePhaseChange(currentPhase)
-            handleRitualTimePhaseChange(currentPhase)  // → GameScene+Ritual.swift
+            // Guest receives phase changes from host's timePhaseChanged
+            // broadcast — don't also react to local phase detection, which
+            // can diverge slightly and cause double-firing.
+            if !MultiplayerService.shared.isGuest {
+                Log.info(.time, "Phase changed: \(lastTimePhase.displayName) → \(currentPhase.displayName)")
+                lastTimePhase = currentPhase
+                residentManager.handleTimePhaseChange(currentPhase)
+                handleRitualTimePhaseChange(currentPhase)  // → GameScene+Ritual.swift
+                
+                // Host broadcasts time phase to guest
+                if MultiplayerService.shared.isHost {
+                    MultiplayerService.shared.send(type: .timePhaseChanged, payload: TimePhaseChangedMessage(
+                        newPhase: currentPhase.displayName, dayCount: timeService.dayCount
+                    ))
+                }
+            } else {
+                // Guest: just track the phase locally for display purposes.
+                // Actual phase-change logic fires from the network handler.
+                lastTimePhase = currentPhase
+            }
         }
         
         updateTimeDisplay()
@@ -293,15 +317,55 @@ class GameScene: BaseGameScene {
         residentManager.update(deltaTime: 1.0 / 60.0)
         updateShopNPCs()
         
-        // Simulate snail wandering while player is in the shop
-        // Also check time activation so the snail wakes/sleeps even from the shop
-        let snailWorld = SnailWorldState.shared
-        if timeService.currentPhase == .night && !snailWorld.isActive {
-            snailWorld.activate()
-        } else if timeService.currentPhase != .night && snailWorld.isActive {
-            snailWorld.deactivate()
+        // HOST: Simulate snail wandering while player is in the shop
+        // Guest receives snail state via snailSync, so skip local simulation.
+        if !MultiplayerService.shared.isGuest {
+            let snailWorld = SnailWorldState.shared
+            if timeService.currentPhase == .night && !snailWorld.isActive {
+                snailWorld.activate()
+            } else if timeService.currentPhase != .night && snailWorld.isActive {
+                snailWorld.deactivate()
+            }
+            snailWorld.simulateWandering(deltaTime: 1.0 / 60.0)
         }
-        snailWorld.simulateWandering(deltaTime: 1.0 / 60.0)
+        
+        // HOST: Broadcast NPC + snail sync to guest periodically
+        if MultiplayerService.shared.isHost && MultiplayerService.shared.isConnected {
+            npcSyncFrameCounter += 1
+            snailSyncFrameCounter += 1
+            
+            // NPC sync every ~0.5s (30 frames)
+            if npcSyncFrameCounter >= 30 {
+                npcSyncFrameCounter = 0
+                broadcastNPCShopSync()
+            }
+            
+            // Snail sync every ~0.25s (15 frames) for tight position accuracy
+            if snailSyncFrameCounter >= 15 {
+                snailSyncFrameCounter = 0
+                broadcastSnailSync()
+            }
+            
+            // Time sync every ~5s (300 frames)
+            timeSyncFrameCounter += 1
+            if timeSyncFrameCounter >= 300 {
+                timeSyncFrameCounter = 0
+                MultiplayerService.shared.send(type: .timeSync, payload: TimeSyncMessage(
+                    phase: timeService.currentPhase.displayName,
+                    progress: timeService.phaseProgress,
+                    isFlowing: timeService.isTimeActive,
+                    dayCount: timeService.dayCount
+                ))
+            }
+        }
+        
+        // Periodic auto-save every ~2 minutes (7200 frames at 60fps)
+        // Ensures the shared world persists even if the app is killed.
+        autoSaveFrameCounter += 1
+        if autoSaveFrameCounter >= 7200 {
+            autoSaveFrameCounter = 0
+            SaveService.shared.autoSave(timeService: timeService)
+        }
     }
     
     private func updateTimeDisplay() {
@@ -321,8 +385,12 @@ class GameScene: BaseGameScene {
     // MARK: - Shop NPC Management
     
     private func updateShopNPCs() {
-        let dt = 1.0 / 60.0
-        for npc in npcs { npc.update(deltaTime: dt) }
+        // Guest: don't run NPC state machines — positions come from host sync.
+        // Still do cleanup to remove NPCs that have left the scene.
+        if !MultiplayerService.shared.isGuest {
+            let dt = 1.0 / 60.0
+            for npc in npcs { npc.update(deltaTime: dt) }
+        }
         
         let before = npcs.count
         npcs.removeAll { npc in
@@ -339,6 +407,33 @@ class GameScene: BaseGameScene {
         if npcs.count < before {
             Log.debug(.npc, "NPC cleanup: \(before - npcs.count) removed, \(npcs.count) remain")
         }
+    }
+    
+    // MARK: - Host Broadcast Helpers
+    
+    /// Sends current shop NPC positions + states to guest.
+    private func broadcastNPCShopSync() {
+        let entries: [NPCShopSyncEntry] = npcs.compactMap { npc in
+            guard let charId = npc.animalType.characterId else { return nil }
+            return NPCShopSyncEntry(
+                npcID: charId,
+                animalType: npc.animalType.rawValue,
+                position: CodablePoint(npc.position),
+                state: npc.currentState.displayName
+            )
+        }
+        guard !entries.isEmpty else { return }
+        MultiplayerService.shared.send(type: .npcShopSync, payload: NPCShopSyncMessage(entries: entries))
+    }
+    
+    /// Sends snail world state to guest.
+    private func broadcastSnailSync() {
+        let world = SnailWorldState.shared
+        MultiplayerService.shared.send(type: .snailSync, payload: SnailSyncMessage(
+            room: world.currentRoom,
+            position: CodablePoint(world.roomPosition),
+            isActive: world.isActive
+        ))
     }
     
     // MARK: - Table / Drink Placement
@@ -365,9 +460,25 @@ class GameScene: BaseGameScene {
         
         Log.info(.drink, "Placed drink on \(table.name ?? "table")")
         
+        // Reset stations now that the drink has been served
+        drinkCreator.resetStations(ingredientStations)
+        
         if table.name == "sacred_table" && isRitualActive {
             Log.info(.ritual, "Sacred table — triggering ritual sequence")
             triggerRitualSequence(drinkOnTable: drinkOnTable, sacredTable: table)
+        }
+        
+        // Broadcast drink placement so the other player sees it
+        if MultiplayerService.shared.isConnected {
+            MultiplayerService.shared.send(type: .drinkPlacedOnTable, payload: DrinkPlacedOnTableMessage(
+                tablePosition: CodablePoint(table.position),
+                slotIndex: existing.count,
+                hasTea: drink.children.contains { $0.name == "tea_black" },
+                hasIce: drink.children.contains { $0.name == "ice_cubes" },
+                hasBoba: drink.children.contains { $0.name == "topping_tapioca" },
+                hasFoam: drink.children.contains { $0.name == "foam_cheese" },
+                hasLid: drink.children.contains { $0.name == "lid_straw" }
+            ))
         }
     }
     
@@ -454,7 +565,19 @@ class GameScene: BaseGameScene {
             animationService.run(pulse, on: station, withKey: AnimationKeys.stationInteraction, completion: nil)
             station.interact()
             drinkCreator.updateDrink(from: ingredientStations)
+            
+            // If the player is carrying a drink, rebuild its visuals live
+            // so toggling stations updates the cup in hand.
+            if let carried = character.carriedItem {
+                drinkCreator.rebuildCarriedDrink(carried, from: ingredientStations)
+            }
+            
             Log.debug(.drink, "Station \(station.stationType) toggled")
+            
+            // Broadcast station toggle
+            MultiplayerService.shared.send(type: .stationToggled, payload: StationToggledMessage(
+                stationName: "\(station.stationType)", newState: "toggled"
+            ))
             
         } else if let saveButton = node as? SaveSystemButton {
             switch saveButton.buttonType {
@@ -475,12 +598,18 @@ class GameScene: BaseGameScene {
             trash.pickUp { Log.debug(.game, "Trash cleaned up") }
             transitionService.triggerHapticFeedback(type: .light)
             
+            // Broadcast trash cleaned
+            MultiplayerService.shared.send(type: .trashCleaned, payload: TrashCleanedMessage(
+                position: CodablePoint(trash.position), location: "shop"
+            ))
+            
         } else if node.name == "completed_drink_pickup" {
             if character.carriedItem == nil,
                let drink = drinkCreator.createCompletedDrink(from: ingredientStations) {
                 character.pickupItem(drink)
-                drinkCreator.resetStations(ingredientStations)
-                Log.info(.drink, "Picked up completed drink, stations reset")
+                // Stations stay active — they reset when the drink is placed on a table.
+                // This lets the player keep toggling ingredients while carrying.
+                Log.info(.drink, "Picked up completed drink")
             }
             
         } else if let rotatable = node as? RotatableObject {
@@ -489,8 +618,8 @@ class GameScene: BaseGameScene {
                 if character.carriedItem == nil {
                     let creation = drinkCreator.createPickupDrink(from: ingredientStations)
                     character.pickupItem(creation)
-                    drinkCreator.resetStations(ingredientStations)
-                    Log.info(.drink, "Picked up creation from creator, stations reset")
+                    // Stations stay active — they reset when the drink is placed on a table.
+                    Log.info(.drink, "Picked up creation from creator")
                 }
                 return
             }

@@ -26,6 +26,19 @@ enum AnimationDirection: Int, CaseIterable {
     case left = 6
     case downLeft = 7
     
+    var stringValue: String {
+        switch self {
+        case .down:      return "down"
+        case .downRight: return "downright"
+        case .right:     return "right"
+        case .upRight:   return "upright"
+        case .up:        return "up"
+        case .upLeft:    return "upleft"
+        case .left:      return "left"
+        case .downLeft:  return "downleft"
+        }
+    }
+    
     // 4-directional fallback mapping
     var simplified: AnimationDirection {
         switch self {

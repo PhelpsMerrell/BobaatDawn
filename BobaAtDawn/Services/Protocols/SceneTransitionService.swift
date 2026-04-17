@@ -12,6 +12,7 @@ enum GameSceneType {
     case game
     case forest
     case title
+    case bigOakTree
 }
 
 // MARK: - Transition Configuration
@@ -60,6 +61,23 @@ protocol SceneTransitionService {
     ///   - completion: Optional completion handler
     func transitionToGame(from forestScene: SKScene, completion: (() -> Void)?)
     
+    /// Transition into the Big Oak Tree interior scene.
+    /// - Parameters:
+    ///   - currentScene: The scene to leave (typically ForestScene).
+    ///   - completion: Optional completion handler.
+    func transitionToBigOakTree(from currentScene: SKScene, completion: (() -> Void)?)
+    
+    /// Transition to the ForestScene, starting in a specific room.
+    /// Use this when returning from a structure (e.g. the Big Oak Tree)
+    /// back into the forest at a specific room rather than the default Room 1.
+    /// - Parameters:
+    ///   - currentScene: The scene to leave.
+    ///   - targetRoom: The forest room number (1-5) to start in.
+    ///   - completion: Optional completion handler.
+    func transitionToForestRoom(from currentScene: SKScene,
+                                targetRoom: Int,
+                                completion: (() -> Void)?)
+    
     // MARK: - Forest Room Transitions
     
     /// Handle forest room-to-room transitions with black overlay
@@ -82,6 +100,25 @@ protocol SceneTransitionService {
                              lastTriggeredSide: String,
                              roomSetupAction: @escaping () -> Void,
                              completion: (() -> Void)?)
+    
+    /// Generic scene-internal room transition with an explicit spawn position.
+    /// Fades to black, runs `roomSetupAction`, teleports the character to
+    /// `spawnPosition`, snaps the camera, then fades back in.
+    /// Used by interior structures (e.g. Big Oak Tree stair transitions)
+    /// where left/right forest-edge repositioning logic doesn't apply.
+    /// - Parameters:
+    ///   - scene: The scene running the transition.
+    ///   - character: Character node to reposition.
+    ///   - camera: Camera to snap to the new position.
+    ///   - spawnPosition: World-space position to place the character at.
+    ///   - roomSetupAction: Action to rebuild the new room's contents.
+    ///   - completion: Optional completion handler.
+    func transitionInteriorRoom(in scene: SKScene,
+                                character: SKNode,
+                                camera: SKCameraNode,
+                                spawnPosition: CGPoint,
+                                roomSetupAction: @escaping () -> Void,
+                                completion: (() -> Void)?)
     
     // MARK: - Configuration Access
     

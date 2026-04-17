@@ -69,6 +69,9 @@ class BaseGameScene: SKScene, InputServiceDelegate {
     internal var longPressTarget: SKNode?
     internal lazy var longPressDuration: TimeInterval = configService.touchLongPressDuration
     
+    // MARK: - Remote Player
+    internal var remoteCharacter: RemoteCharacter?
+    
     // MARK: - Scene Setup (Template Methods - Override in subclasses)
     override func didMove(to view: SKView) {
         print("🎬 BaseGameScene: Starting setup with size: \(self.size)")
@@ -334,6 +337,47 @@ class BaseGameScene: SKScene, InputServiceDelegate {
         let deltaTime = currentTime - (lastUpdateTime ?? currentTime)
         lastUpdateTime = currentTime
         character?.update(deltaTime: deltaTime)
+        
+        // Interpolate remote player position
+        remoteCharacter?.interpolate(deltaTime: deltaTime)
+        
+        // Send local position to the other player
+        if MultiplayerService.shared.isConnected {
+            let dirString = character?.getCurrentAnimationDirection()?.stringValue ?? "down"
+            let scene: String
+            if self is GameScene {
+                scene = "shop"
+            } else if let forestScene = self as? ForestScene {
+                scene = "forest_\(forestScene.currentRoom)"
+            } else if let oakScene = self as? BigOakTreeScene {
+                scene = "oak_\(oakScene.currentOakRoom.rawValue)"
+            } else {
+                scene = "unknown"
+            }
+            
+            // Encode carried drink ingredients as a compact string.
+            // e.g. "TIBFL" = tea+ice+boba+foam+lid, nil = not carrying.
+            var drinkCode: String? = nil
+            if let carried = character?.carriedItem {
+                var code = ""
+                if carried.children.contains(where: { $0.name == "tea_black" })       { code += "T" }
+                if carried.children.contains(where: { $0.name == "ice_cubes" })        { code += "I" }
+                if carried.children.contains(where: { $0.name == "topping_tapioca" })  { code += "B" }
+                if carried.children.contains(where: { $0.name == "foam_cheese" })      { code += "F" }
+                if carried.children.contains(where: { $0.name == "lid_straw" })        { code += "L" }
+                if code.isEmpty { code = "C" } // carrying but empty cup
+                drinkCode = code
+            }
+            
+            MultiplayerService.shared.sendPositionIfNeeded(
+                position: character.position,
+                isMoving: character.isCurrentlyAnimating(),
+                animationDirection: dirString,
+                isCarrying: character.isCarrying,
+                carriedItemType: drinkCode,
+                sceneType: scene
+            )
+        }
         
         // Allow subclasses to add specific update logic
         updateSpecificContent(currentTime)

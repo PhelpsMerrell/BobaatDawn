@@ -23,6 +23,11 @@ protocol TimeService: AnyObject {
     /// Called by the game scene when dawn arrives to advance the day counter.
     func advanceDay()
     
+    /// Sync the runtime day count from a network source (e.g. host handshake)
+    /// without triggering persistence (the host persists). Updates the in-memory
+    /// cache so `isRitualDay` etc. reflect the correct value.
+    func syncDayCount(_ count: Int)
+    
     // Debug method for time control
     func setDebugPhase(_ phase: TimePhase)
 }
