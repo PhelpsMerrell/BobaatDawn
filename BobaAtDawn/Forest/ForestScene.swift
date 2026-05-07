@@ -9,6 +9,7 @@ import SpriteKit
 import UIKit // For haptic feedback
 import Foundation // For snail system
 
+@objc(ForestScene)
 class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
     
     // MARK: - Room System (Internal - accessible to extensions)
@@ -20,6 +21,7 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
     internal var roomIdentifier: SKLabelNode! // Big emoji in center
     internal var backDoor: SKLabelNode! // Return to shop (Room 1 only)
     internal var oakTreeEntrance: SKLabelNode? // Entrance to Big Oak Tree (Room 4 only)
+    internal var caveEntrance: SKLabelNode? // Entrance to Cave (Room 2 only)
     
     // MARK: - Transition Control
     private var isTransitioning: Bool = false
@@ -51,69 +53,30 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
     
     // MARK: - BaseGameScene Template Method Implementation
     override open func setupWorld() {
-        // Forest atmosphere - darker than shop
+        super.setupWorld()
         backgroundColor = SKColor(red: 0.2, green: 0.3, blue: 0.2, alpha: 1.0)
         
-        // Call base implementation for validation
-        super.setupWorld()
-        
-        // Validate world dimensions before creating sprites
         guard worldWidth > 0 && worldHeight > 0 else {
             Log.error(.forest, "Invalid world dimensions: \(worldWidth) x \(worldHeight)")
             return
         }
-        
-        let floorSize = CGSize(width: worldWidth, height: worldHeight)
-        guard floorSize.width > 0 && floorSize.height > 0 else {
-            Log.error(.forest, "Invalid floor size: \(floorSize)")
-            return
-        }
-        
-        let forestFloor = SKSpriteNode(color: SKColor(red: 0.15, green: 0.25, blue: 0.15, alpha: 1.0), 
-                                      size: floorSize)
-        forestFloor.position = CGPoint(x: 0, y: 0)
-        forestFloor.zPosition = -10
-        addChild(forestFloor)
-        
-        // Forest boundaries (darker trees)
-        setupForestBounds()
+
+        requiredSceneNode(named: "forest_floor", as: SKSpriteNode.self).zPosition = -10
+        requiredSceneNode(named: "forest_wall_top", as: SKSpriteNode.self).zPosition = -5
+        requiredSceneNode(named: "forest_wall_bottom", as: SKSpriteNode.self).zPosition = -5
+        requiredSceneNode(named: "forest_wall_left", as: SKSpriteNode.self).zPosition = -5
+        requiredSceneNode(named: "forest_wall_right", as: SKSpriteNode.self).zPosition = -5
         
         Log.info(.forest, "Forest world setup complete")
-    }
-    
-    private func setupForestBounds() {
-        let treeColor = SKColor(red: 0.1, green: 0.15, blue: 0.1, alpha: 1.0)
-        
-        // Top boundary
-        let wallTop = SKSpriteNode(color: treeColor, size: CGSize(width: worldWidth, height: 60))
-        wallTop.position = CGPoint(x: 0, y: worldHeight/2 - 30)
-        wallTop.zPosition = -5
-        addChild(wallTop)
-        
-        // Bottom boundary  
-        let wallBottom = SKSpriteNode(color: treeColor, size: CGSize(width: worldWidth, height: 60))
-        wallBottom.position = CGPoint(x: 0, y: -worldHeight/2 + 30)
-        wallBottom.zPosition = -5
-        addChild(wallBottom)
-        
-        // Left boundary (transition zone)
-        let wallLeft = SKSpriteNode(color: treeColor, size: CGSize(width: 60, height: worldHeight))
-        wallLeft.position = CGPoint(x: -worldWidth/2 + 30, y: 0)
-        wallLeft.zPosition = -5
-        wallLeft.name = "left_transition"
-        addChild(wallLeft)
-        
-        // Right boundary (transition zone)
-        let wallRight = SKSpriteNode(color: treeColor, size: CGSize(width: 60, height: worldHeight))
-        wallRight.position = CGPoint(x: worldWidth/2 - 30, y: 0)
-        wallRight.zPosition = -5
-        wallRight.name = "right_transition"
-        addChild(wallRight)
     }
     
     override open func setupSpecificContent() {
         // Register with resident manager
         residentManager.registerForestScene(self)
+        
+        // Ensure foraged spawns are generated for today
+        let timeService = serviceContainer.resolve(TimeService.self)
+        ForagingManager.shared.refreshIfNeeded(dayCount: timeService.dayCount)
         
         setupCurrentRoom()
         
@@ -132,14 +95,30 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         // Clear existing NPCs
         clearRoomNPCs()
         
+        // Clear existing foraged nodes from previous room
+        clearRoomForageNodes()
+        
+        // Despawn any gnomes still attached from a prior room — manager
+        // will respawn the right ones for the new room below.
+        GnomeManager.shared.despawnAllVisibleGnomes()
+        // Despawn the cart visual too — refreshForestGnomeSpawns will
+        // respawn it if the cart is logically in this room now.
+        GnomeManager.shared.despawnCartVisual()
+        
         // Use the new grid positioning system
         setupRoomWithGrid(currentRoom)
         
         // Add misty transition effects
         setupMistyEffects()
         
+        // Spawn foraged ingredients for this room
+        spawnForageNodesForRoom(currentRoom)
+        
         // Notify resident manager of room change
         residentManager.forestRoomChanged(to: currentRoom, scene: self)
+        
+        // Spawn any gnomes currently transiting through this forest room.
+        refreshForestGnomeSpawns()  // → ForestScene+Gnomes.swift
         
         Log.debug(.forest, "Room \(currentRoom) setup complete")
     }
@@ -155,53 +134,32 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         roomNPCs.removeAll()
     }
     
+    // MARK: - Foraged Ingredient System
+    
+    private func clearRoomForageNodes() {
+        children.compactMap { $0 as? ForageNode }.forEach { $0.removeFromParent() }
+    }
+    
+    private func spawnForageNodesForRoom(_ room: Int) {
+        let spawns = ForagingManager.shared.spawnsFor(.forestRoom(room))
+        for spawn in spawns {
+            let node = ForageNode(spawn: spawn)
+            addChild(node)
+        }
+        if !spawns.isEmpty {
+            Log.debug(.forest, "Spawned \(spawns.count) foraged items in forest room \(room)")
+        }
+    }
+    
     // MARK: - Misty Visual Effects
     private func setupMistyEffects() {
-        print("🌫️ Setting up misty effects with world dimensions: \\(worldWidth) x \\(worldHeight)")
-        
-        // Remove existing mist if present
-        leftMist?.removeFromParent()
-        rightMist?.removeFromParent()
-        leftHintEmoji?.removeFromParent()
-        rightHintEmoji?.removeFromParent()
-        
-        // Validate world dimensions before creating misty sprites
-        guard worldWidth > 0 && worldHeight > 0 else {
-            Log.error(.forest, "Invalid world dimensions for mist")
-            return
-        }
-        
-        // Create smaller walkable side transition areas (1/3 width)
-        let baseColor = SKColor(red: 0.25, green: 0.35, blue: 0.25, alpha: 1.0) // Slightly lighter than floor
-        
-        // FIXED: Validate mist sizes before creating sprites
-        let mistSize = CGSize(width: 133, height: worldHeight)
-        guard mistSize.width > 0 && mistSize.height > 0 else {
-            Log.error(.forest, "Invalid mist size")
-            return
-        }
-        
-        // Left transition area - smaller walkable rectangle (1/3 width = ~133pt)
-        leftMist = SKSpriteNode(color: baseColor, size: mistSize)
-        leftMist.position = CGPoint(x: -worldWidth/2 + 67, y: 0) // Left side, centered in area
-        leftMist.zPosition = -8 // Below character but above floor
-        addChild(leftMist)
-        
-        // Right transition area - smaller walkable rectangle (1/3 width = ~133pt)
-        rightMist = SKSpriteNode(color: baseColor, size: mistSize)
-        rightMist.position = CGPoint(x: worldWidth/2 - 67, y: 0) // Right side, centered in area
-        rightMist.zPosition = -8 // Below character but above floor
-        addChild(rightMist)
-        
-        print("🌫️ Created mist sprites successfully with size: \\(mistSize)")
-        
-        // Start the pulsing animation immediately
+        leftMist = requiredSceneNode(named: "left_mist", as: SKSpriteNode.self)
+        rightMist = requiredSceneNode(named: "right_mist", as: SKSpriteNode.self)
+        leftMist.zPosition = -8
+        rightMist.zPosition = -8
+        leftMist.removeAllActions()
+        rightMist.removeAllActions()
         startPulsingAnimation()
-        
-        // Add subtle hint emojis for next/previous rooms
-        setupHintEmojis()
-        
-        print("🌫️ Smaller transition areas created (133pt wide) with pulsing effect")
     }
     
     private func startPulsingAnimation() {
@@ -221,37 +179,6 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         print("✨ AnimationService pulsing started for forest transition areas")
     }
     
-    private func setupHintEmojis() {
-        let hintAlpha: CGFloat = 0.3 // Subtle visibility
-        let hintSize: CGFloat = 40 // Small size
-        
-        // Left hint (previous room) - on edge of forest floor, vertically centered
-        let previousRoomEmoji = roomEmojis[getPreviousRoom()]
-        leftHintEmoji = SKLabelNode(text: previousRoomEmoji)
-        leftHintEmoji.fontSize = hintSize
-        leftHintEmoji.fontName = "Arial"
-        leftHintEmoji.alpha = hintAlpha
-        leftHintEmoji.horizontalAlignmentMode = .center
-        leftHintEmoji.verticalAlignmentMode = .center
-        leftHintEmoji.position = CGPoint(x: -worldWidth/2 + 50, y: 0) // Left edge, vertically centered
-        leftHintEmoji.zPosition = 3
-        addChild(leftHintEmoji)
-        
-        // Right hint (next room) - on edge of forest floor, vertically centered
-        let nextRoomEmoji = roomEmojis[getNextRoom()]
-        rightHintEmoji = SKLabelNode(text: nextRoomEmoji)
-        rightHintEmoji.fontSize = hintSize
-        rightHintEmoji.fontName = "Arial"
-        rightHintEmoji.alpha = hintAlpha
-        rightHintEmoji.horizontalAlignmentMode = .center
-        rightHintEmoji.verticalAlignmentMode = .center
-        rightHintEmoji.position = CGPoint(x: worldWidth/2 - 50, y: 0) // Right edge, vertically centered
-        rightHintEmoji.zPosition = 3
-        addChild(rightHintEmoji)
-        
-        print("👁️ Hint emojis added: \\(previousRoomEmoji) ←→ \\(nextRoomEmoji)")
-    }
-    
     // MARK: - BaseGameScene Template Method Implementation
     override open func handleSceneSpecificTouch(_ touches: Set<UITouch>, with event: UIEvent?) -> Bool {
         guard let touch = touches.first else { return false }
@@ -267,6 +194,27 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         // Check for Big Oak Tree entrance (only in Room 4)
         if currentRoom == 4 && touchedNode.name == "oak_tree_entrance" {
             startLongPress(for: touchedNode, at: location)
+            return true
+        }
+        
+        // Check for Cave entrance (only in Room 2)
+        if currentRoom == 2 && touchedNode.name == "cave_entrance" {
+            startLongPress(for: touchedNode, at: location)
+            return true
+        }
+        
+        // Check for forest house entry (house_1 … house_4 in any room).
+        // Touch may land on the house label itself or on its `house_name_tag`
+        // child — walk up to find the house node.
+        if let houseNode = findHouseAncestor(touchedNode) {
+            startLongPress(for: houseNode, at: location)
+            return true
+        }
+        
+        // Check for foraged-item interaction (matcha, strawberry, etc.)
+        if touchedNode is ForageNode || touchedNode.parent is ForageNode {
+            let forageNode = (touchedNode as? ForageNode) ?? (touchedNode.parent as! ForageNode)
+            startLongPress(for: forageNode, at: location)
             return true
         }
         
@@ -301,10 +249,56 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
             // Haptic feedback for entering the oak tree
             triggerSuccessFeedback()
             enterBigOakTree()
+        } else if node.name == "cave_entrance" {
+            // Haptic feedback for entering the cave
+            triggerSuccessFeedback()
+            enterCave()
+        } else if let houseNumber = houseNumber(from: node) {
+            triggerSuccessFeedback()
+            enterHouse(houseNumber: houseNumber)
+        } else if let forage = node as? ForageNode {
+            // Pick up a foraged ingredient — only if not already carrying something
+            guard character.carriedItem == nil else {
+                Log.debug(.forest, "Can't pick up \(forage.ingredient.displayName) — already carrying an item")
+                return
+            }
+            
+            let spawnID = forage.spawnID
+            let ingredient = forage.ingredient
+            let location = forage.location
+            
+            forage.pickUp {
+                Log.info(.forest, "Picked up \(ingredient.displayName) (\(spawnID))")
+            }
+            
+            // Mark as collected in the foraging registry
+            ForagingManager.shared.collect(spawnID: spawnID)
+            
+            // Give the player the carriable form
+            let carriable = ingredient.makeCarriable()
+            character.pickupItem(carriable)
+            
+            transitionService.triggerHapticFeedback(type: .light)
+            
+            // Broadcast pickup to other player
+            MultiplayerService.shared.send(
+                type: .itemForaged,
+                payload: ItemForagedMessage(
+                    spawnID: spawnID,
+                    locationKey: location.stringKey
+                )
+            )
         } else if let trash = node as? Trash {
             // Pick up trash in the forest
             print("🗑 Picking up forest trash")
             let trashPos = trash.position
+            
+            // Remove from the world registry so it doesn't ghost back
+            // on re-entry / app restart.
+            if let id = trash.userData?["worldItemID"] as? String {
+                WorldItemRegistry.shared.remove(id: id)
+            }
+            
             trash.pickUp {
                 print("🗑 ✅ Forest trash cleaned up!")
             }
@@ -314,6 +308,10 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
             MultiplayerService.shared.send(type: .trashCleaned, payload: TrashCleanedMessage(
                 position: CodablePoint(trashPos), location: "forest_room_\(self.currentRoom)"
             ))
+            // Chronicle hook
+            DailyChronicleLedger.shared.recordTrashCleaned(
+                location: "forest room \(self.currentRoom)"
+            )
         }
     }
     
@@ -388,6 +386,9 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         // Dismiss any active dialogue before leaving
         DialogueService.shared.dismissDialogue()
         
+        // Despawn gnomes — they'll show up wherever we land.
+        GnomeManager.shared.despawnAllVisibleGnomes()
+        
         // Use transition service for returning to game
         transitionService.transitionToGame(from: self) {
             print("🏠 Successfully returned to boba shop")
@@ -400,10 +401,65 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         // Dismiss any active dialogue before leaving
         DialogueService.shared.dismissDialogue()
         
+        // Despawn gnomes — they'll re-render in the oak.
+        GnomeManager.shared.despawnAllVisibleGnomes()
+        
         // Use transition service to enter the oak tree interior
         transitionService.transitionToBigOakTree(from: self) {
             print("🌳 Successfully entered the Big Oak Tree")
         }
+    }
+    
+    private func enterCave() {
+        Log.info(.forest, "Entering Cave from Room \(currentRoom)")
+        
+        // Dismiss any active dialogue before leaving
+        DialogueService.shared.dismissDialogue()
+        
+        // Despawn gnomes — they'll re-render in the cave.
+        GnomeManager.shared.despawnAllVisibleGnomes()
+        
+        // Use transition service to enter the cave interior
+        transitionService.transitionToCave(from: self) {
+            print("🕳️ Successfully entered the Cave")
+        }
+    }
+    
+    // MARK: - House Entry
+    private func enterHouse(houseNumber: Int) {
+        Log.info(.forest, "Entering House \(houseNumber) in Room \(currentRoom)")
+        
+        DialogueService.shared.dismissDialogue()
+        
+        transitionService.transitionToHouse(from: self, room: currentRoom, house: houseNumber) {
+            print("🏡 Successfully entered house \(houseNumber)")
+        }
+    }
+    
+    /// Walk up the ancestor chain looking for a node named `house_1`…`house_4`.
+    /// Returns that node (so callers can long-press it) or nil if none found.
+    private func findHouseAncestor(_ node: SKNode) -> SKNode? {
+        var current: SKNode? = node
+        while let candidate = current {
+            if houseNumber(from: candidate) != nil {
+                return candidate
+            }
+            current = candidate.parent
+        }
+        return nil
+    }
+    
+    /// Extract the house slot (1–4) from a node named `house_1`…`house_4`.
+    /// Returns nil for anything else (including `house_name_tag`).
+    private func houseNumber(from node: SKNode) -> Int? {
+        guard let name = node.name,
+              name.hasPrefix("house_"),
+              name != "house_name_tag",
+              let num = Int(name.dropFirst("house_".count)),
+              (1...4).contains(num) else {
+            return nil
+        }
+        return num
     }
     
     override open func updateSpecificContent(_ currentTime: TimeInterval) {
@@ -420,6 +476,10 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         
         // Update snail behavior
         updateSnailBehavior()
+        
+        // Drive ambient gnome ↔ gnome chatter for any gnomes transiting
+        // through this forest room.
+        tickForestGnomeConversation()  // → ForestScene+Gnomes.swift
         
         // HOST: Broadcast forest NPC positions to guest every ~0.5s
         if MultiplayerService.shared.isHost && MultiplayerService.shared.isConnected {
@@ -466,6 +526,12 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
     
     // MARK: - Snail System
     internal func setupSnail() {
+        // Idempotent guard: remove any existing snail nodes (defensive
+        // against stale visuals carried over from a previous scene
+        // presentation or accidental double-init). There must be exactly
+        // one SnailNPC in the scene tree at any time.
+        children.compactMap { $0 as? SnailNPC }.forEach { $0.removeFromParent() }
+
         // Create the snail visual node with time service dependency
         let timeService = serviceContainer.resolve(TimeService.self)
         snail = SnailNPC(timeService: timeService)
@@ -547,13 +613,24 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
     
     private func updateSnailBehavior() {
         guard let snail = snail else { return }
-        
-        // The snail syncs its visibility/position with the persistent SnailWorldState
+
+        // HOST drives ALL snail simulation — a single per-frame tick on
+        // SnailWorldState that handles same-room hunting, different-room
+        // drift, and shop-only wander. Guest never simulates.
+        if !MultiplayerService.shared.isGuest {
+            SnailWorldState.shared.tickHost(
+                deltaTime: 1.0 / 60.0,
+                hostRoom: currentRoom,
+                hostPosition: character?.position ?? .zero
+            )
+        }
+
+        // Both sides: visual mirrors world state.
         snail.syncWithWorldState(
             playerRoom: currentRoom,
             playerPosition: character?.position ?? .zero
         )
-        
+
         // GRACE PERIOD OVERRIDE: syncWithWorldState may call fadeIn() which
         // enables contact. If the grace period is still active, force
         // contact back off so the player can't be caught during the first
@@ -561,9 +638,8 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         if snailGracePeriodActive {
             snail.setContactEnabled(false)
         }
-        
-        // HOST: Broadcast snail sync to guest from the forest too
-        // (GameScene broadcasts when host is in the shop, this covers the forest).
+
+        // HOST: Broadcast snail sync to guest.
         if MultiplayerService.shared.isHost && MultiplayerService.shared.isConnected {
             snailSyncFrameCounter += 1
             if snailSyncFrameCounter >= 15 {

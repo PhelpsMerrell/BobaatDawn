@@ -60,7 +60,6 @@ class StandardSceneTransitionService: SceneTransitionService {
             
             // Create new scene
             let newScene = self.createScene(type: targetSceneType, size: currentScene.size)
-            newScene.scaleMode = .aspectFill
             
             // Present with transition
             if let transition = transitionConfig.transitionType {
@@ -89,6 +88,41 @@ class StandardSceneTransitionService: SceneTransitionService {
         transition(from: currentScene, to: .bigOakTree, config: nil, completion: completion)
     }
     
+    func transitionToCave(from currentScene: SKScene, completion: (() -> Void)? = nil) {
+        print("🕳️ Entering Cave...")
+        transition(from: currentScene, to: .cave, config: nil, completion: completion)
+    }
+    
+    func transitionToHouse(from currentScene: SKScene,
+                           room: Int,
+                           house: Int,
+                           completion: (() -> Void)? = nil) {
+        let config = defaultSceneTransitionConfig
+        if config.hapticFeedback {
+            triggerHapticFeedback(type: .success)
+        }
+        print("🏡 Entering House — Room \(room), House \(house)...")
+        
+        let fadeOut = SKAction.fadeOut(withDuration: config.fadeOutDuration)
+        currentScene.run(fadeOut) { [weak self] in
+            guard let self = self else { return }
+            
+            // Create the HouseScene directly so we can set its
+            // parameters BEFORE didMove(to:) fires.
+            let newScene = SceneFactory.loadHouseScene(size: currentScene.size)
+            newScene.currentForestRoom = max(1, min(5, room))
+            newScene.currentHouseNumber = max(1, min(4, house))
+            
+            if let transition = config.transitionType {
+                currentScene.view?.presentScene(newScene, transition: transition)
+            } else {
+                let fade = SKTransition.fade(withDuration: config.fadeInDuration)
+                currentScene.view?.presentScene(newScene, transition: fade)
+            }
+            completion?()
+        }
+    }
+    
     func transitionToForestRoom(from currentScene: SKScene,
                                 targetRoom: Int,
                                 completion: (() -> Void)? = nil) {
@@ -104,8 +138,7 @@ class StandardSceneTransitionService: SceneTransitionService {
             
             // Create ForestScene directly so we can set its starting room
             // BEFORE didMove(to:) runs (setupSpecificContent reads currentRoom).
-            let newScene = ForestScene(size: currentScene.size)
-            newScene.scaleMode = .aspectFill
+            let newScene = SceneFactory.loadForestScene(size: currentScene.size)
             let clamped = max(1, min(5, targetRoom))
             newScene.currentRoom = clamped
             
@@ -279,13 +312,25 @@ class StandardSceneTransitionService: SceneTransitionService {
     func createScene(type: GameSceneType, size: CGSize) -> SKScene {
         switch type {
         case .game:
-            return GameScene(size: size)
+            return SceneFactory.loadGameScene(size: size)
         case .forest:
-            return ForestScene(size: size)
+            return SceneFactory.loadForestScene(size: size)
         case .title:
-            return TitleScene(size: size)
+            return SceneFactory.loadTitleScene(size: size)
         case .bigOakTree:
-            return BigOakTreeScene(size: size)
+            return SceneFactory.loadBigOakTreeScene(size: size)
+        case .cave:
+            return SceneFactory.loadCaveScene(size: size)
+        case .house:
+            // Note: callers wanting specific room/house parameters should use
+            // transitionToHouse(from:room:house:) directly. This path returns
+            // a HouseScene at defaults (Room 1, House 1).
+            return SceneFactory.loadHouseScene(size: size)
+        case .cave:
+            // CaveScene always enters at `.entrance` by default; no
+            // per-floor parameterization needed here since descent is
+            // handled by in-scene stair transitions.
+            return SceneFactory.loadCaveScene(size: size)
         }
     }
     // MARK: - Haptic Feedback

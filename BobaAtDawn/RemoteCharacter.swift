@@ -16,7 +16,23 @@ class RemoteCharacter: SKSpriteNode {
     private var targetPosition: CGPoint = .zero
     private let lerpSpeed: CGFloat = 12.0
     private var playerLabel: SKLabelNode!
-    
+
+    // MARK: - Extrapolation State
+    //
+    // We send player position at 20Hz over unreliable transport. When a
+    // packet drops or arrives late, the remote character would freeze
+    // until the next packet arrives, producing visible stutter. To hide
+    // the gap, we estimate velocity from successive position updates
+    // and advance the target forward by velocity × dt each frame for a
+    // bounded window after the last known update.
+    private var lastUpdateRealTime: TimeInterval = 0
+    private var lastUpdatePosition: CGPoint = .zero
+    private var velocity: CGVector = .zero
+    /// Don't extrapolate beyond this much real time after the last
+    /// received packet — prevents runaway prediction when the partner
+    /// disconnects or stops moving abruptly.
+    private let maxExtrapolationDuration: TimeInterval = 0.25
+
     // MARK: - Carried Drink Visual
     private var carriedDrinkNode: SKNode?
     private var lastDrinkCode: String? = nil
@@ -55,7 +71,27 @@ class RemoteCharacter: SKSpriteNode {
     }
 
     func applyRemoteUpdate(_ msg: PlayerPositionMessage) {
-        targetPosition = msg.position.cgPoint
+        let now = CACurrentMediaTime()
+        let newPos = msg.position.cgPoint
+
+        // Estimate velocity from successive packets so we can
+        // extrapolate between them. Ignore degenerate dt values.
+        if lastUpdateRealTime > 0 {
+            let dt = now - lastUpdateRealTime
+            if dt > 0.001 && dt < 0.5 {
+                let dx = newPos.x - lastUpdatePosition.x
+                let dy = newPos.y - lastUpdatePosition.y
+                if msg.isMoving && hypot(dx, dy) > 1.0 {
+                    velocity = CGVector(dx: dx / CGFloat(dt), dy: dy / CGFloat(dt))
+                } else {
+                    velocity = .zero
+                }
+            }
+        }
+        lastUpdateRealTime = now
+        lastUpdatePosition = newPos
+
+        targetPosition = newPos
 
         if msg.isMoving {
             if let dirString = msg.animationDirection,
@@ -77,6 +113,21 @@ class RemoteCharacter: SKSpriteNode {
 
     func interpolate(deltaTime: TimeInterval) {
         let dt = CGFloat(deltaTime)
+
+        // Extrapolate the target forward when the partner is moving
+        // and the last packet is recent. This hides packet drops/late
+        // arrivals so the remote character keeps moving smoothly
+        // instead of stuttering at the last known position.
+        if isRemoteMoving && lastUpdateRealTime > 0 {
+            let timeSinceUpdate = CACurrentMediaTime() - lastUpdateRealTime
+            if timeSinceUpdate < maxExtrapolationDuration {
+                targetPosition = CGPoint(
+                    x: targetPosition.x + velocity.dx * dt,
+                    y: targetPosition.y + velocity.dy * dt
+                )
+            }
+        }
+
         let dx = targetPosition.x - position.x
         let dy = targetPosition.y - position.y
         let factor = min(1.0, lerpSpeed * dt)
@@ -121,8 +172,22 @@ class RemoteCharacter: SKSpriteNode {
     }
     
     /// Build a drink visual from a compact ingredient code string.
-    /// "T" = tea, "I" = ice, "B" = boba, "F" = foam, "L" = lid, "C" = empty cup only.
+    /// "T" = tea, "I" = ice, "B" = boba, "F" = foam, "L" = lid,
+    /// "C" = empty cup only, "M" = matcha leaf.
     private func buildDrinkFromCode(_ code: String) -> SKNode {
+        // Matcha leaf — simple emoji, no boba atlas needed
+        if code == "M" {
+            let container = SKNode()
+            let emoji = SKLabelNode(text: "\u{1F343}")
+            emoji.fontSize = 22
+            emoji.horizontalAlignmentMode = .center
+            emoji.verticalAlignmentMode = .center
+            emoji.position = .zero
+            emoji.zPosition = 1
+            container.addChild(emoji)
+            return container
+        }
+        
         let container = SKNode()
         let atlas = SKTextureAtlas(named: "Boba")
         let cupTex = atlas.textureNamed("cup_empty")

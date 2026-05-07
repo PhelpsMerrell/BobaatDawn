@@ -33,7 +33,6 @@ class RitualArea: SKNode {
     // MARK: - Properties
     private(set) var ritualState: RitualState = .dormant
     private var candles: [RitualCandle] = []
-    private var sacredHarp: SacredHarp!
     private var sacredTable: RotatableObject!
     
     // Grid positioning
@@ -49,6 +48,11 @@ class RitualArea: SKNode {
     // Callbacks
     var onNPCSummoned: ((NPCResident) -> Void)?
     var onRitualCompleted: ((NPCResident) -> Void)?
+    /// Fired when the seventh candle is lit. GameScene uses this to
+    /// detect the case where the player placed a drink on the sacred
+    /// table BEFORE finishing the candles — the ritual completes the
+    /// moment the gate opens.
+    var onCandlesAllLit: (() -> Void)?
     
     // MARK: - Initialization
     init(gridService: GridService, centerPosition: GridCoordinate) {
@@ -79,13 +83,18 @@ class RitualArea: SKNode {
         
         // Create ritual items
         createCandles()
-        createSacredHarp()
         createSacredTable()
         
         // Spawn animation
         spawnAnimation()
         
         Log.info(.ritual, "DAWN RITUAL MANIFESTS — candles and harp appear")
+        
+        // Summon the chosen NPC NOW, at dawn, rather than waiting for the
+        // player to play the harp. The NPC walks to the sacred table and
+        // sits, ready to receive their final boba once the player has
+        // lit all 7 candles. The harp is now atmospheric.
+        summonChosenNPC()
     }
     
     private func createCandles() {
@@ -126,23 +135,8 @@ class RitualArea: SKNode {
         return positions
     }
     
-    private func createSacredHarp() {
-        sacredHarp = SacredHarp()
-        let worldPos = gridService.gridToWorld(centerPosition)
-        sacredHarp.position = worldPos
-        
-        // Set up harp callback
-        sacredHarp.onPlayed = { [weak self] in
-            self?.harpPlayed()
-        }
-        
-        addChild(sacredHarp)
-        Log.debug(.ritual, "Sacred harp placed at center")
-    }
-    
     private func createSacredTable() {
-        // FIXED: Use centralized position from GameConfig
-        let tablePosition = GameConfig.Ritual.sacredTablePosition
+        let tablePosition = centerPosition
         let worldPos = gridService.gridToWorld(tablePosition)
         
         sacredTable = RotatableObject(type: .furniture, color: SKColor.gold, shape: "table")
@@ -175,24 +169,18 @@ class RitualArea: SKNode {
         
         ritualState = .candlesLit
         
-        // Activate the sacred harp
-        sacredHarp.activate()
+        Log.info(.ritual, "ALL CANDLES LIT — the gate opens")
         
-        Log.info(.ritual, "ALL CANDLES LIT — sacred harp awakens")
-    }
-    
-    private func harpPlayed() {
-        guard ritualState == .candlesLit else { return }
-        
-        ritualState = .npcSummoned
-        
-        // Find and summon the chosen NPC
-        summonChosenNPC()
-        
-        Log.info(.ritual, "LIBERATION SONG — a soul responds")
+        // Notify GameScene so it can complete a ritual whose drink was
+        // placed on the sacred table BEFORE the last candle was lit.
+        onCandlesAllLit?()
     }
     
     private func summonChosenNPC() {
+        // Idempotent: spawnRitual now calls this, and harpPlayed used to
+        // (legacy paths may still flow through). Don't double-summon.
+        guard chosenNPC == nil else { return }
+        
         chosenNPC = selectNPCForLiberation()
         
         guard let chosenResident = chosenNPC else {
@@ -302,12 +290,18 @@ class RitualArea: SKNode {
             candle.fadeAway()
         }
         
-        sacredHarp?.fadeAway()
         sacredTable?.fadeAway()
         
         candles.removeAll()
         
         Log.info(.ritual, "Dawn ritual fades — until next dawn")
+    }
+    
+    /// True once every ritual candle is lit. Used by GameScene to gate
+    /// the "drink on sacred table → trigger ritual sequence" path so the
+    /// player must complete the candle round before liberation can fire.
+    func areCandlesAllLit() -> Bool {
+        return litCandleCount >= GameConfig.Ritual.candleCount
     }
     
     // MARK: - Public Interface

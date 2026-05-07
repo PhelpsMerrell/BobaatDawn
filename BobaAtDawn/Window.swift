@@ -8,7 +8,12 @@
 import SpriteKit
 
 // MARK: - Time Window
+@objc(Window)
 class Window: SKSpriteNode {
+
+    private enum CodingKeys {
+        static let currentPhase = "editorWindowPhase"
+    }
     
     // MARK: - Window Properties
     private let windowSize = CGSize(width: 80, height: 80)
@@ -36,7 +41,19 @@ class Window: SKSpriteNode {
     }
     
     required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+        self.targetColor = phaseColors[.day] ?? SKColor.white
+        super.init(coder: aDecoder)
+        currentPhase = Window.phase(from: aDecoder.decodeObject(forKey: CodingKeys.currentPhase) as? String)
+        targetColor = phaseColors[currentPhase] ?? color
+        if childNode(withName: "window_border") == nil {
+            setupWindow()
+        }
+        setupTimeCallbacks()
+    }
+
+    override func encode(with coder: NSCoder) {
+        super.encode(with: coder)
+        coder.encode(Window.string(from: currentPhase), forKey: CodingKeys.currentPhase)
     }
     
     // MARK: - Setup
@@ -139,6 +156,16 @@ class Window: SKSpriteNode {
     
     func resetToCurrentPhase() {
         transitionToPhase(currentPhase)
+    }
+}
+
+private extension Window {
+    static func string(from phase: TimePhase) -> String {
+        phase.displayName
+    }
+
+    static func phase(from string: String?) -> TimePhase {
+        TimePhase.allCases.first(where: { $0.displayName == string }) ?? .day
     }
 }
 

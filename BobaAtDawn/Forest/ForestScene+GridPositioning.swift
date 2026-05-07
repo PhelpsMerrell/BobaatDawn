@@ -2,468 +2,127 @@
 //  ForestScene+GridPositioning.swift
 //  BobaAtDawn
 //
-//  Forest room positioning using grid coordinates - FIXED
+//  Editor-first forest room layout. Static room contents now live in
+//  ForestScene.sks and code only toggles the active room plus dynamic labels.
 //
 
 import SpriteKit
 
-// MARK: - Forest Room Configuration
-struct ForestRoomConfig {
-    let roomNumber: Int
-    let emoji: String
-    
-    // Grid positions for room elements
-    let roomIdentifierPosition: GridCoordinate
-    let backDoorPosition: GridCoordinate?  // Only Room 1
-    let leftHintPosition: GridCoordinate
-    let rightHintPosition: GridCoordinate
-    
-    // Structure entrances (only populated for rooms that have one)
-    let oakTreeEntrancePosition: GridCoordinate?  // Only Room 4
-    
-    // Special object positions
-    let specialObjects: [String: GridCoordinate]
-    
-    static func config(for room: Int) -> ForestRoomConfig {
-        let roomEmojis = ["", "🍄", "⛰️", "⭐", "💎", "🌳"]
-        
-        switch room {
-        case 1: // Mushroom Room
-            return ForestRoomConfig(
-                roomNumber: 1,
-                emoji: roomEmojis[1],
-                roomIdentifierPosition: GridCoordinate(x: 16, y: 12),
-                backDoorPosition: GridCoordinate(x: 16, y: 20),
-                leftHintPosition: GridCoordinate(x: 3, y: 12),
-                rightHintPosition: GridCoordinate(x: 29, y: 12),
-                oakTreeEntrancePosition: nil,
-                specialObjects: [:] // No special objects - clean look
-            )
-            
-        case 2: // Mountain Room
-            return ForestRoomConfig(
-                roomNumber: 2,
-                emoji: roomEmojis[2],
-                roomIdentifierPosition: GridCoordinate(x: 16, y: 12),
-                backDoorPosition: nil,
-                leftHintPosition: GridCoordinate(x: 3, y: 12),
-                rightHintPosition: GridCoordinate(x: 29, y: 12),
-                oakTreeEntrancePosition: nil,
-                specialObjects: [:] // No special objects - clean look
-            )
-            
-        case 3: // Star Room
-            return ForestRoomConfig(
-                roomNumber: 3,
-                emoji: roomEmojis[3],
-                roomIdentifierPosition: GridCoordinate(x: 16, y: 12),
-                backDoorPosition: nil,
-                leftHintPosition: GridCoordinate(x: 3, y: 12),
-                rightHintPosition: GridCoordinate(x: 29, y: 12),
-                oakTreeEntrancePosition: nil,
-                specialObjects: [:] // No special objects - clean look
-            )
-            
-        case 4: // Diamond Room  
-            return ForestRoomConfig(
-                roomNumber: 4,
-                emoji: roomEmojis[4],
-                roomIdentifierPosition: GridCoordinate(x: 16, y: 12),
-                backDoorPosition: nil,
-                leftHintPosition: GridCoordinate(x: 3, y: 12),
-                rightHintPosition: GridCoordinate(x: 29, y: 12),
-                oakTreeEntrancePosition: GridCoordinate(x: 16, y: 18),  // Entry to the Big Oak Tree
-                specialObjects: [:] // No special objects - clean look
-            )
-            
-        case 5: // Tree Room
-            return ForestRoomConfig(
-                roomNumber: 5,
-                emoji: roomEmojis[5],
-                roomIdentifierPosition: GridCoordinate(x: 16, y: 12),
-                backDoorPosition: nil,
-                leftHintPosition: GridCoordinate(x: 3, y: 12),
-                rightHintPosition: GridCoordinate(x: 29, y: 12),
-                oakTreeEntrancePosition: nil,
-                specialObjects: [:] // No special objects - clean look
-            )
-            
-        default:
-            return config(for: 1) // Default to Room 1
-        }
-    }
+private enum ForestLayout {
+    static let roomNumbers = [1, 2, 3, 4, 5]
 }
 
-// MARK: - ForestScene Grid Positioning Extension
+// MARK: - ForestScene Editor Layout Extension
 extension ForestScene {
-    
-    /// Setup room using grid positioning system
-    /// - Parameter roomNumber: Which room to set up (1-5)
+
     func setupRoomWithGrid(_ roomNumber: Int) {
-        let config = ForestRoomConfig.config(for: roomNumber)
-        
-        // Remove previous room elements
-        roomIdentifier?.removeFromParent()
-        backDoor?.removeFromParent()
-        oakTreeEntrance?.removeFromParent()
-        leftHintEmoji?.removeFromParent()
-        rightHintEmoji?.removeFromParent()
-        
-        // Clear any special objects from previous room
-        removeSpecialObjects()
-        
-        // Room identifier (big emoji in center)
-        roomIdentifier = SKLabelNode(text: config.emoji)
-        roomIdentifier!.fontSize = 120
-        roomIdentifier!.fontName = "Arial"
-        roomIdentifier!.horizontalAlignmentMode = .center
-        roomIdentifier!.verticalAlignmentMode = .center
-        roomIdentifier!.position = gridService.gridToWorld(config.roomIdentifierPosition)
-        roomIdentifier!.zPosition = 5
-        addChild(roomIdentifier!)
-        
-        // Back door (only in Room 1)
-        if let doorPos = config.backDoorPosition {
-            backDoor = SKLabelNode(text: "🚪")
-            backDoor!.fontSize = 80
-            backDoor!.fontName = "Arial"
-            backDoor!.horizontalAlignmentMode = .center
-            backDoor!.verticalAlignmentMode = .center
-            backDoor!.position = gridService.gridToWorld(doorPos)
-            backDoor!.zPosition = 10
-            backDoor!.name = "back_door"
-            addChild(backDoor!)
-            
-            print("🚪 Back door positioned at grid \\(doorPos)")
+        for room in ForestLayout.roomNumbers {
+            roomContainer(for: room)?.isHidden = room != roomNumber
         }
-        
-        // Big Oak Tree entrance (only in Room 4)
-        if let entrancePos = config.oakTreeEntrancePosition {
-            oakTreeEntrance = SKLabelNode(text: "🌳")
-            oakTreeEntrance!.fontSize = 100
-            oakTreeEntrance!.fontName = "Arial"
-            oakTreeEntrance!.horizontalAlignmentMode = .center
-            oakTreeEntrance!.verticalAlignmentMode = .center
-            oakTreeEntrance!.position = gridService.gridToWorld(entrancePos)
-            oakTreeEntrance!.zPosition = 10
-            oakTreeEntrance!.name = "oak_tree_entrance"
-            addChild(oakTreeEntrance!)
-            
-            print("🌳 Big Oak Tree entrance placed at grid \\(entrancePos)")
+
+        guard let activeRoom = roomContainer(for: roomNumber) else {
+            Log.error(.forest, "Missing forest_room_\(roomNumber) container in ForestScene.sks")
+            return
         }
-        
-        // Hint emojis
-        let previousRoomEmoji = roomEmojis[getPreviousRoom()]
-        leftHintEmoji = SKLabelNode(text: previousRoomEmoji)
-        leftHintEmoji!.fontSize = 40
-        leftHintEmoji!.fontName = "Arial"
-        leftHintEmoji!.alpha = 0.3
-        leftHintEmoji!.horizontalAlignmentMode = .center
-        leftHintEmoji!.verticalAlignmentMode = .center
-        leftHintEmoji!.position = gridService.gridToWorld(config.leftHintPosition)
-        leftHintEmoji!.zPosition = 3
-        addChild(leftHintEmoji!)
-        
-        let nextRoomEmoji = roomEmojis[getNextRoom()]
-        rightHintEmoji = SKLabelNode(text: nextRoomEmoji)
-        rightHintEmoji!.fontSize = 40
-        rightHintEmoji!.fontName = "Arial"
-        rightHintEmoji!.alpha = 0.3
-        rightHintEmoji!.horizontalAlignmentMode = .center
-        rightHintEmoji!.verticalAlignmentMode = .center
-        rightHintEmoji!.position = gridService.gridToWorld(config.rightHintPosition)
-        rightHintEmoji!.zPosition = 3
-        addChild(rightHintEmoji!)
-        
-        // Clean forest look - no special objects added
-        // addSpecialObjects(config.specialObjects) - REMOVED for cleaner look
-        
-        // Add one-way portal if this room has one
-        setupPortal(for: roomNumber)
-        
-        // Add house markers for NPC homes
-        setupHouseMarkers(for: roomNumber)
-        
-        print("🌲 Room \\(roomNumber) (\\(config.emoji)) setup with grid positioning")
-        print("   Room center: \\(config.roomIdentifierPosition)")
+
+        roomIdentifier = activeRoom.namedChild("room_identifier", as: SKLabelNode.self)
+        backDoor = activeRoom.namedChild("back_door", as: SKLabelNode.self)
+        oakTreeEntrance = activeRoom.namedChild("oak_tree_entrance", as: SKLabelNode.self)
+        caveEntrance = activeRoom.namedChild("cave_entrance", as: SKLabelNode.self)
+        leftHintEmoji = activeRoom.namedChild("left_hint", as: SKLabelNode.self)
+        rightHintEmoji = activeRoom.namedChild("right_hint", as: SKLabelNode.self)
+
+        leftHintEmoji?.text = roomEmojis[getPreviousRoom()]
+        rightHintEmoji?.text = roomEmojis[getNextRoom()]
+
+        configurePortal(in: activeRoom)
+        configureHouseMarkers(in: activeRoom, roomNumber: roomNumber)
+
+        Log.info(.forest, "Room \(roomNumber) loaded from ForestScene.sks")
     }
-    
-    /// Add special objects to the current room
-    /// - Parameter objects: Dictionary of object name to grid position
-    private func addSpecialObjects(_ objects: [String: GridCoordinate]) {
-        for (objectName, gridPos) in objects {
-            let object = createSpecialObject(named: objectName)
-            object.position = gridService.gridToWorld(gridPos)
-            object.name = objectName
-            addChild(object)
-            
-            print("✨ Added \\(objectName) at grid \\(gridPos)")
-        }
-    }
-    
-    /// Create special objects for forest rooms
-    /// - Parameter name: Object identifier
-    /// - Returns: Configured SKNode
-    private func createSpecialObject(named name: String) -> SKNode {
-        switch name {
-        // Mushroom room objects
-        case "small_mushroom_1", "small_mushroom_2":
-            let mushroom = SKLabelNode(text: "🍄")
-            mushroom.fontSize = 30
-            mushroom.alpha = 0.7
-            mushroom.zPosition = 2
-            mushroom.fontName = "Arial"
-            mushroom.horizontalAlignmentMode = .center
-            mushroom.verticalAlignmentMode = .center
-            return mushroom
-            
-        case "fairy_ring":
-            let ring = SKShapeNode(circleOfRadius: 25)
-            ring.strokeColor = .magenta.withAlphaComponent(0.3)
-            ring.fillColor = .clear
-            ring.lineWidth = 2
-            ring.zPosition = 1
-            return ring
-            
-        // Mountain room objects
-        case "small_rock_1", "small_rock_2":
-            let rock = SKLabelNode(text: "🪨")
-            rock.fontSize = 25
-            rock.alpha = 0.8
-            rock.zPosition = 2
-            rock.fontName = "Arial"
-            rock.horizontalAlignmentMode = .center
-            rock.verticalAlignmentMode = .center
-            return rock
-            
-        case "cave_entrance":
-            let cave = SKLabelNode(text: "🕳️")
-            cave.fontSize = 40
-            cave.alpha = 0.9
-            cave.zPosition = 2
-            cave.fontName = "Arial"
-            cave.horizontalAlignmentMode = .center
-            cave.verticalAlignmentMode = .center
-            return cave
-            
-        // Star room objects
-        case "star_fragment_1", "star_fragment_2":
-            let star = SKLabelNode(text: "⭐")
-            star.fontSize = 20
-            star.alpha = 0.8
-            star.zPosition = 2
-            star.fontName = "Arial"
-            star.horizontalAlignmentMode = .center
-            star.verticalAlignmentMode = .center
-            // Add sparkle animation
-            let sparkle = SKAction.sequence([
-                SKAction.scale(to: 1.2, duration: 1.0),
-                SKAction.scale(to: 0.8, duration: 1.0)
-            ])
-            star.run(SKAction.repeatForever(sparkle))
-            return star
-            
-        case "crystal_pool":
-            let pool = SKShapeNode(circleOfRadius: 30)
-            pool.strokeColor = .cyan.withAlphaComponent(0.5)
-            pool.fillColor = .blue.withAlphaComponent(0.2)
-            pool.lineWidth = 2
-            pool.zPosition = 1
-            return pool
-            
-        // Diamond room objects
-        case "gem_1", "gem_2":
-            let gem = SKLabelNode(text: "💎")
-            gem.fontSize = 25
-            gem.alpha = 0.9
-            gem.zPosition = 2
-            gem.fontName = "Arial"
-            gem.horizontalAlignmentMode = .center
-            gem.verticalAlignmentMode = .center
-            return gem
-            
-        case "treasure_chest":
-            let chest = SKLabelNode(text: "📦")
-            chest.fontSize = 35
-            chest.alpha = 0.9
-            chest.zPosition = 2
-            chest.fontName = "Arial"
-            chest.horizontalAlignmentMode = .center
-            chest.verticalAlignmentMode = .center
-            return chest
-            
-        // Tree room objects
-        case "ancient_tree":
-            let tree = SKLabelNode(text: "🌳")
-            tree.fontSize = 60
-            tree.alpha = 0.8
-            tree.zPosition = 2
-            tree.fontName = "Arial"
-            tree.horizontalAlignmentMode = .center
-            tree.verticalAlignmentMode = .center
-            return tree
-            
-        case "tree_hollow":
-            let hollow = SKLabelNode(text: "🕳️")
-            hollow.fontSize = 30
-            hollow.alpha = 0.7
-            hollow.zPosition = 2
-            hollow.fontName = "Arial"
-            hollow.horizontalAlignmentMode = .center
-            hollow.verticalAlignmentMode = .center
-            return hollow
-            
-        case "wisdom_stone":
-            let stone = SKLabelNode(text: "🗿")
-            stone.fontSize = 40
-            stone.alpha = 0.9
-            stone.zPosition = 2
-            stone.fontName = "Arial"
-            stone.horizontalAlignmentMode = .center
-            stone.verticalAlignmentMode = .center
-            return stone
-            
-        default:
-            // Generic forest object
-            let generic = SKLabelNode(text: "🌿")
-            generic.fontSize = 25
-            generic.alpha = 0.6
-            generic.zPosition = 2
-            generic.fontName = "Arial"
-            generic.horizontalAlignmentMode = .center
-            generic.verticalAlignmentMode = .center
-            return generic
-        }
-    }
-    
-    /// Remove all special objects from current room
-    private func removeSpecialObjects() {
-        let objectNames = [
-            "small_mushroom_1", "small_mushroom_2", "fairy_ring",
-            "small_rock_1", "small_rock_2", "cave_entrance",
-            "star_fragment_1", "star_fragment_2", "crystal_pool",
-            "gem_1", "gem_2", "treasure_chest",
-            "ancient_tree", "tree_hollow", "wisdom_stone",
-            "portal", "house_1", "house_2", "house_3", "house_4"
-        ]
-        
-        for objectName in objectNames {
-            childNode(withName: objectName)?.removeFromParent()
-        }
-        
-        print("🧹 Removed special objects from previous room")
-    }
-    
-    // MARK: - One-Way Portals
-    /// Add a one-way portal if this room has one
-    private func setupPortal(for roomNumber: Int) {
-        guard let destination = getPortalDestination() else { return }
-        
-        let portalPosition = GridCoordinate(x: 16, y: 5) // Bottom-center of room
-        let portal = SKLabelNode(text: "🌀")
-        portal.fontSize = 60
-        portal.fontName = "Arial"
-        portal.horizontalAlignmentMode = .center
-        portal.verticalAlignmentMode = .center
-        portal.position = gridService.gridToWorld(portalPosition)
-        portal.zPosition = 10
-        portal.name = "portal"
-        portal.isUserInteractionEnabled = false
-        addChild(portal)
-        
-        // Spinning animation
-        let spin = SKAction.repeatForever(
-            SKAction.rotate(byAngle: .pi * 2, duration: 4.0)
-        )
-        portal.run(spin, withKey: "portal_spin")
-        
-        // Subtle pulsing
-        let pulse = SKAction.repeatForever(
-            SKAction.sequence([
-                SKAction.scale(to: 1.15, duration: 1.5),
-                SKAction.scale(to: 0.9, duration: 1.5)
-            ])
-        )
-        portal.run(pulse, withKey: "portal_pulse")
-        
-        // Add hint showing destination room
-        let roomEmojis = ["", "🍄", "⛰️", "⭐", "💎", "🌳"]
-        let hintLabel = SKLabelNode(text: "→\(roomEmojis[destination])")
-        hintLabel.fontSize = 20
-        hintLabel.fontName = "Arial"
-        hintLabel.alpha = 0.5
-        hintLabel.horizontalAlignmentMode = .center
-        hintLabel.verticalAlignmentMode = .center
-        hintLabel.position = CGPoint(x: 0, y: -40)
-        hintLabel.zPosition = 1
-        portal.addChild(hintLabel)
-        
-        print("🌀 One-way portal placed in room \(roomNumber) → room \(destination)")
-    }
-    
-    /// Check if player is on the portal and trigger transition
+
     func checkPortalCollision() {
-        guard let portal = childNode(withName: "portal"),
+        guard let activeRoom = activeRoomContainer(),
+              let portal = activeRoom.namedChild("portal", as: SKNode.self),
+              portal.isHidden == false,
               let destination = getPortalDestination() else { return }
-        
-        let distance = sqrt(
-            pow(character.position.x - portal.position.x, 2) +
-            pow(character.position.y - portal.position.y, 2)
-        )
-        
+
+        let portalPosition = portal.positionInSceneCoordinates()
+        let distance = hypot(character.position.x - portalPosition.x, character.position.y - portalPosition.y)
+
         if distance < 40 {
             print("🌀 Portal activated! Warping to room \(destination)")
             transitionService.triggerHapticFeedback(type: .success)
             transitionToRoom(destination)
         }
     }
-    
-    // MARK: - House Markers
-    /// Add 4 house markers to the current room
-    private func setupHouseMarkers(for roomNumber: Int) {
-        // 4 houses spread across the room in a loose grid
-        let housePositions: [GridCoordinate] = [
-            GridCoordinate(x: 8, y: 16),   // Top-left
-            GridCoordinate(x: 24, y: 16),  // Top-right
-            GridCoordinate(x: 8, y: 8),    // Bottom-left
-            GridCoordinate(x: 24, y: 8)    // Bottom-right
-        ]
-        
+
+    private func roomContainer(for roomNumber: Int) -> SKNode? {
+        sceneNode(named: "forest_room_\(roomNumber)", as: SKNode.self)
+    }
+
+    private func activeRoomContainer() -> SKNode? {
+        roomContainer(for: currentRoom)
+    }
+
+    private func configurePortal(in room: SKNode) {
+        guard let portal = room.namedChild("portal", as: SKNode.self) else { return }
+        guard let destination = getPortalDestination() else {
+            portal.isHidden = true
+            portal.removeAllActions()
+            return
+        }
+
+        portal.isHidden = false
+
+        if portal.action(forKey: "portal_spin") == nil {
+            let spin = SKAction.repeatForever(
+                SKAction.rotate(byAngle: .pi * 2, duration: 4.0)
+            )
+            portal.run(spin, withKey: "portal_spin")
+        }
+
+        if portal.action(forKey: "portal_pulse") == nil {
+            let pulse = SKAction.repeatForever(
+                SKAction.sequence([
+                    SKAction.scale(to: 1.15, duration: 1.5),
+                    SKAction.scale(to: 0.9, duration: 1.5)
+                ])
+            )
+            portal.run(pulse, withKey: "portal_pulse")
+        }
+
+        if let hintLabel = portal.namedChild("portal_hint", as: SKLabelNode.self) {
+            hintLabel.text = "→\(roomEmojis[destination])"
+        }
+    }
+
+    private func configureHouseMarkers(in room: SKNode, roomNumber: Int) {
         let residentManager = NPCResidentManager.shared
-        
-        for (index, gridPos) in housePositions.enumerated() {
-            let houseNumber = index + 1
-            
-            let house = SKLabelNode(text: "🏠")
-            house.fontSize = 35
-            house.fontName = "Arial"
-            house.horizontalAlignmentMode = .center
-            house.verticalAlignmentMode = .center
-            house.position = gridService.gridToWorld(gridPos)
-            house.zPosition = 3
-            house.name = "house_\(houseNumber)"
-            house.alpha = 0.7
-            addChild(house)
-            
-            // Check if an NPC lives in this house
+
+        for houseNumber in 1...4 {
+            guard let house = room.namedChild("house_\(houseNumber)", as: SKLabelNode.self) else { continue }
+
+            house.children
+                .filter { $0.name == "house_name_tag" }
+                .forEach { $0.removeFromParent() }
+
             let occupant = residentManager.getAllResidents().first {
                 $0.npcData.homeRoom == roomNumber && $0.homeHouse == houseNumber
             }
-            
-            if let occupant = occupant {
-                // Add a small name tag below the house
-                let nameTag = SKLabelNode(text: occupant.npcData.name)
-                nameTag.fontSize = 10
-                nameTag.fontName = "Arial"
-                nameTag.fontColor = .white
-                nameTag.alpha = 0.6
-                nameTag.horizontalAlignmentMode = .center
-                nameTag.verticalAlignmentMode = .top
-                nameTag.position = CGPoint(x: 0, y: -25)
-                house.addChild(nameTag)
-            }
+
+            guard let occupant else { continue }
+
+            let nameTag = SKLabelNode(text: occupant.npcData.name)
+            nameTag.fontSize = 10
+            nameTag.fontName = "Arial"
+            nameTag.fontColor = .white
+            nameTag.alpha = 0.6
+            nameTag.horizontalAlignmentMode = .center
+            nameTag.verticalAlignmentMode = .top
+            nameTag.position = CGPoint(x: 0, y: -25)
+            nameTag.name = "house_name_tag"
+            house.addChild(nameTag)
         }
-        
-        print("🏠 4 house markers placed in room \(roomNumber)")
     }
 }

@@ -11,6 +11,7 @@ import GameplayKit
 import GameKit
 
 class GameViewController: UIViewController {
+    private var hasPresentedInitialScene = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -20,19 +21,7 @@ class GameViewController: UIViewController {
             print("❌ ERROR: View is not an SKView")
             return
         }
-        
-        // Authenticate Game Center (silent on iOS 16+)
-        MultiplayerService.shared.authenticate(presenting: self)
-        
-        // START WITH TITLE SCENE instead of going directly to game - FIXED: Pass size parameter
-        let titleScene = TitleScene(size: skView.bounds.size)
-        
-        // Set the scale mode to scale to fit the window
-        titleScene.scaleMode = .aspectFill
-        
-        // Present the title scene
-        skView.presentScene(titleScene)
-        
+
         skView.ignoresSiblingOrder = true
         
         // Show debug info during development
@@ -40,6 +29,28 @@ class GameViewController: UIViewController {
         skView.showsNodeCount = true
         
         print("📱 GameViewController loaded with view bounds: \(skView.bounds.size)")
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        presentInitialSceneIfNeeded()
+    }
+
+    private func presentInitialSceneIfNeeded() {
+        guard !hasPresentedInitialScene else { return }
+        guard let skView = view as? SKView else { return }
+
+        let viewSize = skView.bounds.size
+        guard viewSize.width > 0 && viewSize.height > 0 else {
+            print("⏳ Waiting for SKView to finish layout before presenting TitleScene")
+            return
+        }
+
+        let titleScene = SceneFactory.loadTitleScene(size: viewSize)
+        skView.presentScene(titleScene)
+        hasPresentedInitialScene = true
+
+        print("🎬 Presented TitleScene with laid out size: \(viewSize)")
     }
 
     override var supportedInterfaceOrientations: UIInterfaceOrientationMask {

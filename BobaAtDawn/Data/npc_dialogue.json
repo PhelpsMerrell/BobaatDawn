@@ -1,4 +1,21 @@
 {
+  "schema_version": 2,
+
+  "opinion_topics": [
+    { "id": "gnomes",        "label": "Gnomes",                "axis": "social" },
+    { "id": "the_cave",      "label": "The Cave",              "axis": "wonder" },
+    { "id": "the_snail",     "label": "The Snail",             "axis": "fear"   },
+    { "id": "deeper_woods",  "label": "The Deeper Woods",      "axis": "wonder" },
+    { "id": "boba_pearls",   "label": "Boba Pearls",           "axis": "tastes" },
+    { "id": "loud_noises",   "label": "Loud Noises",           "axis": "fear"   },
+    { "id": "night_walks",   "label": "Walking at Night",      "axis": "habit"  },
+    { "id": "the_road",      "label": "The Old Road",          "axis": "fear"   },
+    { "id": "creeks_ponds",  "label": "Creeks and Ponds",      "axis": "habit"  },
+    { "id": "music_singing", "label": "Music and Singing",     "axis": "tastes" },
+    { "id": "tall_trees",    "label": "The Oldest Trees",      "axis": "wonder" },
+    { "id": "cold_weather",  "label": "Cold Weather",          "axis": "tastes" }
+  ],
+
   "npcs": [
     {
       "id": "qari_deer",
@@ -6,6 +23,33 @@
       "animal": "Deer",
       "cause_of_death": "Car crash",
       "home_room": 1,
+      "talkativeness": 0.6,
+      "personality": {
+        "archetype": "skittish optimist",
+        "traits": ["jumpy", "earnest", "easily startled", "sweet-toothed"],
+        "speech_quirks": ["trails off when something rustles in the leaves"]
+      },
+      "opinion_stances": {
+        "the_road":      "fears",
+        "loud_noises":   "fears",
+        "tall_trees":    "loves",
+        "the_cave":      "dislikes",
+        "deeper_woods":  "dislikes",
+        "the_snail":     "fears",
+        "boba_pearls":   "loves",
+        "night_walks":   "dislikes",
+        "creeks_ponds":  "likes",
+        "music_singing": "likes",
+        "cold_weather":  "neutral",
+        "gnomes":        "neutral"
+      },
+      "explicit_relationships": [
+        { "with": "rascal_raccoon", "delta": -25, "reason": "blames Rascal's clan for the night near the road" },
+        { "with": "hazel_hedgehog", "delta":  10, "reason": "kindred small-and-startled spirits" }
+      ],
+      "past_life_echoes": [
+        { "with": "stanuel_mule", "vibe": "fragment", "hint": "a hand on a steering wheel — gone before she can place it" }
+      ],
       "dialogue": {
         "day": [
           "I could sip boba all day, it's like sunshine in a cup!",
@@ -29,6 +73,32 @@
       "animal": "Rabbit",
       "cause_of_death": "Starvation",
       "home_room": 2,
+      "talkativeness": 0.7,
+      "personality": {
+        "archetype": "earnest hopper",
+        "traits": ["chatty", "always-hungry", "warm", "easily moved"],
+        "speech_quirks": ["punctuates sentences with little pauses to nibble"]
+      },
+      "opinion_stances": {
+        "boba_pearls":   "loves",
+        "creeks_ponds":  "likes",
+        "tall_trees":    "likes",
+        "music_singing": "likes",
+        "gnomes":        "neutral",
+        "the_cave":      "dislikes",
+        "the_snail":     "fears",
+        "deeper_woods":  "neutral",
+        "the_road":      "dislikes",
+        "loud_noises":   "dislikes",
+        "night_walks":   "neutral",
+        "cold_weather":  "dislikes"
+      },
+      "explicit_relationships": [
+        { "with": "hazel_hedgehog", "delta": 12, "reason": "share a quiet patch of mint behind the houses" }
+      ],
+      "past_life_echoes": [
+        { "with": "hazel_hedgehog", "vibe": "warmth", "hint": "a small warm space, the smell of grass — something safe" }
+      ],
       "dialogue": {
         "day": [
           "Carrots are good, but boba is divine!",
@@ -52,6 +122,30 @@
       "animal": "Wolf",
       "cause_of_death": "Poisoning",
       "home_room": 3,
+      "talkativeness": 0.5,
+      "personality": {
+        "archetype": "wise but wary matron",
+        "traits": ["matronly", "suspicious", "gentle on the surface", "watchful"],
+        "speech_quirks": ["calls everyone 'dearie' but watches their hands"]
+      },
+      "opinion_stances": {
+        "boba_pearls":   "fears",
+        "tall_trees":    "loves",
+        "night_walks":   "likes",
+        "deeper_woods":  "likes",
+        "music_singing": "likes",
+        "the_road":      "dislikes",
+        "loud_noises":   "dislikes",
+        "gnomes":        "dislikes",
+        "the_cave":      "neutral",
+        "the_snail":     "dislikes",
+        "creeks_ponds":  "neutral",
+        "cold_weather":  "likes"
+      },
+      "explicit_relationships": [
+        { "with": "bb_james_pufferfish", "delta": -15, "reason": "his enthusiasm for pearls makes her shoulders tighten" }
+      ],
+      "past_life_echoes": [],
       "dialogue": {
         "day": [
           "Sweet boba for a sweet old lady!",
@@ -75,6 +169,32 @@
       "animal": "Mule",
       "cause_of_death": "Overwork",
       "home_room": 4,
+      "talkativeness": 0.3,
+      "personality": {
+        "archetype": "weary stoic",
+        "traits": ["soft-spoken", "tired", "patient", "kind underneath"],
+        "speech_quirks": ["takes a long breath before each sentence"]
+      },
+      "opinion_stances": {
+        "creeks_ponds":  "loves",
+        "tall_trees":    "loves",
+        "cold_weather":  "likes",
+        "music_singing": "likes",
+        "loud_noises":   "dislikes",
+        "deeper_woods":  "fears",
+        "the_road":      "fears",
+        "the_snail":     "dislikes",
+        "boba_pearls":   "neutral",
+        "the_cave":      "neutral",
+        "night_walks":   "neutral",
+        "gnomes":        "neutral"
+      },
+      "explicit_relationships": [
+        { "with": "oscar_bear", "delta": 10, "reason": "two heavy bodies who appreciate sitting still together" }
+      ],
+      "past_life_echoes": [
+        { "with": "qari_deer", "vibe": "unease", "hint": "the smell of a road in summer — gone before he can place it" }
+      ],
       "dialogue": {
         "day": [
           "Another cup... maybe it'll make me feel lighter.",
@@ -98,6 +218,30 @@
       "animal": "Pufferfish",
       "cause_of_death": "Choking",
       "home_room": 5,
+      "talkativeness": 0.9,
+      "personality": {
+        "archetype": "exuberant enthusiast",
+        "traits": ["loud", "joyful", "easily distracted", "huge appetite"],
+        "speech_quirks": ["puffs up when excited, deflates when ignored"]
+      },
+      "opinion_stances": {
+        "boba_pearls":   "loves",
+        "creeks_ponds":  "loves",
+        "music_singing": "loves",
+        "the_cave":      "likes",
+        "loud_noises":   "dislikes",
+        "cold_weather":  "fears",
+        "deeper_woods":  "dislikes",
+        "the_road":      "neutral",
+        "tall_trees":    "neutral",
+        "the_snail":     "fears",
+        "night_walks":   "neutral",
+        "gnomes":        "neutral"
+      },
+      "explicit_relationships": [
+        { "with": "ivy_songbird", "delta": 12, "reason": "the only one loud enough to keep up with him" }
+      ],
+      "past_life_echoes": [],
       "dialogue": {
         "day": [
           "Boba pearls are the best part! Big, chewy, fun!",
@@ -121,6 +265,30 @@
       "animal": "Owl",
       "cause_of_death": "Fell from a tree",
       "home_room": 1,
+      "talkativeness": 0.4,
+      "personality": {
+        "archetype": "watchful philosopher",
+        "traits": ["measured", "observant", "quietly kind", "slow to laugh"],
+        "speech_quirks": ["leaves long pauses where she's still thinking"]
+      },
+      "opinion_stances": {
+        "night_walks":   "loves",
+        "tall_trees":    "fears",
+        "music_singing": "likes",
+        "deeper_woods":  "likes",
+        "loud_noises":   "dislikes",
+        "the_road":      "dislikes",
+        "the_cave":      "neutral",
+        "the_snail":     "dislikes",
+        "boba_pearls":   "likes",
+        "creeks_ponds":  "neutral",
+        "gnomes":        "dislikes",
+        "cold_weather":  "neutral"
+      },
+      "explicit_relationships": [
+        { "with": "echo_bat", "delta": 12, "reason": "two creatures of the dark who keep room 1 quiet" }
+      ],
+      "past_life_echoes": [],
       "dialogue": {
         "day": [
           "Night or day, boba is my wisdom drink.",
@@ -144,6 +312,30 @@
       "animal": "Fox",
       "cause_of_death": "Hunting trap",
       "home_room": 2,
+      "talkativeness": 0.7,
+      "personality": {
+        "archetype": "playful trickster",
+        "traits": ["sly", "warm-when-it-counts", "quick-witted", "evasive"],
+        "speech_quirks": ["asks questions to avoid answering them"]
+      },
+      "opinion_stances": {
+        "the_road":      "fears",
+        "loud_noises":   "dislikes",
+        "deeper_woods":  "likes",
+        "night_walks":   "likes",
+        "music_singing": "likes",
+        "gnomes":        "dislikes",
+        "boba_pearls":   "neutral",
+        "tall_trees":    "neutral",
+        "the_cave":      "likes",
+        "the_snail":     "dislikes",
+        "creeks_ponds":  "likes",
+        "cold_weather":  "neutral"
+      },
+      "explicit_relationships": [
+        { "with": "rascal_raccoon", "delta": 12, "reason": "both fast-talkers who can read each other across a room" }
+      ],
+      "past_life_echoes": [],
       "dialogue": {
         "day": [
           "Boba hunting is the only hunting I like to do.",
@@ -167,6 +359,30 @@
       "animal": "Songbird",
       "cause_of_death": "Window strike",
       "home_room": 3,
+      "talkativeness": 0.8,
+      "personality": {
+        "archetype": "joyful performer",
+        "traits": ["lyrical", "expressive", "easily delighted", "chirpy"],
+        "speech_quirks": ["hums between sentences without noticing"]
+      },
+      "opinion_stances": {
+        "music_singing": "loves",
+        "tall_trees":    "loves",
+        "boba_pearls":   "likes",
+        "creeks_ponds":  "likes",
+        "the_road":      "fears",
+        "loud_noises":   "dislikes",
+        "cold_weather":  "dislikes",
+        "the_cave":      "dislikes",
+        "deeper_woods":  "neutral",
+        "night_walks":   "dislikes",
+        "the_snail":     "dislikes",
+        "gnomes":        "neutral"
+      },
+      "explicit_relationships": [],
+      "past_life_echoes": [
+        { "with": "della_duck", "vibe": "fragment", "hint": "a window, a reflection of feathers — gone before she can fix on it" }
+      ],
       "dialogue": {
         "day": [
           "I sing while sipping sweet boba songs.",
@@ -190,6 +406,30 @@
       "animal": "Bear",
       "cause_of_death": "Forest fire",
       "home_room": 4,
+      "talkativeness": 0.4,
+      "personality": {
+        "archetype": "gentle introspect",
+        "traits": ["soft-voiced", "thoughtful", "slow-moving", "warm"],
+        "speech_quirks": ["hesitates before saying anything that sounds like complaint"]
+      },
+      "opinion_stances": {
+        "creeks_ponds":  "loves",
+        "cold_weather":  "loves",
+        "tall_trees":    "likes",
+        "boba_pearls":   "likes",
+        "loud_noises":   "fears",
+        "deeper_woods":  "dislikes",
+        "the_cave":      "neutral",
+        "the_snail":     "dislikes",
+        "music_singing": "likes",
+        "the_road":      "dislikes",
+        "night_walks":   "neutral",
+        "gnomes":        "neutral"
+      },
+      "explicit_relationships": [],
+      "past_life_echoes": [
+        { "with": "rascal_raccoon", "vibe": "unease", "hint": "smoke and metal, a sense of being far from where he should be" }
+      ],
       "dialogue": {
         "day": [
           "Boba warms me up almost as much as honey.",
@@ -213,6 +453,32 @@
       "animal": "Mouse",
       "cause_of_death": "Drowning",
       "home_room": 5,
+      "talkativeness": 0.5,
+      "personality": {
+        "archetype": "nervous treasure-keeper",
+        "traits": ["small", "earnest", "easily-overwhelmed", "fond of detail"],
+        "speech_quirks": ["whispers compliments, says complaints out loud"]
+      },
+      "opinion_stances": {
+        "creeks_ponds":  "fears",
+        "deeper_woods":  "fears",
+        "gnomes":        "loves",
+        "tall_trees":    "likes",
+        "boba_pearls":   "likes",
+        "cold_weather":  "dislikes",
+        "loud_noises":   "dislikes",
+        "the_cave":      "dislikes",
+        "the_snail":     "fears",
+        "music_singing": "neutral",
+        "the_road":      "neutral",
+        "night_walks":   "dislikes"
+      },
+      "explicit_relationships": [
+        { "with": "rivet_frog", "delta": -15, "reason": "his joy at water reminds her of sinking" }
+      ],
+      "past_life_echoes": [
+        { "with": "echo_bat", "vibe": "familiar", "hint": "small, dark spaces — something she once knew well" }
+      ],
       "dialogue": {
         "day": [
           "The pearls are so big! I can barely finish them.",
@@ -236,6 +502,28 @@
       "animal": "Hedgehog",
       "cause_of_death": "Hit by lawnmower",
       "home_room": 1,
+      "talkativeness": 0.5,
+      "personality": {
+        "archetype": "shy but warm",
+        "traits": ["quiet", "kind", "watchful", "easily startled"],
+        "speech_quirks": ["speaks in shorter sentences when surprised"]
+      },
+      "opinion_stances": {
+        "loud_noises":   "fears",
+        "the_road":      "fears",
+        "tall_trees":    "loves",
+        "gnomes":        "loves",
+        "boba_pearls":   "likes",
+        "creeks_ponds":  "likes",
+        "music_singing": "likes",
+        "the_cave":      "dislikes",
+        "deeper_woods":  "dislikes",
+        "the_snail":     "fears",
+        "night_walks":   "dislikes",
+        "cold_weather":  "neutral"
+      },
+      "explicit_relationships": [],
+      "past_life_echoes": [],
       "dialogue": {
         "day": [
           "Boba pearls remind me of little berries in the grass!",
@@ -259,6 +547,30 @@
       "animal": "Frog",
       "cause_of_death": "Dried out in the sun",
       "home_room": 2,
+      "talkativeness": 0.6,
+      "personality": {
+        "archetype": "dreamy waterling",
+        "traits": ["wide-eyed", "sentimental", "easily wistful", "talkative when wet"],
+        "speech_quirks": ["punctuates sentences with little croaks"]
+      },
+      "opinion_stances": {
+        "creeks_ponds":  "loves",
+        "cold_weather":  "loves",
+        "music_singing": "likes",
+        "boba_pearls":   "likes",
+        "deeper_woods":  "dislikes",
+        "the_road":      "fears",
+        "loud_noises":   "dislikes",
+        "gnomes":        "dislikes",
+        "tall_trees":    "neutral",
+        "the_cave":      "neutral",
+        "night_walks":   "neutral",
+        "the_snail":     "dislikes"
+      },
+      "explicit_relationships": [
+        { "with": "mira_mouse", "delta": -10, "reason": "her flinch at water hurts him without him knowing why" }
+      ],
+      "past_life_echoes": [],
       "dialogue": {
         "day": [
           "Slurp, slurp! Just like a juicy fly, but sweeter!",
@@ -282,6 +594,30 @@
       "animal": "Duck",
       "cause_of_death": "Oil spill",
       "home_room": 3,
+      "talkativeness": 0.6,
+      "personality": {
+        "archetype": "graceful melancholic",
+        "traits": ["composed", "wistful", "kind", "carries-weight-quietly"],
+        "speech_quirks": ["finishes thoughts that started somewhere else"]
+      },
+      "opinion_stances": {
+        "music_singing": "loves",
+        "tall_trees":    "likes",
+        "boba_pearls":   "likes",
+        "creeks_ponds":  "fears",
+        "loud_noises":   "dislikes",
+        "the_road":      "dislikes",
+        "the_cave":      "dislikes",
+        "deeper_woods":  "neutral",
+        "the_snail":     "dislikes",
+        "night_walks":   "neutral",
+        "gnomes":        "neutral",
+        "cold_weather":  "dislikes"
+      },
+      "explicit_relationships": [
+        { "with": "ivy_songbird", "delta": 10, "reason": "two voices that find each other across the room" }
+      ],
+      "past_life_echoes": [],
       "dialogue": {
         "day": [
           "Boba floats as nicely as I do on the pond!",
@@ -305,6 +641,28 @@
       "animal": "Raccoon",
       "cause_of_death": "Garbage truck accident",
       "home_room": 4,
+      "talkativeness": 0.8,
+      "personality": {
+        "archetype": "gossipy schemer",
+        "traits": ["fast-talker", "curious", "shameless", "loyal-when-it-suits-him"],
+        "speech_quirks": ["leans in close even when he doesn't need to"]
+      },
+      "opinion_stances": {
+        "deeper_woods":  "loves",
+        "night_walks":   "loves",
+        "gnomes":        "likes",
+        "music_singing": "likes",
+        "boba_pearls":   "likes",
+        "loud_noises":   "fears",
+        "the_road":      "fears",
+        "tall_trees":    "neutral",
+        "the_cave":      "neutral",
+        "the_snail":     "dislikes",
+        "creeks_ponds":  "neutral",
+        "cold_weather":  "dislikes"
+      },
+      "explicit_relationships": [],
+      "past_life_echoes": [],
       "dialogue": {
         "day": [
           "Sweet drinks taste even better than raiding a trash can!",
@@ -328,6 +686,28 @@
       "animal": "Squirrel",
       "cause_of_death": "Electrocution on power lines",
       "home_room": 5,
+      "talkativeness": 0.9,
+      "personality": {
+        "archetype": "scattershot chatterbox",
+        "traits": ["quick", "loud", "easily-distracted", "warmly-bossy"],
+        "speech_quirks": ["interrupts herself before anyone else can"]
+      },
+      "opinion_stances": {
+        "music_singing": "loves",
+        "boba_pearls":   "likes",
+        "deeper_woods":  "likes",
+        "tall_trees":    "fears",
+        "loud_noises":   "dislikes",
+        "the_road":      "dislikes",
+        "gnomes":        "dislikes",
+        "the_cave":      "dislikes",
+        "creeks_ponds":  "neutral",
+        "the_snail":     "dislikes",
+        "night_walks":   "neutral",
+        "cold_weather":  "neutral"
+      },
+      "explicit_relationships": [],
+      "past_life_echoes": [],
       "dialogue": {
         "day": [
           "I chatter happily while sipping boba pearls!",
@@ -351,6 +731,28 @@
       "animal": "Bat",
       "cause_of_death": "Cave collapse",
       "home_room": 1,
+      "talkativeness": 0.3,
+      "personality": {
+        "archetype": "quiet contemplator",
+        "traits": ["soft-voiced", "still", "perceptive", "dry-humored"],
+        "speech_quirks": ["lets sentences sit in the air without rushing to fill the silence"]
+      },
+      "opinion_stances": {
+        "night_walks":   "loves",
+        "music_singing": "likes",
+        "boba_pearls":   "likes",
+        "deeper_woods":  "likes",
+        "the_cave":      "fears",
+        "tall_trees":    "fears",
+        "loud_noises":   "dislikes",
+        "the_road":      "dislikes",
+        "the_snail":     "dislikes",
+        "creeks_ponds":  "neutral",
+        "gnomes":        "neutral",
+        "cold_weather":  "dislikes"
+      },
+      "explicit_relationships": [],
+      "past_life_echoes": [],
       "dialogue": {
         "day": [
           "Sweet tea keeps my wings strong for night flights.",

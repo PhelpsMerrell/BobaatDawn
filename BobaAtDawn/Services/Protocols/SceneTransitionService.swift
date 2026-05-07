@@ -13,6 +13,8 @@ enum GameSceneType {
     case forest
     case title
     case bigOakTree
+    case house
+    case cave
 }
 
 // MARK: - Transition Configuration
@@ -66,6 +68,23 @@ protocol SceneTransitionService {
     ///   - currentScene: The scene to leave (typically ForestScene).
     ///   - completion: Optional completion handler.
     func transitionToBigOakTree(from currentScene: SKScene, completion: (() -> Void)?)
+    
+    /// Transition into the Cave interior scene from the forest.
+    /// - Parameters:
+    ///   - currentScene: The scene to leave (typically ForestScene).
+    ///   - completion: Optional completion handler.
+    func transitionToCave(from currentScene: SKScene, completion: (() -> Void)?)
+    
+    /// Transition into a forest NPC's house interior.
+    /// - Parameters:
+    ///   - currentScene: The scene to leave (typically ForestScene).
+    ///   - room: Forest room the house belongs to (1-5).
+    ///   - house: House slot within the room (1-4).
+    ///   - completion: Optional completion handler.
+    func transitionToHouse(from currentScene: SKScene,
+                           room: Int,
+                           house: Int,
+                           completion: (() -> Void)?)
     
     /// Transition to the ForestScene, starting in a specific room.
     /// Use this when returning from a structure (e.g. the Big Oak Tree)

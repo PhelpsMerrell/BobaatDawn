@@ -57,6 +57,18 @@ class BaseNPC: SKNode, DialoguePresenter {
         self.isUserInteractionEnabled = true
 
         Log.info(.npc, "\(npcData.name) (\(animalType.rawValue)) created at \(position)")
+
+        // Register with the LLM prewarmer so a dialogue can be cached
+        // ahead of time. We do this from init rather than a parent-change
+        // hook because SKNode doesn't expose a public `didMove(toParent:)`
+        // override. Each NPC instance is created fresh when its scene
+        // spawns it, so init-time registration is equivalent in practice.
+        // Resident lookup may fail for NPCs that aren't tracked by the
+        // resident manager (e.g. fallback placeholder data) — that's fine,
+        // we just skip prewarming for them.
+        if let resident = NPCResidentManager.shared.findResident(byID: npcData.id) {
+            LLMDialogueService.shared.registerResident(resident)
+        }
     }
 
     /// Convenience: build from AnimalType alone (resolves NPCData from DialogueService)
@@ -116,11 +128,21 @@ class BaseNPC: SKNode, DialoguePresenter {
     // MARK: - Touch → Dialogue
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard !DialogueService.shared.isDialogueActive() else {
-            Log.debug(.dialogue, "Ignoring tap — dialogue already active")
+        // Only block re-tapping THIS NPC. A bubble open on another NPC
+        // shouldn't prevent the player from talking to a different one.
+        if let charId = dialogueCharacterId,
+           DialogueService.shared.isDialogueActive(forNPCID: charId) {
+            Log.debug(.dialogue, "Ignoring tap — \(animalType.rawValue) already in a dialogue")
             return
         }
-        guard !isFrozen else { return }
+        guard !isFrozen else {
+            // Frozen NPC may be in the middle of an NPC ↔ NPC conversation.
+            // Tapping them is the player saying "hey, knock it off" — break
+            // up the conversation, then bail. The next tap will start a
+            // fresh player↔NPC dialogue once the NPC is unfrozen.
+            NPCConversationService.shared.interruptByPlayer()
+            return
+        }
         guard dialogueCharacterId != nil else {
             Log.debug(.dialogue, "No dialogue data for \(animalType.rawValue)")
             return
@@ -131,8 +153,36 @@ class BaseNPC: SKNode, DialoguePresenter {
 
     func showDialogue() {
         freeze()
-        if let scene = scene {
-            DialogueService.shared.showDialogue(for: self, in: scene, timeContext: currentTimeContext())
+        guard let scene = scene else { return }
+        let context = currentTimeContext()
+        
+        // Prefer the on-device LLM streaming path when available + we can
+        // resolve the resident (which carries home/satisfaction context).
+        // Fall back to the original JSON dialogue otherwise.
+        if LLMDialogueService.shared.isAvailable,
+           let resident = NPCResidentManager.shared.findResident(byID: npcData.id) {
+            let memory = SaveService.shared.getNPCMemory(npcData.id)
+            // Routes through the host-authoritative request pipeline:
+            // host (or solo) drives the LLM locally and broadcasts
+            // streaming deltas; guest sends an open-request and waits
+            // for the host to broadcast `dialogueOpened`.
+            DialogueService.shared.requestDialogueOpen(
+                for: self, in: scene, timeContext: context,
+                resident: resident, memory: memory
+            )
+        } else {
+            DialogueService.shared.showDialogue(for: self, in: scene, timeContext: context)
         }
+    }
+
+    // MARK: - Scene Lifecycle (Prewarm Hookup)
+
+    /// Unregister from the LLM prewarmer when this NPC leaves its scene.
+    /// Pairs with the init-time `registerResident` call. Together these
+    /// scope the prewarm cache size to exactly "NPCs currently on stage,"
+    /// which is the bound Phelps wanted.
+    override func removeFromParent() {
+        LLMDialogueService.shared.unregisterResident(npcID: npcData.id)
+        super.removeFromParent()
     }
 }

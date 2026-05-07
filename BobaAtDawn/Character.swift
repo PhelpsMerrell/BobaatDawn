@@ -358,6 +358,28 @@ class Character: SKSpriteNode {
             item.run(floatAction, withKey: "floating")
         }
         item.zPosition = ZLayers.carriedItems
+        
+        // Sync persistent carry state so this survives scene transitions.
+        CharacterCarryState.shared.set(carryContent(from: item))
+
+        // Movable shop objects (tables / furniture rearrangement) get
+        // tracked in the cross-session registry and broadcast to the
+        // remote player so they see the partner literally pick it up.
+        if let editorName = trackedMovableEditorName(for: item) {
+            MovableObjectRegistry.shared.recordPickup(
+                editorName: editorName,
+                byHost: MultiplayerService.shared.isHost
+            )
+            if MultiplayerService.shared.isConnected {
+                MultiplayerService.shared.send(
+                    type: .objectPickedUp,
+                    payload: ObjectPickedUpMessage(
+                        editorName: editorName,
+                        byHost: MultiplayerService.shared.isHost
+                    )
+                )
+            }
+        }
     }
     
     func dropItem() {
@@ -374,6 +396,12 @@ class Character: SKSpriteNode {
         let currentCell = gridService.currentCharacterPosition
         let adjacentCells = gridService.getAvailableAdjacentCells(to: currentCell)
         
+        // Capture the editor name BEFORE we clear `carriedItem` so the
+        // post-drop registry update + broadcast can find the matching object.
+        let trackedName = trackedMovableEditorName(for: item)
+        let droppedRotationDegrees = item.rotationState.rawValue
+        var droppedWorldPos: CGPoint = item.position    // sane fallback
+
         if let targetCell = adjacentCells.first {
             // Create GameObject and occupy cell
             let gameObject = GameObject(skNode: item, gridPosition: targetCell, objectType: item.objectType, gridService: gridService)
@@ -381,6 +409,7 @@ class Character: SKSpriteNode {
             
             // Smooth drop
             let worldPos = gridService.gridToWorld(targetCell)
+            droppedWorldPos = worldPos
             let distance = sqrt(pow(worldPos.x - item.position.x, 2) + pow(worldPos.y - item.position.y, 2))
             let dropDuration = max(0.2, min(0.5, TimeInterval(distance / 400)))
             
@@ -392,6 +421,7 @@ class Character: SKSpriteNode {
         } else {
             // Fallback: drop at character position
             let dropPosition = CGPoint(x: position.x, y: position.y - 30)
+            droppedWorldPos = dropPosition
             let dropAction = SKAction.move(to: dropPosition, duration: 0.3)
             dropAction.timingMode = .easeOut
             item.run(dropAction)
@@ -401,6 +431,29 @@ class Character: SKSpriteNode {
         
         item.zPosition = ZLayers.groundObjects
         carriedItem = nil
+        
+        // Clear persistent carry state.
+        CharacterCarryState.shared.clear()
+
+        // Movable shop object: stamp the new placement into the registry
+        // and broadcast so the remote player's copy lands at the same cell.
+        if let editorName = trackedName {
+            MovableObjectRegistry.shared.recordPlacement(
+                editorName: editorName,
+                position: droppedWorldPos,
+                rotationDegrees: droppedRotationDegrees
+            )
+            if MultiplayerService.shared.isConnected {
+                MultiplayerService.shared.send(
+                    type: .objectDropped,
+                    payload: ObjectDroppedMessage(
+                        editorName: editorName,
+                        position: CodablePoint(droppedWorldPos),
+                        rotationDegrees: droppedRotationDegrees
+                    )
+                )
+            }
+        }
     }
     
     func dropItemSilently() {
@@ -414,13 +467,71 @@ class Character: SKSpriteNode {
         
         item.removeFromParent()
         carriedItem = nil
+        
+        // Clear persistent carry state.
+        CharacterCarryState.shared.clear()
+        
         Log.debug(.game, "Silently removed carried item")
     }
     
     func rotateCarriedItem() {
         if let item = carriedItem, item.isRotatable {
             item.rotateToNextState()
+            // If this is a tracked movable object, broadcast the new
+            // rotation so the partner's copy spins to match.
+            if let editorName = trackedMovableEditorName(for: item) {
+                let degrees = item.rotationState.rawValue
+                MovableObjectRegistry.shared.recordRotation(
+                    editorName: editorName,
+                    rotationDegrees: degrees
+                )
+                if MultiplayerService.shared.isConnected {
+                    MultiplayerService.shared.send(
+                        type: .objectRotated,
+                        payload: ObjectRotatedMessage(
+                            editorName: editorName,
+                            rotationDegrees: degrees
+                        )
+                    )
+                }
+            }
         }
+    }
+
+    /// Returns the editor `name` of a `RotatableObject` IF it's an
+    /// editor-placed shop furniture/table that we want to keep in sync
+    /// across host/guest and across sessions. Returns nil otherwise so
+    /// drinks, foraged ingredients, sacred_table, etc. are NOT tracked.
+    private func trackedMovableEditorName(for item: RotatableObject) -> String? {
+        guard let name = item.name else { return nil }
+        // Sacred table is ritual-only; never moved.
+        if name == "sacred_table" { return nil }
+        // Editor furniture / tables follow these naming conventions.
+        // (See GameScene.editorFurnitureNames + editorTableNames.)
+        if name.hasPrefix("table_") { return name }
+        if name.hasPrefix("furniture_") { return name }
+        return nil
+    }
+    
+    /// Map a carried RotatableObject to the persistable CarryContent form.
+    /// Matches the same ingredient-sprite names used by DrinkCreator /
+    /// CarriedItemFactory so round-tripping is lossless.
+    private func carryContent(from item: RotatableObject) -> CarryContent {
+        if let ingredient = ForageableIngredient.fromCarriedNodeName(item.name) {
+            return .ingredient(ingredient)
+        }
+
+        if item.name == "picked_up_drink" || item.name == "completed_drink" {
+            let hasTea  = item.children.contains { $0.name == "tea_black" }
+            let hasIce  = item.children.contains { $0.name == "ice_cubes" }
+            let hasBoba = item.children.contains { $0.name == "topping_tapioca" }
+            let hasFoam = item.children.contains { $0.name == "foam_cheese" }
+            let hasLid  = item.children.contains { $0.name == "lid_straw" }
+            return .drink(hasTea: hasTea, hasIce: hasIce, hasBoba: hasBoba, hasFoam: hasFoam, hasLid: hasLid)
+        }
+
+        // Furniture or other non-persistable items — don't save.
+        return .none
     }
     
     private func updateCarriedItemPosition() {

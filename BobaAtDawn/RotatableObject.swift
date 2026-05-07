@@ -34,17 +34,26 @@ enum RotationState: Int, CaseIterable {
     }
 }
 
+@objc(RotatableObject)
 class RotatableObject: SKSpriteNode {
+
+    private enum CodingKeys {
+        static let objectType = "editorObjectType"
+        static let rotationState = "editorRotationState"
+        static let shapeName = "editorShapeName"
+    }
     
     // MARK: - Properties
     let objectType: ObjectType
     private(set) var rotationState: RotationState = .north
     private var isSelected: Bool = false
     private let defaultSize = GameConfig.Objects.defaultSize
+    private let shapeName: String
     
     // MARK: - Initialization
     init(type: ObjectType, color: SKColor, shape: String) {
         self.objectType = type
+        self.shapeName = shape
         super.init(texture: nil, color: color, size: defaultSize)
         
         name = "rotatable_\(type)_\(shape)"
@@ -58,7 +67,23 @@ class RotatableObject: SKSpriteNode {
     }
     
     required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+        let decodedType = RotatableObject.objectType(from: aDecoder.decodeObject(forKey: CodingKeys.objectType) as? String)
+        self.objectType = decodedType
+        self.shapeName = aDecoder.decodeObject(forKey: CodingKeys.shapeName) as? String ?? "rectangle"
+        super.init(coder: aDecoder)
+        self.rotationState = RotationState(rawValue: aDecoder.decodeInteger(forKey: CodingKeys.rotationState)) ?? .north
+        normalizeLegacyTableVisualsIfNeeded()
+        if visualChildren().isEmpty && self.texture == nil {
+            setupVisualShape(shapeName)
+        }
+        self.zRotation = rotationState.angle
+    }
+
+    override func encode(with coder: NSCoder) {
+        super.encode(with: coder)
+        coder.encode(RotatableObject.string(from: objectType), forKey: CodingKeys.objectType)
+        coder.encode(rotationState.rawValue, forKey: CodingKeys.rotationState)
+        coder.encode(shapeName, forKey: CodingKeys.shapeName)
     }
     
     // MARK: - Visual Setup
@@ -83,6 +108,7 @@ class RotatableObject: SKSpriteNode {
             createDrinkShape()
 
         case "table":
+            if applyBuiltInTexture(named: "table") { return }
             if tryAddSprite(atlasName: "Objects", textureNames: ["table", "table_default"]) { return }
             createTableShape()
 
@@ -129,6 +155,44 @@ class RotatableObject: SKSpriteNode {
 
         self.addChild(node)
         return true
+    }
+
+    private func visualChildren() -> [SKNode] {
+        children.filter {
+            guard let name = $0.name else { return false }
+            return name.hasPrefix("station_") ||
+                   name.hasPrefix("shape_") ||
+                   name.hasPrefix("drink_") ||
+                   name.hasPrefix("table_") ||
+                   name == "direction_indicator" ||
+                   name.hasPrefix("L_") ||
+                   name == "triangle_indicator"
+        }
+    }
+
+    @discardableResult
+    private func applyBuiltInTexture(named textureName: String) -> Bool {
+        let texture = SKTexture(imageNamed: textureName)
+        texture.filteringMode = .nearest
+        self.texture = texture
+        color = .clear
+        colorBlendFactor = 0
+        return true
+    }
+
+    private func normalizeLegacyTableVisualsIfNeeded() {
+        guard isTableLikeNode else { return }
+
+        if texture == nil {
+            _ = applyBuiltInTexture(named: "table")
+        }
+
+        children
+            .filter {
+                guard let name = $0.name else { return false }
+                return name == "table_center" || name.hasPrefix("table_corner_")
+            }
+            .forEach { $0.removeFromParent() }
     }
     
     private func createArrowShape() {
@@ -291,5 +355,37 @@ class RotatableObject: SKSpriteNode {
             ]),
             SKAction.removeFromParent()
         ]))
+    }
+}
+
+private extension RotatableObject {
+    var isTableLikeNode: Bool {
+        name == "table" || name?.hasPrefix("table_") == true || shapeName == "table"
+    }
+
+    static func string(from type: ObjectType) -> String {
+        switch type {
+        case .drink:
+            return "drink"
+        case .furniture:
+            return "furniture"
+        case .station:
+            return "station"
+        case .completedDrink:
+            return "completedDrink"
+        }
+    }
+
+    static func objectType(from string: String?) -> ObjectType {
+        switch string {
+        case "drink":
+            return .drink
+        case "station":
+            return .station
+        case "completedDrink":
+            return .completedDrink
+        default:
+            return .furniture
+        }
     }
 }

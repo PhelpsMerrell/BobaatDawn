@@ -8,6 +8,32 @@
 
 import SpriteKit
 
+// MARK: - Ritual NPC Liberation Lines
+//
+// Spoken once when the chosen NPC arrives at the sacred table at dawn.
+// Pool selection is keyed off `RitualArea.liberationType` (computed from
+// the NPC's satisfaction score — ≥80 → divine, ≤20 → hellish).
+
+private let divineLiberationLines: [String] = [
+    "I'm ready. The shop has been kind to me.",
+    "I came here lost. Now I leave full.",
+    "I think… I think I can let go now.",
+    "Thank you. For all of it.",
+    "I'm at peace.",
+    "It tastes like home, in the end.",
+    "Take me where the light goes."
+]
+
+private let hellishLiberationLines: [String] = [
+    "Why did it have to be like this?",
+    "Nothing helped. Nothing ever did.",
+    "Let it end. I'm so tired of this place.",
+    "I never got what I wanted here.",
+    "Just take me. I'm done.",
+    "Bitter all the way down.",
+    "I won't miss any of it."
+]
+
 extension GameScene {
     
     // MARK: - Ritual Area Setup
@@ -23,6 +49,13 @@ extension GameScene {
         
         ritualArea.onRitualCompleted = { [weak self] liberatedResident in
             self?.handleRitualCompleted(liberatedResident)
+        }
+        
+        // If the player placed a drink on the sacred table BEFORE
+        // lighting all candles, this callback completes the ritual the
+        // moment the seventh candle ignites.
+        ritualArea.onCandlesAllLit = { [weak self] in
+            self?.handleAllCandlesLit()
         }
         
         addChild(ritualArea)
@@ -65,8 +98,23 @@ extension GameScene {
             // Only host advances the day counter — guest receives
             // day count via timeSync/hostHandshake.
             if !MultiplayerService.shared.isGuest {
+                // Capture the day that just ended BEFORE advancing.
+                let endingDay = timeService.dayCount
                 timeService.advanceDay()
+                
+                // Generate the chronicle for the day that just ended.
+                generateDailyChronicleAtDawn(endingDay: endingDay)
             }
+            
+            // Dawn clears in-progress drink state: station toggles reset,
+            // the display reverts to an empty cup, and any drink in the
+            // player's hand evaporates. Trash is intentionally NOT cleared
+            // (the purgatory shop doesn't clean itself). Foraged ingredients
+            // in hand also survive (see CharacterCarryState.clearDrinkOnly).
+            clearInProgressDrinkAtDawn()
+            
+            // Refresh foraged spawns for the new day
+            ForagingManager.shared.refreshIfNeeded(dayCount: timeService.dayCount)
             
             if timeService.isRitualDay && ritualArea.hasEligibleNPCs() {
                 ritualArea.spawnRitual()
@@ -138,6 +186,11 @@ extension GameScene {
             if let sacredTable = self.findSacredTable() {
                 ritualNPC.transitionToRitualSitting(table: sacredTable)
                 Log.info(.ritual, "RITUAL MODE ACTIVATED for \(ritualNPC.animalType.rawValue)")
+                
+                // Brief beat after sitting, then speak based on extremity.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                    self?.showRitualNPCDialogue(npc: ritualNPC)
+                }
             } else {
                 Log.error(.ritual, "Could not find sacred table for ritual sitting")
             }
@@ -175,6 +228,11 @@ extension GameScene {
             SKAction.fadeIn(withDuration: 1.5),
             SKAction.scale(to: 1.0, duration: 1.5)
         ]))
+        
+        // Wait for the materialization to finish, then speak.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { [weak self] in
+            self?.showRitualNPCDialogue(npc: npc)
+        }
         
         Log.info(.ritual, "\(chosenResident.npcData.name) materializes at the sacred table")
     }
@@ -303,6 +361,14 @@ extension GameScene {
             MultiplayerService.shared.send(type: .npcLiberated, payload: NPCLiberatedMessage(
                 npcID: characterId, liberationType: libType
             ))
+            // Chronicle hook — record divine vs hellish so the page can
+            // colour the line correctly.
+            let isDivine = ritualArea.liberationType == .divine
+            let name = DialogueService.shared.getNPC(byId: characterId)?.name
+                ?? npc.animalType.rawValue
+            DailyChronicleLedger.shared.recordNPCLiberated(
+                npcID: characterId, npcName: name, divine: isDivine
+            )
         }
         
         npc.clearRitualMode()
@@ -326,5 +392,131 @@ extension GameScene {
             return table
         }
         return children.first(where: { $0.name == "sacred_table" }) as? RotatableObject
+    }
+    
+    // MARK: - Ritual NPC Arrival Dialogue
+    
+    /// Show one line of liberation dialogue based on the NPC's satisfaction
+    /// extremity. Called from both the existing-shop-NPC path
+    /// (`handleNPCSummoned`) and the materialization-fallback path
+    /// (`createRitualNPC`) once the NPC is at the sacred table.
+    func showRitualNPCDialogue(npc: ShopNPC) {
+        let pool = (ritualArea.liberationType == .divine)
+            ? divineLiberationLines
+            : hellishLiberationLines
+        DialogueService.shared.showCustomDialogue(
+            for: npc, in: self, customLines: pool
+        )
+    }
+    
+    // MARK: - Candles-Lit Hook
+    
+    /// Fired by RitualArea when the seventh candle is lit. If the player
+    /// already placed a drink on the sacred table while the candles were
+    /// being lit, complete the ritual immediately. Otherwise wait —
+    /// the next placeDrinkOnTable will trigger it (since
+    /// `areCandlesAllLit()` is now true).
+    func handleAllCandlesLit() {
+        guard let sacredTable = findSacredTable() else { return }
+        guard let drink = sacredTable.children.first(where: {
+            $0.name == "drink_on_table"
+        }) else {
+            Log.info(.ritual, "All candles lit — waiting for player to place a drink on the sacred table")
+            return
+        }
+        Log.info(.ritual, "All candles lit AND drink already on sacred table — completing ritual")
+        triggerRitualSequence(drinkOnTable: drink, sacredTable: sacredTable)
+    }
+    
+    // MARK: - Dawn Drink Clear
+    
+    /// Wipe in-progress drink state at the start of a new day.
+    ///   - Carried drink → dropped silently (matcha leaves survive)
+    ///   - CharacterCarryState → clearDrinkOnly (belt-and-suspenders with
+    ///     dropItemSilently, which also clears carry state)
+    ///
+    /// Stations no longer hold drink state post-refactor — they're dumb
+    /// furniture — so there's nothing to reset there.
+    /// Trash is intentionally left alone — the purgatory shop accumulates.
+    private func clearInProgressDrinkAtDawn() {
+        // Drop any drink in hand (leave matcha leaves alone)
+        if let carried = character?.carriedItem, carried.name != "carried_matcha_leaf" {
+            character.dropItemSilently()
+        }
+        // Clear persisted carry state for drinks only (no-op if already empty
+        // or if carrying a matcha leaf).
+        CharacterCarryState.shared.clearDrinkOnly()
+        
+        // Keep the counter display as a pristine empty cup.
+        drinkCreator?.rebuildDisplayAsEmptyCup()
+        
+        Log.info(.ritual, "Dawn: cleared in-progress drink (trash preserved)")
+    }
+    
+    // MARK: - Daily Chronicle
+    
+    /// Run on the host (or solo) at dawn rollover. Snapshots the previous
+    /// day's ledger, hands it to DailyChronicleService, persists the
+    /// resulting DailySummary, broadcasts it to the partner, and resets
+    /// the ledger for the new day.
+    ///
+    /// - Parameter endingDay: The day count value that BELONGS to the
+    ///   chronicle being written (i.e. the day that just ended, captured
+    ///   before `advanceDay()` ran).
+    func generateDailyChronicleAtDawn(endingDay: Int) {
+        let snapshot = DailyChronicleLedger.shared.snapshot()
+        DailyChronicleLedger.shared.reset()
+        
+        // Skip the very first dawn (no day 0 chronicle). On a fresh
+        // world the first dawn rollover takes us 0 → 1, and there's
+        // nothing meaningful in the day-0 ledger.
+        guard endingDay > 0 else {
+            Log.info(.dialogue, "[Chronicle] Skipping day \(endingDay) (initial rollover)")
+            return
+        }
+        
+        Log.info(.dialogue, "[Chronicle] Generating chronicle for day \(endingDay) (\(snapshot.count) events)")
+        
+        DailyChronicleService.shared.generate(
+            dayCount: endingDay,
+            events: snapshot
+        ) { result in
+            // Encode headlines + ledger for storage.
+            let headlines = DailyChronicleHeadlines.aggregate(snapshot)
+            let headlinesJSON: String = {
+                guard let data = try? JSONEncoder().encode(headlines),
+                      let s = String(data: data, encoding: .utf8) else { return "{}" }
+                return s
+            }()
+            let ledgerJSON: String = {
+                guard let data = try? JSONEncoder().encode(snapshot),
+                      let s = String(data: data, encoding: .utf8) else { return "[]" }
+                return s
+            }()
+            
+            let summary = DailySummary(
+                dayCount: endingDay,
+                generatedAt: Date(),
+                usedLLM: result.usedLLM,
+                openingLine: result.openingLine,
+                forestSection: result.forestSection,
+                minesSection: result.minesSection,
+                shopSection: result.shopSection,
+                socialSection: result.socialSection,
+                closingLine: result.closingLine,
+                headlinesJSON: headlinesJSON,
+                ledgerJSON: ledgerJSON
+            )
+            SaveService.shared.upsertDailySummary(summary)
+            
+            // Broadcast so the guest's book stays in sync.
+            if MultiplayerService.shared.isConnected {
+                MultiplayerService.shared.send(
+                    type: .dailySummaryGenerated,
+                    payload: DailySummaryGeneratedMessage(entry: summary.toEntry())
+                )
+            }
+            Log.info(.dialogue, "[Chronicle] Day \(endingDay) page sealed (LLM: \(result.usedLLM))")
+        }
     }
 }

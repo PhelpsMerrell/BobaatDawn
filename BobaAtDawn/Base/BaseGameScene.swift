@@ -153,14 +153,42 @@ class BaseGameScene: SKScene, InputServiceDelegate {
     private func setupCharacter() {
         character = Character(gridService: gridService, animationService: animationService)
         
-        // Position character at center by default (subclasses can override)
-        let startCell = configService.characterStartPosition
-        character.position = gridService.gridToWorld(startCell)
+        // Prefer an editor-placed spawn anchor when the scene provides one.
+        let defaultStartCell = configService.characterStartPosition
+        if let spawnAnchor = sceneNode(named: "character_spawn", as: SKNode.self) {
+            character.position = spawnAnchor.positionInSceneCoordinates()
+        } else {
+            character.position = gridService.gridToWorld(defaultStartCell)
+        }
         addChild(character)
         
         centerCameraOnCharacter()
         
-        print("👤 BaseGameScene: Character positioned at \(startCell)")
+        // Restore the player's carried item from the persistent singleton.
+        // This is why walking shop → forest → house and back still leaves
+        // the drink in your hand.
+        restoreCarriedItemIfNeeded()
+        
+        print("👤 BaseGameScene: Character positioned at \(character.position)")
+    }
+    
+    /// If CharacterCarryState has persisted content, rebuild the visual
+    /// RotatableObject and hand it to the character. Character.pickupItem
+    /// re-sets the singleton to the same value, which is a harmless no-op
+    /// because the content is equal.
+    private func restoreCarriedItemIfNeeded() {
+        let content = CharacterCarryState.shared.content
+        guard !content.isEmpty else { return }
+        
+        guard let item = CarriedItemFactory.makeItem(for: content) else { return }
+        
+        // Item must live in the scene before pickup so the animation
+        // system can attach actions cleanly.
+        addChild(item)
+        item.position = character.position
+        character.pickupItem(item)
+        
+        Log.info(.save, "Restored carried item: \(content)")
     }
     
     // MARK: - Template Methods (Override in subclasses)
@@ -337,6 +365,22 @@ class BaseGameScene: SKScene, InputServiceDelegate {
         let deltaTime = currentTime - (lastUpdateTime ?? currentTime)
         lastUpdateTime = currentTime
         character?.update(deltaTime: deltaTime)
+
+        // Auto-dismiss any "forgotten" dialogue if the player walked
+        // away from the NPC. Without this a stale offscreen bubble
+        // blocks all subsequent NPC taps because BaseNPC.touchesBegan
+        // gates on isDialogueActive().
+        if let charPos = character?.position {
+            DialogueService.shared.updateForPlayerPosition(charPos)
+        }
+
+        // GameScene owns the full ritual-aware time system. Everywhere
+        // else, keep the shared phase clock moving so global systems
+        // like gnomes still react while the player is in the forest,
+        // oak, cave, or a house.
+        if !(self is GameScene) {
+            tickSharedWorldPhaseOutsideShop()
+        }
         
         // Interpolate remote player position
         remoteCharacter?.interpolate(deltaTime: deltaTime)
@@ -351,6 +395,10 @@ class BaseGameScene: SKScene, InputServiceDelegate {
                 scene = "forest_\(forestScene.currentRoom)"
             } else if let oakScene = self as? BigOakTreeScene {
                 scene = "oak_\(oakScene.currentOakRoom.rawValue)"
+            } else if let caveScene = self as? CaveScene {
+                scene = "cave_\(caveScene.currentCaveRoom.rawValue)"
+            } else if let houseScene = self as? HouseScene {
+                scene = "house_\(houseScene.currentForestRoom)_\(houseScene.currentHouseNumber)"
             } else {
                 scene = "unknown"
             }
@@ -359,14 +407,18 @@ class BaseGameScene: SKScene, InputServiceDelegate {
             // e.g. "TIBFL" = tea+ice+boba+foam+lid, nil = not carrying.
             var drinkCode: String? = nil
             if let carried = character?.carriedItem {
-                var code = ""
-                if carried.children.contains(where: { $0.name == "tea_black" })       { code += "T" }
-                if carried.children.contains(where: { $0.name == "ice_cubes" })        { code += "I" }
-                if carried.children.contains(where: { $0.name == "topping_tapioca" })  { code += "B" }
-                if carried.children.contains(where: { $0.name == "foam_cheese" })      { code += "F" }
-                if carried.children.contains(where: { $0.name == "lid_straw" })        { code += "L" }
-                if code.isEmpty { code = "C" } // carrying but empty cup
-                drinkCode = code
+                if let ingredient = ForageableIngredient.fromCarriedNodeName(carried.name) {
+                    drinkCode = ingredient.remoteCarryCode
+                } else {
+                    var code = ""
+                    if carried.children.contains(where: { $0.name == "tea_black" })       { code += "T" }
+                    if carried.children.contains(where: { $0.name == "ice_cubes" })        { code += "I" }
+                    if carried.children.contains(where: { $0.name == "topping_tapioca" })  { code += "B" }
+                    if carried.children.contains(where: { $0.name == "foam_cheese" })      { code += "F" }
+                    if carried.children.contains(where: { $0.name == "lid_straw" })        { code += "L" }
+                    if code.isEmpty { code = "C" } // carrying but empty cup
+                    drinkCode = code
+                }
             }
             
             MultiplayerService.shared.sendPositionIfNeeded(
@@ -381,6 +433,98 @@ class BaseGameScene: SKScene, InputServiceDelegate {
         
         // Allow subclasses to add specific update logic
         updateSpecificContent(currentTime)
+
+        // Keep the shared gnome simulation alive no matter which scene
+        // the player is currently watching.
+        GnomeManager.shared.update(deltaTime: max(0, deltaTime))
+    }
+
+    private func tickSharedWorldPhaseOutsideShop() {
+        let previousPhase = TimeManager.shared.currentPhase
+        TimeManager.shared.update(currentTime: CFAbsoluteTimeGetCurrent())
+        let currentPhase = TimeManager.shared.currentPhase
+        guard currentPhase != previousPhase else { return }
+
+        let persistedDay = SaveService.shared.loadGameState()?.dayCount ?? max(0, GnomeManager.shared.currentDayCount)
+        let dayCount: Int
+        if currentPhase == .dawn {
+            // Capture the day that just ended BEFORE bumping, so the
+            // chronicle is written under the correct dayCount.
+            let endingDay = persistedDay
+            dayCount = persistedDay + 1
+            SaveService.shared.setDayCount(dayCount)
+            ForagingManager.shared.refreshIfNeeded(dayCount: dayCount)
+
+            // Also generate the daily chronicle here, mirroring what
+            // GameScene+Ritual.handleRitualTimePhaseChange does when
+            // dawn fires inside the shop. Without this, dawns that
+            // happen while the player is in the forest / oak / cave /
+            // a house silently lose their chronicle entry.
+            if !MultiplayerService.shared.isGuest, let game = self as? GameScene {
+                game.generateDailyChronicleAtDawn(endingDay: endingDay)
+            } else if !MultiplayerService.shared.isGuest {
+                // We're outside the shop — host the chronicle path here.
+                generateDailyChronicleOutsideShop(endingDay: endingDay)
+            }
+        } else {
+            dayCount = persistedDay
+        }
+
+        NPCResidentManager.shared.handleTimePhaseChange(currentPhase)
+        GnomeManager.shared.handleTimePhaseChange(currentPhase, dayCount: dayCount)
+        SaveService.shared.persistGnomeState()
+    }
+
+    /// Mirror of `GameScene.generateDailyChronicleAtDawn`, callable from
+    /// any non-shop scene's update tick. Same shape: snapshot ledger,
+    /// generate prose, persist, broadcast.
+    private func generateDailyChronicleOutsideShop(endingDay: Int) {
+        guard endingDay > 0 else { return }
+
+        let snapshot = DailyChronicleLedger.shared.snapshot()
+        DailyChronicleLedger.shared.reset()
+
+        Log.info(.dialogue, "[Chronicle] Generating chronicle for day \(endingDay) (\(snapshot.count) events, outside shop)")
+
+        DailyChronicleService.shared.generate(
+            dayCount: endingDay,
+            events: snapshot
+        ) { result in
+            let headlines = DailyChronicleHeadlines.aggregate(snapshot)
+            let headlinesJSON: String = {
+                guard let data = try? JSONEncoder().encode(headlines),
+                      let s = String(data: data, encoding: .utf8) else { return "{}" }
+                return s
+            }()
+            let ledgerJSON: String = {
+                guard let data = try? JSONEncoder().encode(snapshot),
+                      let s = String(data: data, encoding: .utf8) else { return "[]" }
+                return s
+            }()
+
+            let summary = DailySummary(
+                dayCount: endingDay,
+                generatedAt: Date(),
+                usedLLM: result.usedLLM,
+                openingLine: result.openingLine,
+                forestSection: result.forestSection,
+                minesSection: result.minesSection,
+                shopSection: result.shopSection,
+                socialSection: result.socialSection,
+                closingLine: result.closingLine,
+                headlinesJSON: headlinesJSON,
+                ledgerJSON: ledgerJSON
+            )
+            SaveService.shared.upsertDailySummary(summary)
+
+            if MultiplayerService.shared.isConnected {
+                MultiplayerService.shared.send(
+                    type: .dailySummaryGenerated,
+                    payload: DailySummaryGeneratedMessage(entry: summary.toEntry())
+                )
+            }
+            Log.info(.dialogue, "[Chronicle] Day \(endingDay) page sealed (LLM: \(result.usedLLM), outside shop)")
+        }
     }
     
     private var lastUpdateTime: TimeInterval?

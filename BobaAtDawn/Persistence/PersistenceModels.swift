@@ -11,7 +11,10 @@ import Foundation
 // MARK: - World State (Single Source of Truth)
 @Model
 final class WorldState {
-    var worldID: String = "main_world"
+    var worldID: String = "save_slot_1"
+    var slotIndex: Int = 1
+    var slotName: String = WorldState.defaultSlotName(for: 1)
+    var hasStartedGame: Bool = false
     var currentTimePhase: String = "day"
     var timeProgress: Float = 0.0
     var isTimeFlowing: Bool = true
@@ -24,20 +27,65 @@ final class WorldState {
     // JSON string of current NPC positions/states
     var npcStatesJSON: String = "{}"
     
+    // JSON array of persistent world items (trash + drinks on tables).
+    // See WorldItemRegistry.
+    var worldItemsJSON: String = "[]"
+    
+    // JSON blob of the player's currently-carried item.
+    // See CharacterCarryState.
+    var carryStateJSON: String = "{}"
+    
+    // JSON blob of ingredient station toggle states.
+    // See StationPersistedState.
+    var stationStatesJSON: String = "{}"
+    
+    // JSON blob of pantry/fridge contents, keyed by container name.
+    // See StorageRegistry.
+    var storageJSON: String = "{}"
+    
+    // JSON array of GnomeSnapshot — drives the persistent gnome simulation.
+    // Defaults to empty array on fresh worlds. See GnomeManager.
+    var gnomeStateJSON: String = "[]"
+    
+    // Treasury gem count (resets to 0 once it crosses TreasuryPile.resetThreshold).
+    var treasuryGemCount: Int = 0
+
+    // JSON array of MovableObjectEntry — editor-placed RotatableObjects
+    // (tables / furniture) that have been rearranged from their .sks
+    // default positions. See MovableObjectRegistry. Default "[]" means
+    // everything at editor default.
+    var movableObjectsJSON: String = "[]"
+    
     // Simple key-value store for world flags
     var worldFlags: [String: Bool] = [:]
     
     // Last save timestamp
     var lastSaved: Date = Date()
     
-    init() {
-        self.worldID = "main_world"
+    init(slotIndex: Int = 1, slotName: String? = nil) {
+        self.slotIndex = max(1, slotIndex)
+        self.worldID = Self.slotID(for: self.slotIndex)
+        self.slotName = Self.sanitizedSlotName(slotName, slotIndex: self.slotIndex)
+    }
+
+    static func slotID(for index: Int) -> String {
+        "save_slot_\(max(1, index))"
+    }
+
+    static func defaultSlotName(for index: Int) -> String {
+        "Save Slot \(max(1, index))"
+    }
+
+    static func sanitizedSlotName(_ value: String?, slotIndex: Int) -> String {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? defaultSlotName(for: slotIndex) : trimmed
     }
 }
 
 // MARK: - NPC Memory (Tracks relationships with player)
 @Model
 final class NPCMemory {
+    var saveSlotID: String = WorldState.slotID(for: 1)
     var npcID: String
     var name: String
     var animalType: String
@@ -135,9 +183,82 @@ enum SatisfactionLevel: String, CaseIterable {
     }
 }
 
+// MARK: - NPC Relationship Memory (NPC ↔ NPC opinion scores)
+
+/// Persistent record of how one NPC feels about another. Created lazily
+/// — `getOrCreateRelationship(of:toward:)` seeds the score from JSON
+/// stance overlap on first access. Subsequent conversations and hostile
+/// actions mutate the score in place.
+///
+/// One row per ordered pair (A → B). A's opinion of B and B's opinion
+/// of A are tracked independently, since asymmetric grudges are part of
+/// the design (Qari blames Rascal; Rascal barely notices).
+@Model
+final class NPCRelationshipMemory {
+    var saveSlotID: String = WorldState.slotID(for: 1)
+    /// Composite key: "\(ofNPCID)__\(towardNPCID)". Stored explicitly so
+    /// SwiftData predicates can fetch by it without composite-key headaches.
+    var pairKey: String
+
+    /// Whose opinion this row records.
+    var ofNPCID: String
+
+    /// Of whom.
+    var towardNPCID: String
+
+    /// Clamped [-100, +100]. 0 = neutral, positive = friendly, negative = sour.
+    var score: Int = 0
+
+    /// Number of conversations these two have had since seeding.
+    var conversationCount: Int = 0
+
+    /// Last time anything moved this score. nil if never updated since seed.
+    var lastUpdated: Date?
+
+    /// Total tally of each interaction type that has been applied to this
+    /// pair. Stored as a JSON-encoded `[String: Int]` so SwiftData doesn't
+    /// need a separate child table. Use `interactionTallies` accessor.
+    var interactionTalliesJSON: String = "{}"
+
+    init(ofNPCID: String, towardNPCID: String, initialScore: Int = 0) {
+        self.ofNPCID = ofNPCID
+        self.towardNPCID = towardNPCID
+        self.pairKey = "\(ofNPCID)__\(towardNPCID)"
+        self.score = initialScore
+    }
+
+    /// Apply one interaction's `selfDelta` (when this row is the speaker)
+    /// or `otherDelta` (when this row is the listener) to the score.
+    func applyDelta(_ delta: Int, interaction: ConversationInteraction) {
+        score = max(-100, min(100, score + delta))
+        lastUpdated = Date()
+        var tallies = interactionTallies
+        tallies[interaction.rawValue, default: 0] += 1
+        if let data = try? JSONEncoder().encode(tallies),
+           let json = String(data: data, encoding: .utf8) {
+            interactionTalliesJSON = json
+        }
+    }
+
+    var interactionTallies: [String: Int] {
+        guard let data = interactionTalliesJSON.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([String: Int].self, from: data) else {
+            return [:]
+        }
+        return decoded
+    }
+
+    // Friendliness helpers — match thresholds in OpinionModels.swift.
+    var isHostile:  Bool { score <= HostilityThreshold.hostile }
+    var isAvoidant: Bool { score <= HostilityThreshold.avoidant }
+    var isFriendly: Bool { score >= HostilityThreshold.friendly }
+    var isClose:    Bool { score >= HostilityThreshold.close }
+}
+
 // MARK: - Shop Memory (Player's drink-making history)
 @Model
 final class ShopMemory {
+    var saveSlotID: String = WorldState.slotID(for: 1)
     var totalDrinksMade: Int = 0
     var discoveredRecipes: [String] = []
     var averageCustomerSatisfaction: Float = 0.5

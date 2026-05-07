@@ -68,6 +68,12 @@ class ShopNPC: BaseNPC {
     // Ritual
     private var isInRitualMode: Bool = false
 
+    /// True while the conversation service is steering this NPC toward a
+    /// huddle point and has not yet released them. Pauses the state
+    /// machine so wandering / sitting transitions don't yank the NPC
+    /// away mid-gather. Cleared on conversation end via `clearGathering()`.
+    private var isGathering: Bool = false
+
     // Movement
     private var isMoving: Bool = false
     private let moveSpeed: TimeInterval = GameConfig.NPC.moveSpeed
@@ -141,6 +147,85 @@ class ShopNPC: BaseNPC {
         // behavior resumes on next update tick automatically
     }
 
+    // MARK: - Gather (used by NPCConversationService for huddling)
+
+    /// Walk to a specific world point so the NPC clusters with others for
+    /// a conversation. Picks the closest available grid cell to the
+    /// requested point, hands the move to the movementController, and
+    /// invokes `completion` on arrival. If the requested point is already
+    /// occupied/unreachable, completion fires immediately so the convo
+    /// service doesn't hang.
+    ///
+    /// While gathering the NPC is NOT frozen — it needs to walk. The
+    /// conversation service freezes everyone once all participants have
+    /// arrived (or timed out).
+    func gatherTo(worldPoint: CGPoint, completion: @escaping () -> Void) {
+        // Stop whatever current behaviour is happening so we don't fight
+        // the NPC's own state machine for control of the velocity.
+        movementController.stop()
+        currentTable = nil
+        targetCell = nil
+        isGathering = true
+
+        // Snap requested world position to nearest available grid cell.
+        let preferred = gridService.worldToGrid(worldPoint)
+        let target = nearestAvailableCell(near: preferred)
+
+        guard let target = target else {
+            // Nowhere to go — stay where we are, fire completion so the
+            // conversation can still proceed.
+            Log.warn(.npc, "\(animalType.rawValue) gatherTo: no available cell near \(preferred)")
+            completion()
+            return
+        }
+
+        // Already there (or already on the target) — fire immediately.
+        if target == gridPosition {
+            completion()
+            return
+        }
+
+        // Free our current cell so the move doesn't trip on its own footprint.
+        gridService.freeCell(gridPosition)
+
+        movementController.moveToGrid(target) { [weak self] in
+            guard let self = self else { completion(); return }
+            // Reserve the new cell as our footprint.
+            self.gridService.reserveCell(target)
+            self.gridPosition = target
+            completion()
+        }
+    }
+
+    /// Release the gather-lock so the state machine resumes normally.
+    /// Called by NPCConversationService when the conversation ends.
+    func clearGathering() {
+        isGathering = false
+    }
+
+    /// Pick the nearest available grid cell to `target`, expanding outward
+    /// in concentric rings up to a small radius. Returns nil only if
+    /// nothing is free within the search window.
+    private func nearestAvailableCell(near target: GridCoordinate) -> GridCoordinate? {
+        if target.isValid() && (target == gridPosition || gridService.isCellAvailable(target)) {
+            return target
+        }
+        for ring in 1...4 {
+            for dx in -ring...ring {
+                for dy in -ring...ring {
+                    // Only the outer ring at this radius.
+                    guard abs(dx) == ring || abs(dy) == ring else { continue }
+                    let cand = GridCoordinate(x: target.x + dx, y: target.y + dy)
+                    guard cand.isValid() else { continue }
+                    if cand == gridPosition || gridService.isCellAvailable(cand) {
+                        return cand
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
     // MARK: - Update Loop
     func update(deltaTime: TimeInterval) {
         // Skip if in dialogue
@@ -151,6 +236,14 @@ class ShopNPC: BaseNPC {
 
         // Ritual mode — just wait
         if isInRitualMode {
+            movementController.update(deltaTime: deltaTime)
+            return
+        }
+
+        // Gathering mode — the conversation service is steering us toward a
+        // huddle. Let the movement controller drive the move-to-grid, but
+        // keep the state machine out of it.
+        if isGathering {
             movementController.update(deltaTime: deltaTime)
             return
         }
@@ -305,6 +398,12 @@ class ShopNPC: BaseNPC {
     }
 
     private func pickupDrinkFromTable(_ drink: SKNode) {
+        // Remove the drink from the world registry before taking it off
+        // the table — otherwise it'd ghost back on the next scene load.
+        if let id = drink.userData?["worldItemID"] as? String {
+            WorldItemRegistry.shared.remove(id: id)
+        }
+        
         drink.removeFromParent()
 
         let carried = createCarriedDrink(from: drink)
@@ -408,7 +507,15 @@ class ShopNPC: BaseNPC {
         guard let parentScene = scene else { return }
         let offset = CGPoint(x: CGFloat.random(in: -20...20), y: CGFloat.random(in: -20...20))
         let trashPos = CGPoint(x: position.x + offset.x, y: position.y + offset.y)
+        
+        // Register before spawning so the trash persists across scene
+        // reloads and app restarts.
+        let item = WorldItemRegistry.makeTrash(location: .shop, at: trashPos)
+        WorldItemRegistry.shared.add(item)
+        
         let trash = Trash(at: trashPos, location: .shop)
+        trash.userData = NSMutableDictionary()
+        trash.userData?["worldItemID"] = item.id
         parentScene.addChild(trash)
         Log.debug(.npc, "\(animalType.rawValue) dropped trash at \(trashPos)")
     }

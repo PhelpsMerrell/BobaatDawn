@@ -7,7 +7,12 @@
 
 import SpriteKit
 
+@objc(PowerBreaker)
 class PowerBreaker: SKSpriteNode {
+
+    private enum CodingKeys {
+        static let isBreakerTripped = "editorPowerBreakerTripped"
+    }
     
     // MARK: - Properties
     private(set) var isBreakerTripped: Bool = false {
@@ -32,7 +37,22 @@ class PowerBreaker: SKSpriteNode {
     }
     
     required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+        super.init(coder: aDecoder)
+        basePanel = childNode(withName: "breaker_panel") as? SKSpriteNode
+        switchHandle = childNode(withName: "breaker_switch_handle") as? SKSpriteNode
+        statusLight = childNode(withName: "breaker_status_light") as? SKSpriteNode
+        timeLabel = childNode(withName: "breaker_status_label") as? SKLabelNode
+        if basePanel == nil || switchHandle == nil || statusLight == nil || timeLabel == nil {
+            removeAllChildren()
+            setupVisuals()
+        }
+        setupTimeCallbacks()
+        isBreakerTripped = aDecoder.decodeBool(forKey: CodingKeys.isBreakerTripped)
+    }
+
+    override func encode(with coder: NSCoder) {
+        super.encode(with: coder)
+        coder.encode(isBreakerTripped, forKey: CodingKeys.isBreakerTripped)
     }
     
     private func setupVisuals() {
@@ -41,18 +61,21 @@ class PowerBreaker: SKSpriteNode {
                                 size: CGSize(width: 60, height: 100))
         basePanel.position = CGPoint(x: 0, y: 0)
         basePanel.zPosition = 0
+        basePanel.name = "breaker_panel"
         addChild(basePanel)
         
         // Switch handle
         switchHandle = SKSpriteNode(color: .white, size: CGSize(width: 40, height: 20))
         switchHandle.position = CGPoint(x: 0, y: 10) // Start in up position
         switchHandle.zPosition = 1
+        switchHandle.name = "breaker_switch_handle"
         addChild(switchHandle)
         
         // Status indicator light
         statusLight = SKSpriteNode(color: .green, size: CGSize(width: 15, height: 15))
         statusLight.position = CGPoint(x: 0, y: 30)
         statusLight.zPosition = 1
+        statusLight.name = "breaker_status_light"
         addChild(statusLight)
         
         // Time label
@@ -61,6 +84,7 @@ class PowerBreaker: SKSpriteNode {
         mainLabel.fontColor = .white
         mainLabel.position = CGPoint(x: 0, y: -45)
         mainLabel.zPosition = 1
+        mainLabel.name = "breaker_main_label"
         addChild(mainLabel)
         
         // Status indicator label
@@ -69,6 +93,7 @@ class PowerBreaker: SKSpriteNode {
         timeLabel.fontColor = .green
         timeLabel.position = CGPoint(x: 0, y: -58)
         timeLabel.zPosition = 1
+        timeLabel.name = "breaker_status_label"
         addChild(timeLabel)
     }
     

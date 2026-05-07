@@ -8,15 +8,18 @@
 //    - Multiple "rooms" swapped in/out via room-setup re-runs with a
 //      black-overlay fade transition.
 //
-//  4 rooms:
+//  5 rooms:
 //    1. Lobby         (cozy main hall with fireplace, kitchen, couches)
 //    2. Left bedroom
 //    3. Middle bedroom
 //    4. Right bedroom
+//    5. Treasury     (gem pile reachable from the lobby)
 //
 //  Triggers:
 //    - Three stair tiles in the lobby → bedrooms
+//    - One stair tile in the lobby → treasury
 //    - One down-stair tile in each bedroom → lobby
+//    - One stair tile in the treasury → lobby
 //    - One exit door in the lobby → back to ForestScene Room 4
 //
 //  All visuals are placeholders (flat SKSpriteNodes + SKLabelNode emojis)
@@ -27,11 +30,12 @@
 import SpriteKit
 
 // MARK: - Oak Room Identifiers
-enum OakRoom: Int {
+enum OakRoom: Int, CaseIterable {
     case lobby          = 1
     case leftBedroom    = 2
     case middleBedroom  = 3
     case rightBedroom   = 4
+    case treasury       = 5
 
     var debugName: String {
         switch self {
@@ -39,17 +43,20 @@ enum OakRoom: Int {
         case .leftBedroom:   return "Left Bedroom"
         case .middleBedroom: return "Middle Bedroom"
         case .rightBedroom:  return "Right Bedroom"
+        case .treasury:      return "Treasury"
         }
     }
 }
 
 // MARK: - Big Oak Tree Scene
+@objc(BigOakTreeScene)
 class BigOakTreeScene: BaseGameScene {
 
     // MARK: - Node Names (trigger identifiers used in touch handling)
     static let stairsLeftName    = "oak_stairs_left"
     static let stairsMiddleName  = "oak_stairs_middle"
     static let stairsRightName   = "oak_stairs_right"
+    static let stairsTreasuryName = "oak_stairs_treasury"
     static let stairsDownName    = "oak_stairs_down"
     static let exitDoorName      = "oak_exit_door"
 
@@ -60,7 +67,11 @@ class BigOakTreeScene: BaseGameScene {
     // MARK: - Tracked nodes (replaced on each room setup)
     internal var roomLabel: SKLabelNode?
     internal var placedDecor: [SKNode] = []
-    internal var placedGnomes: [GnomeNPC] = []
+    /// The treasury pile node when the player is currently in the
+    /// treasury room. Nil otherwise. The GnomeManager updates this via
+    /// `updateTreasuryPileIfPresent` so the count sticks even when
+    /// gems are deposited from elsewhere.
+    internal var treasuryPile: TreasuryPile?
 
     // MARK: - Transition Control
     private var isTransitioning: Bool = false
@@ -70,73 +81,26 @@ class BigOakTreeScene: BaseGameScene {
     // MARK: - BaseGameScene Template Methods
 
     override open func setupWorld() {
-        // Warm wood-brown interior — distinct from forest's green.
-        backgroundColor = SKColor(red: 0.28, green: 0.18, blue: 0.12, alpha: 1.0)
-
         super.setupWorld()
+        backgroundColor = SKColor(red: 0.28, green: 0.18, blue: 0.12, alpha: 1.0)
 
         guard worldWidth > 0 && worldHeight > 0 else {
             Log.error(.scene, "BigOakTreeScene: invalid world dimensions: \(worldWidth) x \(worldHeight)")
             return
         }
 
-        let floorSize = CGSize(width: worldWidth, height: worldHeight)
-        guard floorSize.width > 0 && floorSize.height > 0 else {
-            Log.error(.scene, "BigOakTreeScene: invalid floor size: \(floorSize)")
-            return
-        }
-
-        // Floor (lighter wood tone than background walls)
-        let floor = SKSpriteNode(
-            color: SKColor(red: 0.45, green: 0.30, blue: 0.20, alpha: 1.0),
-            size: floorSize
-        )
-        floor.position = .zero
-        floor.zPosition = ZLayers.floor
-        floor.name = "oak_floor"
-        addChild(floor)
-
-        // Walls (dark wood borders on all 4 sides)
-        setupOakBounds()
+        requiredSceneNode(named: "oak_floor", as: SKSpriteNode.self).zPosition = ZLayers.floor
+        requiredSceneNode(named: "oak_wall_top", as: SKSpriteNode.self).zPosition = ZLayers.walls
+        requiredSceneNode(named: "oak_wall_bottom", as: SKSpriteNode.self).zPosition = ZLayers.walls
+        requiredSceneNode(named: "oak_wall_left", as: SKSpriteNode.self).zPosition = ZLayers.walls
+        requiredSceneNode(named: "oak_wall_right", as: SKSpriteNode.self).zPosition = ZLayers.walls
 
         Log.info(.scene, "BigOakTreeScene world setup complete")
     }
 
-    private func setupOakBounds() {
-        let wallColor = SKColor(red: 0.15, green: 0.09, blue: 0.06, alpha: 1.0)
-        let wallThickness: CGFloat = 60
-
-        // Top
-        let wallTop = SKSpriteNode(color: wallColor, size: CGSize(width: worldWidth, height: wallThickness))
-        wallTop.position = CGPoint(x: 0, y: worldHeight/2 - wallThickness/2)
-        wallTop.zPosition = ZLayers.walls
-        wallTop.name = "oak_wall_top"
-        addChild(wallTop)
-
-        // Bottom
-        let wallBottom = SKSpriteNode(color: wallColor, size: CGSize(width: worldWidth, height: wallThickness))
-        wallBottom.position = CGPoint(x: 0, y: -worldHeight/2 + wallThickness/2)
-        wallBottom.zPosition = ZLayers.walls
-        wallBottom.name = "oak_wall_bottom"
-        addChild(wallBottom)
-
-        // Left
-        let wallLeft = SKSpriteNode(color: wallColor, size: CGSize(width: wallThickness, height: worldHeight))
-        wallLeft.position = CGPoint(x: -worldWidth/2 + wallThickness/2, y: 0)
-        wallLeft.zPosition = ZLayers.walls
-        wallLeft.name = "oak_wall_left"
-        addChild(wallLeft)
-
-        // Right
-        let wallRight = SKSpriteNode(color: wallColor, size: CGSize(width: wallThickness, height: worldHeight))
-        wallRight.position = CGPoint(x: worldWidth/2 - wallThickness/2, y: 0)
-        wallRight.zPosition = ZLayers.walls
-        wallRight.name = "oak_wall_right"
-        addChild(wallRight)
-    }
-
     override open func setupSpecificContent() {
         // Start in whatever room `currentOakRoom` was set to before presenting.
+        GnomeManager.shared.registerOakScene(self)
         setupCurrentOakRoom()
         setupOakTreeMultiplayer()  // → BigOakTreeScene+Multiplayer.swift
         Log.info(.scene, "BigOakTreeScene initialized — \(currentOakRoom.debugName)")
@@ -144,29 +108,56 @@ class BigOakTreeScene: BaseGameScene {
 
     // MARK: - Room Setup Entry Point
     internal func setupCurrentOakRoom() {
-        // Clear placed content from previous room
         clearRoomContent()
+        configureActiveRoom()
 
-        // Build the layout for the current room (lives in +Rooms extension)
-        switch currentOakRoom {
-        case .lobby:          setupLobby()
-        case .leftBedroom:    setupLeftBedroom()
-        case .middleBedroom:  setupMiddleBedroom()
-        case .rightBedroom:   setupRightBedroom()
-        }
+        // Spawn the mine cart visual if the cart is logically in this
+        // oak room (only relevant during the dusk procession arrival
+        // and the resting state at oak_5).
+        GnomeManager.shared.spawnVisibleCartIfPresent(
+            inOakRoom: currentOakRoom, scene: self
+        )
 
         Log.debug(.scene, "Oak room \(currentOakRoom.debugName) setup complete")
     }
 
     internal func clearRoomContent() {
-        roomLabel?.removeFromParent()
-        roomLabel = nil
+        for room in OakRoom.allCases {
+            roomContainer(for: room)?.isHidden = true
+        }
 
-        for node in placedDecor { node.removeFromParent() }
+        roomLabel = nil
+        treasuryPile = nil
         placedDecor.removeAll()
 
-        for gnome in placedGnomes { gnome.removeFromParent() }
-        placedGnomes.removeAll()
+        // Despawn all visible gnomes — manager will respawn correct
+        // ones in the new room via configureActiveRoom().
+        GnomeManager.shared.despawnAllVisibleGnomes()
+        // Cart visual too.
+        GnomeManager.shared.despawnCartVisual()
+    }
+
+    // MARK: - Treasury Pile Hook (called by GnomeManager)
+
+    /// Update the in-room treasury pile visual when a deposit (local or
+    /// remote) changes the count. Safely no-ops when the player isn't
+    /// looking at the treasury room.
+    func updateTreasuryPileIfPresent(count: Int, didReset: Bool) {
+        guard let pile = treasuryPile else { return }
+        let prevCount = pile.displayedCount
+        pile.setCount(count)
+        if didReset {
+            pile.playResetCelebration()
+        } else if count > prevCount {
+            pile.playDepositAnimation()
+        }
+    }
+
+    /// Used by GnomeManager.respawnVisualIfRoomVisible — returns the
+    /// active oak room container so the manager can drop new gnome
+    /// nodes into a sensible parent if it ever needs to.
+    func roomContainerForGnomes() -> SKNode? {
+        roomContainer(for: currentOakRoom)
     }
 
     // MARK: - Touch Handling
@@ -176,8 +167,14 @@ class BigOakTreeScene: BaseGameScene {
         let touchedNode = atPoint(location)
 
         // Stair / exit interactions (long-press to activate, matches back_door pattern)
-        if let name = touchedNode.name, isOakTrigger(name: name) {
-            startLongPress(for: touchedNode, at: location)
+        if let triggerNode = touchedNode.firstNamedAncestor(matching: oakTriggerNames) {
+            startLongPress(for: triggerNode, at: location)
+            return true
+        }
+
+        // Treasury pile long-press — deposit a carried gem if any.
+        if let node = touchedNode.firstNamedAncestor(matching: [TreasuryPile.nodeName]) {
+            startLongPress(for: node, at: location)
             return true
         }
 
@@ -207,6 +204,10 @@ class BigOakTreeScene: BaseGameScene {
             triggerSuccessFeedback()
             transitionToOakRoom(.rightBedroom)
 
+        case BigOakTreeScene.stairsTreasuryName:
+            triggerSuccessFeedback()
+            transitionToOakRoom(.treasury)
+
         case BigOakTreeScene.stairsDownName:
             triggerSuccessFeedback()
             transitionToOakRoom(.lobby)
@@ -215,18 +216,42 @@ class BigOakTreeScene: BaseGameScene {
             triggerSuccessFeedback()
             returnToForest()
 
+        case TreasuryPile.nodeName:
+            // Player is depositing a gem — only valid if carrying a gem.
+            handleTreasuryDeposit()
+
         default:
             Log.debug(.scene, "BigOakTreeScene: unhandled long-press on \(name)")
         }
     }
 
+    private func handleTreasuryDeposit() {
+        guard let carried = character.carriedItem else {
+            transitionService.triggerHapticFeedback(type: .light)
+            return
+        }
+        guard let ingredient = ForageableIngredient.fromCarriedNodeName(carried.name),
+              ingredient == .gem else {
+            transitionService.triggerHapticFeedback(type: .light)
+            return
+        }
+        // Deposit it.
+        character.dropItemSilently()
+        GnomeManager.shared.playerDepositedGem()
+        transitionService.triggerHapticFeedback(type: .success)
+        Log.info(.game, "Player deposited gem in treasury (count = \(GnomeManager.shared.treasuryGemCount))")
+    }
+
     // MARK: - Trigger Helpers
-    private func isOakTrigger(name: String) -> Bool {
-        return name == BigOakTreeScene.stairsLeftName ||
-               name == BigOakTreeScene.stairsMiddleName ||
-               name == BigOakTreeScene.stairsRightName ||
-               name == BigOakTreeScene.stairsDownName ||
-               name == BigOakTreeScene.exitDoorName
+    private var oakTriggerNames: Set<String> {
+        [
+            BigOakTreeScene.stairsLeftName,
+            BigOakTreeScene.stairsMiddleName,
+            BigOakTreeScene.stairsRightName,
+            BigOakTreeScene.stairsTreasuryName,
+            BigOakTreeScene.stairsDownName,
+            BigOakTreeScene.exitDoorName,
+        ]
     }
 
     // MARK: - Room Transitions
@@ -261,29 +286,14 @@ class BigOakTreeScene: BaseGameScene {
         )
     }
 
-    /// Where the character should spawn when entering `target` coming from `from`.
-    /// Spawn positions are defined in world coordinates relative to the scene origin.
-    private func spawnPosition(enteringRoom target: OakRoom, from: OakRoom) -> CGPoint {
-        switch target {
-        case .lobby:
-            // Came down from a bedroom — spawn near the stair that matches the
-            // bedroom we came from so the player "lands" in the right spot.
-            switch from {
-            case .leftBedroom:    return OakLayout.lobbyStairLeftSpawn
-            case .middleBedroom:  return OakLayout.lobbyStairMiddleSpawn
-            case .rightBedroom:   return OakLayout.lobbyStairRightSpawn
-            default:              return OakLayout.lobbyDefaultSpawn
-            }
-        case .leftBedroom:    return OakLayout.bedroomDownStairSpawn
-        case .middleBedroom:  return OakLayout.bedroomDownStairSpawn
-        case .rightBedroom:   return OakLayout.bedroomDownStairSpawn
-        }
-    }
-
     // MARK: - Exit to Forest
     private func returnToForest() {
         Log.info(.scene, "Exiting Big Oak Tree → Forest Room 4")
         DialogueService.shared.dismissDialogue()
+
+        // Despawn gnomes — they'll re-render on whichever scene we land in.
+        GnomeManager.shared.despawnAllVisibleGnomes()
+        GnomeManager.shared.despawnCartVisual()
 
         // Exit back to the forest room the player entered from.
         transitionService.transitionToForestRoom(
@@ -300,6 +310,10 @@ class BigOakTreeScene: BaseGameScene {
         if transitionCooldown > 0 {
             transitionCooldown -= 1.0 / 60.0
         }
+
+        // Drive ambient gnome ↔ gnome chatter.
+        let agents = GnomeManager.shared.agents.filter { $0.sceneNode != nil }
+        GnomeConversationService.shared.tick(in: self, agents: agents)
     }
 
     // MARK: - Bounds

@@ -51,44 +51,83 @@ final class SnailWorldState {
         Log.info(.forest, "Snail DEACTIVATED")
     }
     
-    // MARK: - Simulated movement (called every frame from GameScene OR ForestScene)
-    
-    /// Call this when the player is in the SHOP so the snail wanders room-to-room off-screen.
-    func simulateWandering(deltaTime: TimeInterval) {
+    // MARK: - Continuous Simulation (host only)
+
+    /// Per-frame wander-target inside the current room. Host picks a
+    /// new one when reached or after a room transition.
+    private var wanderTarget: CGPoint?
+
+    /// Speed (points/sec) when actively chasing the player.
+    private let huntSpeed: CGFloat = 60.0
+
+    /// Drift speed when wandering inside a room.
+    private let wanderSpeed: CGFloat = 25.0
+
+    /// Per-frame host simulation. Drives ALL snail motion — same-room
+    /// hunting, different-room drift, and shop-only wander — in a single
+    /// continuous loop. Replaces the old `simulateWandering` /
+    /// `simulateHunting` pair which only mutated position on coarse room
+    /// transitions and left the snail visually frozen between them.
+    ///
+    /// Only the host should call this; the guest mirrors the broadcast
+    /// `roomPosition`. Pass `hostRoom == nil` when the host is in the
+    /// shop (no forest player), in which case the snail wanders
+    /// aimlessly through forest rooms.
+    func tickHost(deltaTime: TimeInterval, hostRoom: Int?, hostPosition: CGPoint?) {
         guard isActive else { return }
-        
-        roomChangeAccumulator += deltaTime
-        if roomChangeAccumulator >= wanderRoomInterval {
+
+        if let hRoom = hostRoom, let hPos = hostPosition, hRoom == currentRoom {
+            // Same room as player — hunt continuously.
             roomChangeAccumulator = 0
-            let oldRoom = currentRoom
-            currentRoom = Bool.random() ? nextRoom(from: currentRoom) : previousRoom(from: currentRoom)
-            roomPosition = randomRoomPosition()
-            Log.debug(.forest, "Snail wandered: room \(oldRoom) -> \(currentRoom)")
+            wanderTarget = nil
+            moveRoomPosition(toward: hPos, speed: huntSpeed, deltaTime: deltaTime)
+            return
         }
-    }
-    
-    /// Call this when the player is in the FOREST but the snail is in a DIFFERENT room.
-    /// The snail moves toward the player's room. `playerPosition` is used to ensure
-    /// the snail enters on the opposite side from the player if it reaches their room.
-    func simulateHunting(towardRoom targetRoom: Int, playerPosition: CGPoint, deltaTime: TimeInterval) {
-        guard isActive else { return }
-        guard currentRoom != targetRoom else { return }
-        
+
+        // Different room (or host in shop): drift toward a wander
+        // target, and tick the room-change timer.
+        if wanderTarget == nil
+            || hypot(roomPosition.x - wanderTarget!.x, roomPosition.y - wanderTarget!.y) < 30 {
+            wanderTarget = randomRoomPosition()
+        }
+        if let t = wanderTarget {
+            moveRoomPosition(toward: t, speed: wanderSpeed, deltaTime: deltaTime)
+        }
+
         roomChangeAccumulator += deltaTime
-        if roomChangeAccumulator >= huntRoomInterval {
+        let interval = (hostRoom == nil) ? wanderRoomInterval : huntRoomInterval
+        if roomChangeAccumulator >= interval {
             roomChangeAccumulator = 0
             let oldRoom = currentRoom
-            currentRoom = stepToward(target: targetRoom, from: currentRoom)
-            if currentRoom == targetRoom {
-                // Entering the player's room — spawn opposite the player
-                roomPosition = entryPosition(playerPosition: playerPosition)
+            if let hRoom = hostRoom {
+                currentRoom = stepToward(target: hRoom, from: currentRoom)
+            } else {
+                currentRoom = Bool.random() ? nextRoom(from: currentRoom) : previousRoom(from: currentRoom)
+            }
+            if let hRoom = hostRoom, currentRoom == hRoom, let hPos = hostPosition {
+                roomPosition = entryPosition(playerPosition: hPos)
             } else {
                 roomPosition = randomRoomPosition()
             }
-            Log.debug(.forest, "Snail hunting: room \(oldRoom) -> \(currentRoom) (target: \(targetRoom))")
+            wanderTarget = nil
+            Log.debug(.forest, "Snail room \(oldRoom) -> \(currentRoom)")
         }
     }
-    
+
+    /// Step `roomPosition` toward `target` at `speed` points/sec without
+    /// overshooting.
+    private func moveRoomPosition(toward target: CGPoint, speed: CGFloat, deltaTime: TimeInterval) {
+        let dx = target.x - roomPosition.x
+        let dy = target.y - roomPosition.y
+        let dist = sqrt(dx * dx + dy * dy)
+        guard dist > 0.5 else { return }
+        let step = min(speed * CGFloat(deltaTime), dist)
+        let nx = dx / dist
+        let ny = dy / dist
+        roomPosition.x += nx * step
+        roomPosition.y += ny * step
+    }
+
     // MARK: - Room navigation helpers
     
     private func stepToward(target: Int, from current: Int) -> Int {
@@ -130,14 +169,13 @@ final class SnailWorldState {
 
 // MARK: - The Snail Enemy (Visual / Scene Node)
 class SnailNPC: SKSpriteNode {
-    
+
     // MARK: - Properties
-    private let baseSpeed: CGFloat = 20.0
-    private var targetPosition: CGPoint = .zero
-    private var isMovingTowardsPlayer: Bool = false
-    
     private weak var timeService: TimeService?
-    private var glowEffect: SKEffectNode?
+
+    /// Last frame's visual position. Used to compute zRotation from
+    /// movement delta so the sprite faces its direction of travel.
+    private var lastVisualPosition: CGPoint = .zero
     
     // MARK: - Initialization
     init(timeService: TimeService) {
@@ -162,39 +200,77 @@ class SnailNPC: SKSpriteNode {
         fatalError("init(coder:) has not been implemented")
     }
     
+    // MARK: - Position Validation Bounds
+    /// Safe operating rectangle for the snail inside any forest room —
+    /// kept tight so the snail never spawns inside walls or beyond the
+    /// visible play area. Tuned slightly smaller than the editor floor.
+    static let safeRoomBounds = CGRect(x: -650, y: -450, width: 1300, height: 900)
+
+    /// How close the snail can approach a `house_*` node before being
+    /// pushed back out. Slightly larger than the visual house radius so
+    /// the snail never overlaps a building.
+    static let houseSafeRadius: CGFloat = 110
+
     // MARK: - Visual Setup
     private func setupVisuals() {
-        let snailLabel = SKLabelNode(text: "\u{1F40C}")
-        snailLabel.fontSize = 32
-        snailLabel.verticalAlignmentMode = .center
-        snailLabel.horizontalAlignmentMode = .center
-        snailLabel.zPosition = 1
-        addChild(snailLabel)
-        
-        setupGlowEffect()
-        
+        if !applySnailTextureIfAvailable() {
+            let snailLabel = SKLabelNode(text: "\u{1F40C}")
+            snailLabel.fontSize = 32
+            snailLabel.verticalAlignmentMode = .center
+            snailLabel.horizontalAlignmentMode = .center
+            snailLabel.zPosition = 1
+            addChild(snailLabel)
+        }
+
         let breathe = SKAction.repeatForever(SKAction.sequence([
             SKAction.scale(to: 1.05, duration: 2.0),
             SKAction.scale(to: 0.95, duration: 2.0)
         ]))
         run(breathe, withKey: "snail_breathe")
     }
-    
-    private func setupGlowEffect() {
-        glowEffect = SKEffectNode()
-        glowEffect?.shouldRasterize = true
-        
-        let glowSprite = SKSpriteNode(color: SKColor.purple.withAlphaComponent(0.3), size: CGSize(width: 60, height: 60))
-        glowSprite.blendMode = .add
-        
-        let pulse = SKAction.repeatForever(SKAction.sequence([
-            SKAction.fadeAlpha(to: 0.1, duration: 1.5),
-            SKAction.fadeAlpha(to: 0.5, duration: 1.5)
-        ]))
-        glowSprite.run(pulse)
-        
-        glowEffect?.addChild(glowSprite)
-        insertChild(glowEffect!, at: 0)
+
+    @discardableResult
+    private func applySnailTextureIfAvailable() -> Bool {
+        let directAssetNames = ["snail", "snail_idle", "snail_sprite", "snail_0"]
+        for assetName in directAssetNames {
+            if let image = UIImage(named: assetName) {
+                let texture = SKTexture(image: image)
+                texture.filteringMode = .nearest
+                applySnailTexture(texture)
+                return true
+            }
+        }
+
+        let atlasCandidates = ["Snail", "Enemies", "Forest", "Creatures"]
+        let textureCandidates = ["snail", "snail_idle", "snail_sprite", "snail_0"]
+        for atlasName in atlasCandidates {
+            let atlas = SKTextureAtlas(named: atlasName)
+            guard let textureName = textureCandidates.first(where: { atlas.textureNames.contains($0) }) else {
+                continue
+            }
+            let texture = atlas.textureNamed(textureName)
+            texture.filteringMode = .nearest
+            applySnailTexture(texture)
+            return true
+        }
+
+        return false
+    }
+
+    private func applySnailTexture(_ texture: SKTexture) {
+        self.texture = texture
+        self.color = .white
+        self.colorBlendFactor = 0.0
+
+        let sourceSize = texture.size()
+        guard sourceSize.width > 0, sourceSize.height > 0 else {
+            size = CGSize(width: 56, height: 56)
+            return
+        }
+
+        let maxDimension: CGFloat = 64
+        let scale = min(maxDimension / sourceSize.width, maxDimension / sourceSize.height)
+        size = CGSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
     }
     
     // MARK: - Physics Setup
@@ -214,43 +290,128 @@ class SnailNPC: SKSpriteNode {
     }
     
     // MARK: - Sync with persistent world state
+
+    /// Mirror the visual snail to `SnailWorldState`. Both host and guest
+    /// run this exactly the same way — the snail visual is a pure
+    /// readout of `SnailWorldState.roomPosition`. The host is the only
+    /// side that mutates `roomPosition` (via `tickHost`), so both
+    /// screens converge to the same position automatically.
     func syncWithWorldState(playerRoom: Int, playerPosition: CGPoint) {
         let world = SnailWorldState.shared
-        
+
         checkTimeActivation()
-        
+
         guard world.isActive else {
             if !isHidden { fadeOut() }
+            physicsBody?.velocity = .zero
             return
         }
-        
-        if world.currentRoom == playerRoom {
-            if isHidden {
-                position = world.roomPosition
-                fadeIn()
-            }
-            
-            huntPlayerDirectly(playerPosition: playerPosition)
-            isMovingTowardsPlayer = true
-            world.roomPosition = position
-            
-        } else {
-            if !isHidden {
-                world.roomPosition = position
-                fadeOut()
-            }
-            
-            isMovingTowardsPlayer = false
+
+        guard world.currentRoom == playerRoom else {
+            if !isHidden { fadeOut() }
             physicsBody?.velocity = .zero
-            
-            if !MultiplayerService.shared.isGuest {
-                world.simulateHunting(towardRoom: playerRoom, playerPosition: playerPosition, deltaTime: 1.0/60.0)
+            return
+        }
+
+        let target = validatedPosition(world.roomPosition)
+
+        if isHidden {
+            // First frame visible — snap to target, no rotation step yet.
+            position = target
+            lastVisualPosition = target
+            fadeIn()
+            return
+        }
+
+        // Smooth lerp toward authoritative position.
+        let lerp: CGFloat = 0.25
+        let nextPos = CGPoint(
+            x: position.x + (target.x - position.x) * lerp,
+            y: position.y + (target.y - position.y) * lerp
+        )
+
+        // Rotate to face direction of travel. Snail PNG is in side
+        // profile facing +x by default (the original code flipped
+        // xScale to face left), so atan2(dy, dx) gives the correct
+        // facing angle directly.
+        let dx = nextPos.x - lastVisualPosition.x
+        let dy = nextPos.y - lastVisualPosition.y
+        if dx * dx + dy * dy > 0.04 {
+            zRotation = atan2(dy, dx)
+        }
+
+        position = nextPos
+        lastVisualPosition = nextPos
+
+        // We drive position directly; physics body just rides along
+        // for contact detection.
+        physicsBody?.velocity = .zero
+    }
+
+    // MARK: - Position Validation
+
+    /// Clamp `candidate` into the safe room rectangle and push it out of
+    /// any visible `house_*` node. Idempotent and cheap enough to call
+    /// every frame the snail is moving.
+    private func validatedPosition(_ candidate: CGPoint) -> CGPoint {
+        var p = candidate
+        let bounds = SnailNPC.safeRoomBounds
+
+        // 1. Clamp to room rectangle.
+        p.x = max(bounds.minX, min(bounds.maxX, p.x))
+        p.y = max(bounds.minY, min(bounds.maxY, p.y))
+
+        // 2. Push out of houses in the visible forest room. Iterate a
+        //    few times in case pushing out of one house puts the snail
+        //    inside another — should converge fast (rooms have ≤4 houses).
+        guard let scene = self.scene else { return p }
+        let safeRadius = SnailNPC.houseSafeRadius
+
+        for _ in 0..<4 {
+            var didAdjust = false
+            scene.enumerateChildNodes(withName: "//house_*") { node, _ in
+                // Skip houses inside hidden forest_room_X containers.
+                var ancestor: SKNode? = node.parent
+                var inHiddenRoom = false
+                while let a = ancestor {
+                    if let aname = a.name, aname.hasPrefix("forest_room_"), a.isHidden {
+                        inHiddenRoom = true
+                        break
+                    }
+                    ancestor = a.parent
+                }
+                if inHiddenRoom { return }
+
+                // Convert house position into scene coordinates.
+                let housePos: CGPoint
+                if let parent = node.parent {
+                    housePos = parent.convert(node.position, to: scene)
+                } else {
+                    housePos = node.position
+                }
+
+                let dx = p.x - housePos.x
+                let dy = p.y - housePos.y
+                let dist = sqrt(dx * dx + dy * dy)
+                if dist < safeRadius {
+                    if dist < 0.001 {
+                        // Exactly coincident — nudge in a deterministic direction.
+                        p.x = housePos.x + safeRadius
+                    } else {
+                        let scaleFactor = safeRadius / dist
+                        p.x = housePos.x + dx * scaleFactor
+                        p.y = housePos.y + dy * scaleFactor
+                    }
+                    didAdjust = true
+                }
             }
+            if !didAdjust { break }
+            // Re-clamp to bounds after each round of pushes.
+            p.x = max(bounds.minX, min(bounds.maxX, p.x))
+            p.y = max(bounds.minY, min(bounds.maxY, p.y))
         }
-        
-        if isMovingTowardsPlayer && !isHidden {
-            updateGlowIntensity()
-        }
+
+        return p
     }
     
     // MARK: - Time Activation
@@ -288,28 +449,9 @@ class SnailNPC: SKSpriteNode {
         run(action, withKey: "snail_fade")
     }
     
-    // MARK: - Hunting
-    private func huntPlayerDirectly(playerPosition: CGPoint) {
-        targetPosition = playerPosition
-        
-        let dx = targetPosition.x - position.x
-        let dy = targetPosition.y - position.y
-        let distance = sqrt(dx*dx + dy*dy)
-        
-        guard distance > 10 else { return }
-        
-        let normalizedDx = dx / distance
-        let normalizedDy = dy / distance
-        
-        physicsBody?.velocity = CGVector(
-            dx: normalizedDx * baseSpeed,
-            dy: normalizedDy * baseSpeed
-        )
-        
-        if dx > 0 { xScale = 1 }
-        else if dx < 0 { xScale = -1 }
-    }
-    
+    // MARK: - Update (legacy)
+    func update(deltaTime: TimeInterval) { }
+
     // MARK: - Player Contact
     func playerCaught() {
         Log.info(.forest, "THE SNAIL HAS CAUGHT YOU!")
@@ -345,24 +487,6 @@ class SnailNPC: SKSpriteNode {
         ]))
         
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-    }
-    
-    // MARK: - Update (legacy)
-    func update(deltaTime: TimeInterval) { }
-    
-    // MARK: - Glow
-    private func updateGlowIntensity() {
-        guard let glowEffect = glowEffect,
-              let glowSprite = glowEffect.children.first as? SKSpriteNode else { return }
-        
-        let distanceToTarget = sqrt(
-            pow(targetPosition.x - position.x, 2) +
-            pow(targetPosition.y - position.y, 2)
-        )
-        
-        let maxDistance: CGFloat = 300
-        let intensity = max(0.1, 1.0 - (distanceToTarget / maxDistance))
-        glowSprite.alpha = intensity
     }
 }
 

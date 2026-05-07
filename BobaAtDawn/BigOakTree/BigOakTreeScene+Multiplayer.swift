@@ -3,7 +3,8 @@
 //  BobaAtDawn
 //
 //  Multiplayer support for BigOakTreeScene — remote character visibility,
-//  position sync, and incoming message handling while inside the oak tree.
+//  position sync, gnome state sync, treasury sync, and incoming message
+//  handling while inside the oak tree.
 //
 
 import SpriteKit
@@ -77,12 +78,40 @@ extension BigOakTreeScene: MultiplayerServiceDelegate {
                 npcID: msg.npcID,
                 speakerName: msg.speakerName,
                 text: msg.text,
+                mood: msg.mood,
                 at: msg.position.cgPoint,
                 in: self
             )
 
         case .dialogueDismissed:
             DialogueService.shared.dismissRemoteDialogue()
+
+        case .gnomeStateSync:
+            guard let msg = try? envelope.decode(GnomeStateSyncMessage.self) else { return }
+            GnomeManager.shared.applyRemoteState(msg)
+
+        case .gnomeRosterRefresh:
+            guard let msg = try? envelope.decode(GnomeRosterRefreshMessage.self) else { return }
+            GnomeManager.shared.applyRemoteRosterRefresh(msg)
+
+        case .treasuryUpdate:
+            guard let msg = try? envelope.decode(TreasuryUpdateMessage.self) else { return }
+            GnomeManager.shared.applyRemoteTreasury(newCount: msg.newCount, didReset: msg.didReset)
+            updateTreasuryPileIfPresent(count: msg.newCount, didReset: msg.didReset)
+
+        case .gnomeConversationLine:
+            guard let msg = try? envelope.decode(GnomeConversationLineMessage.self) else { return }
+            // Only render if the gnome is actually visible in this scene.
+            GnomeConversationService.shared.handleRemoteLine(msg, in: self)
+
+        case .gnomeConversationEnded:
+            guard let msg = try? envelope.decode(GnomeConversationEndedMessage.self) else { return }
+            GnomeConversationService.shared.handleRemoteEnd(msg)
+
+        case .dailySummaryGenerated:
+            guard let msg = try? envelope.decode(DailySummaryGeneratedMessage.self) else { return }
+            SaveService.shared.applyDailySummaryEntry(msg.entry)
+            Log.info(.network, "Received chronicle for day \(msg.entry.dayCount) (oak)")
 
         default:
             break

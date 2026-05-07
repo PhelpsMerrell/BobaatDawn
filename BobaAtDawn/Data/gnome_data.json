@@ -1,0 +1,589 @@
+{
+  "schema_version": 1,
+
+  "gnome_opinion_topics": [
+    { "id": "gems",        "label": "Gems",                   "axis": "tastes" },
+    { "id": "rocks",       "label": "Rocks",                  "axis": "habit"  },
+    { "id": "the_machine", "label": "The Mine Machine",       "axis": "wonder" },
+    { "id": "the_cave",    "label": "The Cave",               "axis": "habit"  },
+    { "id": "the_snail",   "label": "The Snail",              "axis": "fear"   },
+    { "id": "the_forest",  "label": "The Forest",             "axis": "wonder" },
+    { "id": "npcs",        "label": "The Forest Folk",        "axis": "social" },
+    { "id": "the_oak",     "label": "The Oak Tree",           "axis": "habit"  },
+    { "id": "trash",       "label": "Trash in the Forest",    "axis": "social" },
+    { "id": "promotion",   "label": "Rank and Promotion",     "axis": "social" },
+    { "id": "the_cart",    "label": "The Mine Cart",          "axis": "habit"  }
+  ],
+
+  "gnomes": [
+
+    {
+      "id": "gnome_boss_thork",
+      "name": "Thork",
+      "gender": "",
+      "age": 0,
+      "role": "boss",
+      "rank": "foreman",
+      "home_oak_room": 1,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["gruff", "fair-handed", "remembers every rock", "loves a good gem"],
+        "speech_quirks": [
+          "ends sentences with 'report' or 'understood?' when talking to miners",
+          "opens conversations with 'status' even in casual settings",
+          "refers to himself in third person when issuing a ruling",
+          "never asks a question — states what he expects and waits"
+        ]
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_apprentice_pip",
+      "name": "Pip",
+      "gender": "",
+      "age": 0,
+      "role": "miner",
+      "rank": "junior",
+      "home_oak_room": 4,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["young", "excitable", "trips on stairs", "dreams of finding the biggest gem"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_miner_durn",
+      "name": "Durn",
+      "gender": "",
+      "age": 0,
+      "role": "miner",
+      "rank": "standard",
+      "home_oak_room": 4,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["weathered", "hums while walking", "knows every rock by feel"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_miner_bess",
+      "name": "Bess",
+      "gender": "",
+      "age": 0,
+      "role": "miner",
+      "rank": "standard",
+      "home_oak_room": 4,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["practical", "complains about the machine", "wants better boots"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_miner_ock",
+      "name": "Ock",
+      "gender": "",
+      "age": 0,
+      "role": "miner",
+      "rank": "senior",
+      "home_oak_room": 2,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["broad-shouldered", "carries two rocks at once when nobody's looking"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_miner_thistle",
+      "name": "Thistle",
+      "gender": "",
+      "age": 0,
+      "role": "miner",
+      "rank": "standard",
+      "home_oak_room": 2,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["sharp tongue", "names every gem", "secretly soft"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_miner_grim",
+      "name": "Grim",
+      "gender": "",
+      "age": 0,
+      "role": "miner",
+      "rank": "standard",
+      "home_oak_room": 2,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["taciturn", "hates wasted rocks", "has a favorite cave floor"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_miner_moss",
+      "name": "Moss",
+      "gender": "",
+      "age": 0,
+      "role": "miner",
+      "rank": "junior",
+      "home_oak_room": 3,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["whisper-voiced", "talks to the rocks", "always has dirt under nails"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_miner_clod",
+      "name": "Clod",
+      "gender": "",
+      "age": 0,
+      "role": "miner",
+      "rank": "standard",
+      "home_oak_room": 3,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["loud laugh", "drops things", "loved by everyone"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_miner_fenn",
+      "name": "Fenn",
+      "gender": "",
+      "age": 0,
+      "role": "miner",
+      "rank": "senior",
+      "home_oak_room": 3,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["counts every gem twice", "writes things down", "second to Thork"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_miner_rill",
+      "name": "Rill",
+      "gender": "",
+      "age": 0,
+      "role": "miner",
+      "rank": "standard",
+      "home_oak_room": 4,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["quick-footed", "likes dawn shifts", "always first to complain about pebbles in boots"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_miner_sedge",
+      "name": "Sedge",
+      "gender": "",
+      "age": 0,
+      "role": "miner",
+      "rank": "junior",
+      "home_oak_room": 2,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["patient", "sorts rocks by sound", "prefers the deeper floors"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_miner_toma",
+      "name": "Toma",
+      "gender": "",
+      "age": 0,
+      "role": "miner",
+      "rank": "standard",
+      "home_oak_room": 3,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["stout", "grins through hard work", "swears the machine likes them best"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_lobby_greeter",
+      "name": "Greeter",
+      "gender": "",
+      "age": 0,
+      "role": "housekeeper",
+      "rank": null,
+      "home_oak_room": 1,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["welcoming", "gossipy", "old", "loves the front door"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_fireplace_keeper",
+      "name": "Hearth",
+      "gender": "",
+      "age": 0,
+      "role": "housekeeper",
+      "rank": null,
+      "home_oak_room": 1,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["quiet", "watches the fire", "smells of woodsmoke"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_kitchen_cook",
+      "name": "Cook",
+      "gender": "",
+      "age": 0,
+      "role": "housekeeper",
+      "rank": null,
+      "home_oak_room": 1,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["bossy", "stirring something", "dusty apron"],
+        "speech_quirks": [
+          "frames every observation as a recipe ('too much of that, not enough of this')",
+          "describes non-food things by taste ('that rock looks bitter', 'the forest smells salty today')",
+          "ends complaints with 'and that is not how you season a day'",
+          "compares gnomes to ingredients ('Pip is still raw', 'Grim's been left to simmer too long')"
+        ]
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_left_bedroom_elder",
+      "name": "Elder",
+      "gender": "",
+      "age": 0,
+      "role": "housekeeper",
+      "rank": null,
+      "home_oak_room": 2,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["ancient", "tells the same story twice", "knows the cave's history"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    },
+
+    {
+      "id": "gnome_middle_bedroom_seer",
+      "name": "Seer",
+      "gender": "",
+      "age": 0,
+      "role": "housekeeper",
+      "rank": null,
+      "home_oak_room": 3,
+      "lore": "",
+      "personality": {
+        "archetype": "",
+        "traits": ["dreamy", "reads gem patterns", "claims to predict the machine"],
+        "speech_quirks": []
+      },
+      "opinion_stances": {
+        "gems":        3,
+        "rocks":       3,
+        "the_machine": 3,
+        "the_cave":    3,
+        "the_snail":   3,
+        "the_forest":  3,
+        "npcs":        3,
+        "the_oak":     3,
+        "trash":       3,
+        "promotion":   3,
+        "the_cart":    3
+      },
+      "explicit_relationships": [],
+      "voice_lines": []
+    }
+
+  ]
+}

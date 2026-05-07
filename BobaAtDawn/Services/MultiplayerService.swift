@@ -22,6 +22,11 @@ protocol MultiplayerServiceDelegate: AnyObject {
 
 final class MultiplayerService: NSObject {
 
+    private enum PendingMatchRole {
+        case host
+        case guest
+    }
+
     static let shared = MultiplayerService()
 
     weak var delegate: MultiplayerServiceDelegate?
@@ -36,6 +41,7 @@ final class MultiplayerService: NSObject {
     private var currentMatch: GKMatch?
     private var remotePlayer: GKPlayer?
     private weak var presentingViewController: UIViewController?
+    private var pendingRole: PendingMatchRole?
 
     // Position send throttle
     private var lastPositionSendTime: TimeInterval = 0
@@ -71,9 +77,9 @@ final class MultiplayerService: NSObject {
         }
     }
 
-    // MARK: - 2. Host a Game
+    // MARK: - 2. Invite a Friend
 
-    func hostGame() {
+    func inviteFriend() {
         guard isAuthenticated else {
             delegate?.multiplayerDidFail(error: "Not signed into Game Center.")
             return
@@ -83,45 +89,47 @@ final class MultiplayerService: NSObject {
             return
         }
 
+        if currentMatch != nil || isConnected {
+            disconnect()
+        }
+
         let request = GKMatchRequest()
         request.minPlayers = 2
         request.maxPlayers = 2
+        request.defaultNumberOfPlayers = 2
+        request.inviteMessage = "Join my Boba at Dawn lobby."
+        request.recipientResponseHandler = { [weak self] _, response in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                switch response {
+                case .declined:
+                    self.delegate?.multiplayerDidFail(error: "Invite declined.")
+                case .failed, .incompatible, .unableToConnect:
+                    self.delegate?.multiplayerDidFail(error: "Could not connect that invite.")
+                case .noAnswer:
+                    self.delegate?.multiplayerDidFail(error: "Invite timed out.")
+                case .accepted:
+                    break
+                @unknown default:
+                    self.delegate?.multiplayerDidFail(error: "Invite status changed.")
+                }
+            }
+        }
 
         guard let matchmakerVC = GKMatchmakerViewController(matchRequest: request) else {
             delegate?.multiplayerDidFail(error: "Could not create matchmaker.")
             return
         }
         matchmakerVC.matchmakerDelegate = self
+        if #available(iOS 15.0, *) {
+            matchmakerVC.matchmakingMode = .inviteOnly
+        }
+        pendingRole = .host
         vc.present(matchmakerVC, animated: true)
-        Log.info(.network, "Hosting game — waiting for guest…")
+        Log.info(.network, "Invite flow opened — waiting for guest…")
     }
 
-    // MARK: - 3. Join a Game
-
-    func joinGame() {
-        guard isAuthenticated else {
-            delegate?.multiplayerDidFail(error: "Not signed into Game Center.")
-            return
-        }
-        guard let vc = presentingViewController else {
-            delegate?.multiplayerDidFail(error: "No view controller to present matchmaker.")
-            return
-        }
-
-        let request = GKMatchRequest()
-        request.minPlayers = 2
-        request.maxPlayers = 2
-
-        guard let matchmakerVC = GKMatchmakerViewController(matchRequest: request) else {
-            delegate?.multiplayerDidFail(error: "Could not create matchmaker.")
-            return
-        }
-        matchmakerVC.matchmakerDelegate = self
-        vc.present(matchmakerVC, animated: true)
-        Log.info(.network, "Joining game — looking for host…")
-    }
-
-    // MARK: - 4. Disconnect
+    // MARK: - 3. Disconnect
 
     func disconnect() {
         currentMatch?.disconnect()
@@ -130,10 +138,11 @@ final class MultiplayerService: NSObject {
         remotePlayer = nil
         isConnected = false
         isHost = false
+        pendingRole = nil
         Log.info(.network, "Disconnected from match")
     }
 
-    // MARK: - 5. Send Messages
+    // MARK: - 4. Send Messages
 
     func send(_ envelope: NetworkEnvelope) {
         guard let match = currentMatch else { return }
@@ -156,7 +165,7 @@ final class MultiplayerService: NSObject {
         }
     }
 
-    // MARK: - 6. Throttled Position Send
+    // MARK: - 5. Throttled Position Send
 
     func sendPositionIfNeeded(position: CGPoint, isMoving: Bool,
                                animationDirection: String?, isCarrying: Bool,
@@ -179,14 +188,21 @@ final class MultiplayerService: NSObject {
     // MARK: - Helpers
 
     private func assignRoles(match: GKMatch) {
-        guard let remote = match.players.first else { return }
-        remotePlayer = remote
+        remotePlayer = match.players.first
 
-        let localID = GKLocalPlayer.local.teamPlayerID
-        let remoteID = remote.teamPlayerID
-        isHost = localID < remoteID
+        if let pendingRole {
+            isHost = pendingRole == .host
+            Log.info(.network, "Role assigned from lobby: \(isHost ? "HOST" : "GUEST")")
+            return
+        }
 
-        Log.info(.network, "Role assigned: \(isHost ? "HOST" : "GUEST")")
+        if let remote = match.players.first {
+            let localID = GKLocalPlayer.local.teamPlayerID
+            let remoteID = remote.teamPlayerID
+            isHost = localID < remoteID
+        }
+
+        Log.info(.network, "Role assigned by fallback: \(isHost ? "HOST" : "GUEST")")
     }
 
     private func handleMatchReady(_ match: GKMatch) {
@@ -282,7 +298,28 @@ extension MultiplayerService: GKLocalPlayerListener {
         guard let matchmakerVC = GKMatchmakerViewController(invite: invite) else { return }
         matchmakerVC.matchmakerDelegate = self
         vc.present(matchmakerVC, animated: true)
+        pendingRole = .guest
         isHost = false
         Log.info(.network, "Accepted invite from \(invite.sender.displayName)")
+    }
+
+    func player(_ player: GKPlayer, didRequestMatchWithRecipients recipientPlayers: [GKPlayer]) {
+        guard let vc = presentingViewController else { return }
+
+        let request = GKMatchRequest()
+        request.recipients = recipientPlayers
+        request.minPlayers = 2
+        request.maxPlayers = 2
+        request.defaultNumberOfPlayers = 2
+        request.inviteMessage = "Join my Boba at Dawn lobby."
+
+        guard let matchmakerVC = GKMatchmakerViewController(matchRequest: request) else { return }
+        matchmakerVC.matchmakerDelegate = self
+        if #available(iOS 15.0, *) {
+            matchmakerVC.matchmakingMode = .inviteOnly
+        }
+        pendingRole = .host
+        vc.present(matchmakerVC, animated: true)
+        Log.info(.network, "Game Center requested a recipient match with \(recipientPlayers.count) player(s)")
     }
 }

@@ -2,7 +2,19 @@
 //  NPCModels.swift
 //  BobaAtDawn
 //
-//  Data models for NPC dialogue, character system, and shared enums
+//  Data models for NPC dialogue, character system, and shared enums.
+//
+//  Schema v2 (introduced for the relationship/opinion system) extends
+//  the original NPCData with:
+//    - talkativeness         : Float (0...1, fixed at design time)
+//    - personality           : NPCPersonality (optional)
+//    - opinion_stances       : [topicID: OpinionStance]
+//    - explicit_relationships: [ExplicitRelationship]
+//    - past_life_echoes      : [PastLifeEcho]
+//
+//  All new fields are decoded as optional with sensible defaults so the
+//  decoder doesn't fall over on partial data while the JSON is being
+//  filled in.
 //
 
 import Foundation
@@ -15,11 +27,62 @@ struct NPCData: Codable {
     let causeOfDeath: String
     let homeRoom: Int
     let dialogue: NPCDialogue
-    
+
+    // Schema v2 additions (optional — defaulted on decode for resilience)
+    let talkativeness: Float
+    let personality: NPCPersonality?
+    let opinionStances: [String: OpinionStance]
+    let explicitRelationships: [ExplicitRelationship]
+    let pastLifeEchoes: [PastLifeEcho]
+
     enum CodingKeys: String, CodingKey {
         case id, name, animal, dialogue
         case causeOfDeath = "cause_of_death"
         case homeRoom = "home_room"
+        case talkativeness
+        case personality
+        case opinionStances = "opinion_stances"
+        case explicitRelationships = "explicit_relationships"
+        case pastLifeEchoes = "past_life_echoes"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id              = try c.decode(String.self, forKey: .id)
+        name            = try c.decode(String.self, forKey: .name)
+        animal          = try c.decode(String.self, forKey: .animal)
+        causeOfDeath    = try c.decode(String.self, forKey: .causeOfDeath)
+        homeRoom        = try c.decode(Int.self,    forKey: .homeRoom)
+        dialogue        = try c.decode(NPCDialogue.self, forKey: .dialogue)
+
+        talkativeness          = try c.decodeIfPresent(Float.self, forKey: .talkativeness) ?? 0.5
+        personality            = try c.decodeIfPresent(NPCPersonality.self, forKey: .personality)
+        opinionStances         = try c.decodeIfPresent([String: OpinionStance].self, forKey: .opinionStances) ?? [:]
+        explicitRelationships  = try c.decodeIfPresent([ExplicitRelationship].self, forKey: .explicitRelationships) ?? []
+        pastLifeEchoes         = try c.decodeIfPresent([PastLifeEcho].self, forKey: .pastLifeEchoes) ?? []
+    }
+
+    /// Convenience initializer used by tests + fallback paths in BaseNPC.
+    init(
+        id: String, name: String, animal: String,
+        causeOfDeath: String, homeRoom: Int, dialogue: NPCDialogue,
+        talkativeness: Float = 0.5,
+        personality: NPCPersonality? = nil,
+        opinionStances: [String: OpinionStance] = [:],
+        explicitRelationships: [ExplicitRelationship] = [],
+        pastLifeEchoes: [PastLifeEcho] = []
+    ) {
+        self.id = id
+        self.name = name
+        self.animal = animal
+        self.causeOfDeath = causeOfDeath
+        self.homeRoom = homeRoom
+        self.dialogue = dialogue
+        self.talkativeness = talkativeness
+        self.personality = personality
+        self.opinionStances = opinionStances
+        self.explicitRelationships = explicitRelationships
+        self.pastLifeEchoes = pastLifeEchoes
     }
 }
 
@@ -28,8 +91,28 @@ struct NPCDialogue: Codable {
     let night: [String]
 }
 
+// MARK: - NPC Database (top-level JSON)
+
+/// Schema v2 wraps the legacy `npcs` array with `schema_version` and a
+/// global `opinion_topics` list. Both new fields decode as optional so a
+/// pre-v2 JSON file still loads.
 struct NPCDatabase: Codable {
+    let schemaVersion: Int
+    let opinionTopics: [OpinionTopic]
     let npcs: [NPCData]
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case opinionTopics = "opinion_topics"
+        case npcs
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion  = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        opinionTopics  = try c.decodeIfPresent([OpinionTopic].self, forKey: .opinionTopics) ?? []
+        npcs           = try c.decode([NPCData].self, forKey: .npcs)
+    }
 }
 
 // MARK: - Animal Emoji Mapping
@@ -83,6 +166,11 @@ extension NPCDatabase {
             distribution[room] = npcsInRoom(room)
         }
         return distribution
+    }
+
+    /// Look up a topic by its stable id.
+    func topic(_ id: String) -> OpinionTopic? {
+        opinionTopics.first { $0.id == id }
     }
 }
 

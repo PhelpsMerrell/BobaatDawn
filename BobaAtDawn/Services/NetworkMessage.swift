@@ -22,6 +22,7 @@ struct NetworkEnvelope: Codable {
 // MARK: - Message Types
 
 enum MessageType: String, Codable {
+    case lobbyStart
     case hostHandshake
     case guestReady
     case playerPosition
@@ -50,18 +51,50 @@ enum MessageType: String, Codable {
     case snailSync
     case dialogueShown
     case dialogueDismissed
+    case dialogueFollowupChosen
+    // Host-authoritative streaming dialogue (parallel multi-NPC dialogs).
+    case dialogueOpenRequest      // either → host
+    case dialogueOpened            // host → both
+    case dialogueLineDelta         // host → both (unreliable)
+    case dialogueFollowupsReady    // host → both
+    // Movable shop objects (tables / furniture rearrangement).
+    case objectPickedUp            // either → both
+    case objectDropped             // either → both
+    case objectRotated             // either → both
+    case npcConversationLine
+    case npcConversationEnded
+    case itemForaged
+    case storageDeposited
+    case storageRetrieved
+    // Daily chronicle (book in the shop)
+    case dailySummaryGenerated
+    // Gnome simulation
+    case gnomeStateSync
+    case gnomeRosterRefresh
+    case treasuryUpdate
+    case mineMachineFed
+    case gnomeConversationLine
+    case gnomeConversationEnded
 }
 
 extension MessageType {
     var isReliable: Bool {
         switch self {
-        case .playerPosition, .npcShopSync, .forestNpcSync, .snailSync: return false
-        default: return true
+        case .playerPosition, .npcShopSync, .forestNpcSync, .snailSync, .gnomeStateSync,
+             .dialogueLineDelta:
+            return false
+        default:
+            return true
         }
     }
 }
 
 // MARK: - Message Payloads
+
+struct LobbyStartMessage: Codable {
+    let sessionType: String
+    let slotIndex: Int
+}
 
 struct HostHandshake: Codable {
     let dayCount: Int
@@ -221,12 +254,141 @@ struct DialogueShownMessage: Codable {
     let npcID: String
     let speakerName: String
     let text: String
+    let mood: String?       // Optional emoji-mood key ("happy", "wistful", etc.)
     let position: CodablePoint
+    let sceneType: String   // "shop" | "forest_<room>" | "cave" | "big_oak"
+}
+
+/// Sent when a player taps an LLM-generated followup pill. Lets the
+/// remote player see which option was chosen (kind/blunt/neutral) and
+/// the exact wording, before the turn-2 reply streams.
+struct DialogueFollowupChosenMessage: Codable {
+    let npcID: String
+    let chosenText: String
+    let tone: String        // "kind" | "neutral" | "blunt"
+}
+
+/// One line of an NPC ↔ NPC conversation. The host generates and
+/// broadcasts these; the guest renders them. The conversation as a
+/// whole is identified by `conversationID`.
+struct NPCConversationLineMessage: Codable {
+    let conversationID: String
+    let speakerNPCID: String
+    let speakerName: String
+    let listenerNPCIDs: [String]
+    let text: String
+    let mood: String?
+    let position: CodablePoint
+    let sceneType: String
+    let isClosing: Bool
+}
+
+/// Marks the end of an NPC ↔ NPC conversation. Sent by host with the
+/// final list of interactions that occurred so the guest can apply
+/// matching opinion deltas locally (or, if desired, just trust host
+/// authority and skip).
+struct NPCConversationEndedMessage: Codable {
+    let conversationID: String
+    let participants: [String]
+    /// Each tuple: (speaker, listener, interactionRawValue).
+    /// Encoded as a flat array of `Entry` for stable Codable.
+    struct Entry: Codable {
+        let speaker: String
+        let listener: String
+        let interaction: String
+    }
+    let interactions: [Entry]
+    let interruptedByPlayer: Bool
 }
 
 struct DialogueDismissedMessage: Codable {
-    let placeholder: Bool // Empty payload, just needs to be Codable
-    init() { self.placeholder = true }
+    /// NPC id whose bubble should close. Optional for back-compat with
+    /// older clients that sent an empty payload — receivers should treat
+    /// nil as "dismiss all" to preserve old behavior.
+    let npcID: String?
+    init(npcID: String? = nil) { self.npcID = npcID }
+}
+
+// MARK: - Streaming Dialogue (Host-Authoritative)
+
+/// Either player → host. Player tapped an NPC and wants a dialogue.
+/// Host decides whether to honor it (e.g. NPC must be in the host's
+/// scene, not currently liberated, etc.) and replies with a
+/// `dialogueOpened` if approved.
+struct DialogueOpenRequestMessage: Codable {
+    let npcID: String
+    let sceneType: String   // requester's scene; host gates on it matching
+}
+
+/// Host → both. A new dialogue bubble should appear, anchored to the
+/// named NPC. Both players render an empty streaming bubble and wait
+/// for line deltas.
+struct DialogueOpenedMessage: Codable {
+    let npcID: String
+    let speakerName: String
+    let position: CodablePoint
+    let sceneType: String
+}
+
+/// Host → both. Streamed token chunk. `partialText` is the cumulative
+/// text-so-far (not the diff) so out-of-order delivery is harmless.
+/// Sent unreliable; the next delta supersedes any lost frame.
+struct DialogueLineDeltaMessage: Codable {
+    let npcID: String
+    let partialText: String
+    let mood: String?
+}
+
+/// Host → both. The line is finalized and the kind/blunt followup pills
+/// are ready to render. Sent reliably.
+struct DialogueFollowupsReadyMessage: Codable {
+    let npcID: String
+    let kindText: String
+    let bluntText: String
+}
+
+// MARK: - Movable Shop Objects
+
+/// Sent when a player picks up an editor-placed RotatableObject (table
+/// or furniture). `byHost` lets the receiver know whose RemoteCharacter
+/// to parent the object to while it's being carried.
+struct ObjectPickedUpMessage: Codable {
+    let editorName: String
+    let byHost: Bool
+}
+
+/// Sent when a carried RotatableObject is dropped onto the grid.
+/// Position + rotation are the world-truth that the receiver applies.
+struct ObjectDroppedMessage: Codable {
+    let editorName: String
+    let position: CodablePoint
+    let rotationDegrees: Int
+}
+
+/// Sent when a player rotates the object they're currently carrying.
+/// Only meaningful between pickup and drop.
+struct ObjectRotatedMessage: Codable {
+    let editorName: String
+    let rotationDegrees: Int
+}
+
+/// Sent when a player picks up a foraged ingredient (leaf, berry,
+/// mushroom, or any future forageable). The receiver marks the spawn
+/// collected locally and, if viewing the same location, removes the
+/// visual node.
+struct ItemForagedMessage: Codable {
+    let spawnID: String
+    let locationKey: String
+}
+
+struct StorageDepositedMessage: Codable {
+    let containerName: String
+    let ingredient: String
+}
+
+struct StorageRetrievedMessage: Codable {
+    let containerName: String
+    let ingredient: String
 }
 
 struct StateRequestMessage: Codable {
@@ -247,13 +409,58 @@ struct NPCMemoryEntry: Codable {
     let liberationDate: Double? // TimeInterval since 1970, nil if not liberated
 }
 
+/// Snapshot of one gnome agent for cross-session save and one-message
+/// network sync. Counterpart of GnomeSnapshot in Gnomes/GnomeIdentity.swift,
+/// declared there to keep all gnome-specific types together.
 struct WorldSyncMessage: Codable {
     let dayCount: Int
     let timePhase: String
     let timeProgress: Float
     let npcStatesJSON: String
     let npcMemories: [NPCMemoryEntry]
+    let worldItems: [WorldItem]
+    let storage: [String: StorageContents]
     let saveTimestamp: Double
+    /// Persisted gnome state — see GnomeManager.exportSaveData.
+    /// Optional for backward compatibility with older world saves.
+    let gnomeSnapshotsJSON: String?
+    let treasuryGemCount: Int?
+    /// Persisted mine cart state. Optional for back-compat with
+    /// pre-cart saves. nil = cart at idle in cave entrance with 0 gems.
+    let cartGemCount: Int?
+    let cartLocation: String?
+    let cartState: String?
+    /// Recent daily chronicle summaries. Optional for back-compat with
+    /// pre-chronicle saves. Receiver merges by dayCount.
+    let recentSummaries: [DailySummaryEntry]?
+    /// Editor-placed RotatableObjects that have been rearranged from
+    /// their .sks default positions. Optional for back-compat with
+    /// pre-rearrangement saves. nil/empty = everything at editor default.
+    let movableObjects: [MovableObjectEntry]?
+}
+
+// MARK: - Gnome ↔ Gnome Conversation Sync
+
+/// One streamed line of a gnome ↔ gnome ambient conversation. Distinct
+/// from NPCConversationLineMessage so the receiver can route them to
+/// GnomeConversationService instead of NPCConversationService and so
+/// the gnome-specific schema stays clean.
+struct GnomeConversationLineMessage: Codable {
+    let conversationID: String
+    let speakerGnomeID: String
+    let speakerName: String
+    let listenerGnomeIDs: [String]
+    let text: String
+    let mood: String?
+    let position: CodablePoint
+    let sceneType: String
+    let isClosing: Bool
+}
+
+struct GnomeConversationEndedMessage: Codable {
+    let conversationID: String
+    let participants: [String]
+    let interruptedByPlayer: Bool
 }
 
 // MARK: - Helpers

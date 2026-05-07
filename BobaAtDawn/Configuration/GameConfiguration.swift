@@ -102,6 +102,7 @@ struct GameConfig {
         static let foamColumn = 16
         static let teaColumn = 18
         static let lidColumn = 20
+        static let trashColumn = 22
         
         // DrinkCreator position
         static let drinkCreatorPosition = GridCoordinate(x: 16, y: 13)
@@ -112,6 +113,7 @@ struct GameConfig {
         static let foamColor = SKColor(red: 1.0, green: 0.9, blue: 0.7, alpha: 1.0)
         static let teaColor = SKColor(red: 0.6, green: 0.3, blue: 0.1, alpha: 1.0)
         static let lidColor = SKColor.gray
+        static let trashColor = SKColor(red: 0.35, green: 0.15, blue: 0.15, alpha: 1.0)
         
         // Interaction feedback
         static let interactionScaleAmount: CGFloat = 1.2
@@ -407,11 +409,12 @@ extension GameConfig {
     static func stationPosition(for type: IngredientStation.StationType) -> GridCoordinate {
         let column: Int
         switch type {
-        case .ice: column = IngredientStations.iceColumn
-        case .boba: column = IngredientStations.bobaColumn  
-        case .foam: column = IngredientStations.foamColumn
-        case .tea: column = IngredientStations.teaColumn
-        case .lid: column = IngredientStations.lidColumn
+        case .ice:   column = IngredientStations.iceColumn
+        case .boba:  column = IngredientStations.bobaColumn
+        case .foam:  column = IngredientStations.foamColumn
+        case .tea:   column = IngredientStations.teaColumn
+        case .lid:   column = IngredientStations.lidColumn
+        case .trash: column = IngredientStations.trashColumn
         }
         return GridCoordinate(x: column, y: IngredientStations.baseRow)
     }
@@ -419,11 +422,12 @@ extension GameConfig {
     // Get station color by type
     static func stationColor(for type: IngredientStation.StationType) -> SKColor {
         switch type {
-        case .ice: return IngredientStations.iceColor
-        case .boba: return IngredientStations.bobaColor
-        case .foam: return IngredientStations.foamColor
-        case .tea: return IngredientStations.teaColor
-        case .lid: return IngredientStations.lidColor
+        case .ice:   return IngredientStations.iceColor
+        case .boba:  return IngredientStations.bobaColor
+        case .foam:  return IngredientStations.foamColor
+        case .tea:   return IngredientStations.teaColor
+        case .lid:   return IngredientStations.lidColor
+        case .trash: return IngredientStations.trashColor
         }
     }
     

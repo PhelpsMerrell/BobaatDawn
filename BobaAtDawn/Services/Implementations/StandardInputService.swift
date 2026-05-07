@@ -99,15 +99,20 @@ class StandardInputService: InputService {
         let targetCell = gridService.worldToGrid(location)
         let touchedNode = scene.atPoint(location)
         
-        // Check what's in the tapped cell first (for GameScene)
-        if context == .gameScene {
-            if let gameObject = gridService.objectAt(targetCell) {
-                if let interactable = findInteractableNode(gameObject.skNode, context: context, gameSpecificNodes: nil) {
-                    return .longPress(node: interactable, location: location)
-                }
-            }
-        }
-        
+        // IMPORTANT: Do NOT pre-check grid-cell occupancy here.
+        //
+        // We used to resolve interactables by looking up whatever
+        // GameObject was registered in the tapped cell, and return
+        // .longPress as soon as the cell was occupied. That greedily
+        // ate bare-floor taps that happened to fall inside a station's
+        // reserved cell — short taps stalled on the long-press timer
+        // and the character never moved.
+        //
+        // The touched-node ancestor walk below already handles every
+        // legitimate interact case (stations, storage, tables, doors,
+        // save buttons, storage-slot sprites), because those objects
+        // all have visible sprites the touch lands on directly.
+
         // Check for direct node touches
         let gameSpecificNodes = getContextSpecificNodes(from: scene, context: context)
         if let interactable = findInteractableNode(touchedNode, context: context, gameSpecificNodes: gameSpecificNodes) {
@@ -333,10 +338,30 @@ class StandardInputService: InputService {
     }
     
     private func checkCommonInteractables(_ node: SKNode) -> SKNode? {
+        // Hard rejection list: names that must NEVER be interactable,
+        // even if their runtime class says otherwise. `shop_floor_bounds`
+        // is a giant floor-wide sprite that was accidentally given a
+        // Custom Class in the scene editor, making it a RotatableObject
+        // subclass. Without this guard, every tap on the empty floor
+        // resolves to it and stalls the character on a long-press that
+        // never fires — i.e. movement feels "eaten."
+        if node.name == "shop_floor_bounds" {
+            return nil
+        }
+
+        // Open-pantry / open-fridge slot icons. Plain SKSpriteNodes that
+        // live as grandchildren of a StorageContainer, named
+        // `storage_slot_<ingredient>`. We want the slot node itself
+        // returned (not its StorageContainer parent), because the slot's
+        // userData carries the ingredient we need to retrieve.
+        if let name = node.name, name.hasPrefix("storage_slot_") {
+            return node
+        }
+        
         // Check for rotatable objects (tables, furniture, etc.)
         if let rotatable = node as? RotatableObject {
             // Tables are always interactable
-            if rotatable.name == "table" {
+            if rotatable.name == "table" || rotatable.name?.hasPrefix("table_") == true || rotatable.name == "sacred_table" {
                 return rotatable
             }
             

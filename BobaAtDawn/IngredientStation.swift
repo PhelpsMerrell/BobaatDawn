@@ -2,20 +2,34 @@
 //  IngredientStation.swift
 //  BobaAtDawn
 //
-//  Simple ingredient stations for boba creation
+//  Simple ingredient stations for boba creation.
+//
+//  Model (post-refactor): stations are dumb furniture. They do NOT track
+//  any ingredient or recipe state. Tapping a station with a carried
+//  drink-in-hand applies that ingredient additively to the held cup —
+//  that logic lives in GameScene.handleGameSceneLongPress via
+//  DrinkCreator.applyIngredient(to:type:). Tapping with empty hands is
+//  a haptic no-op.
+//
+//  The `.trash` station is special: it discards the held drink instead
+//  of adding an ingredient. See GameScene.handleStationInteraction.
 //
 
 import SpriteKit
 
 // MARK: - Ingredient Station
+@objc(IngredientStation)
 class IngredientStation: RotatableObject {
-    
-    enum StationType {
-        case ice, boba, foam, tea, lid
+
+    private enum CodingKeys {
+        static let stationType = "editorStationType"
     }
     
-    let stationType: StationType
-    private var isActive: Bool = false
+    enum StationType {
+        case ice, boba, foam, tea, lid, trash
+    }
+    
+    private(set) var stationType: StationType
     
     init(type: StationType) {
         self.stationType = type
@@ -25,19 +39,50 @@ class IngredientStation: RotatableObject {
         self.name = "ingredient_station_\(type)"
         self.size = GameConfig.IngredientStations.size
         
-        updateVisuals()
         _ = applyStationSpriteFromType()
     }
     
     required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+        let typeString = aDecoder.decodeObject(forKey: CodingKeys.stationType) as? String
+        self.stationType = IngredientStation.stationType(from: typeString)
+        super.init(coder: aDecoder)
+
+        // Xcode's scene editor doesn't know about our custom CodingKeys,
+        // so `editorStationType` is never written into the .sks archive.
+        // When the encoded key is absent, `stationType(from:)` returns .tea
+        // for every station (its default case) — which breaks trash, lid,
+        // and every non-tea ingredient application.
+        //
+        // Fallback: derive the station type from the node name. The
+        // editor convention is `ingredient_station_<type>`.
+        if typeString == nil, let nodeName = self.name {
+            let prefix = "ingredient_station_"
+            let suffix = nodeName.hasPrefix(prefix)
+                ? String(nodeName.dropFirst(prefix.count))
+                : nodeName
+            switch suffix.lowercased() {
+            case "ice":   self.stationType = .ice
+            case "boba":  self.stationType = .boba
+            case "foam":  self.stationType = .foam
+            case "tea":   self.stationType = .tea
+            case "lid":   self.stationType = .lid
+            case "trash": self.stationType = .trash
+            default:      break
+            }
+        }
+
+        _ = applyStationSpriteFromType()
+    }
+
+    override func encode(with coder: NSCoder) {
+        super.encode(with: coder)
+        coder.encode(IngredientStation.string(from: stationType), forKey: CodingKeys.stationType)
     }
     
+    /// Play the station's interaction pulse. Called whenever the player
+    /// taps this station (whether carrying a drink or not). Does not
+    /// change any drink state — that's handled by the caller.
     func interact() {
-        isActive.toggle()
-        Log.debug(.drink, "\(stationType) toggled → \(isActive ? "ON" : "OFF")")
-        updateVisuals()
-        
         let pulse = SKAction.sequence([
             SKAction.scale(to: GameConfig.IngredientStations.interactionScaleAmount,
                            duration: GameConfig.IngredientStations.interactionDuration),
@@ -46,27 +91,44 @@ class IngredientStation: RotatableObject {
         run(pulse)
     }
     
-    private func updateVisuals() {
-        alpha = isActive ? 1.0 : 0.3
+    /// Map a station type to the ingredient sprite-layer name applied to
+    /// the drink sprite when this station is used. Returns nil for `.trash`
+    /// (which doesn't add a layer — it discards the drink) and `.lid`
+    /// callers can switch on the enum directly if they need lid-specific
+    /// handling, but the layer name is provided here for completeness.
+    var ingredientLayerName: String? {
+        switch stationType {
+        case .tea:   return "tea_black"
+        case .ice:   return "ice_cubes"
+        case .boba:  return "topping_tapioca"
+        case .foam:  return "foam_cheese"
+        case .lid:   return "lid_straw"
+        case .trash: return nil
+        }
     }
-    
-    // MARK: - State Getters (used by DrinkCreator)
-    var hasIce:  Bool { stationType == .ice  && isActive }
-    var hasBoba: Bool { stationType == .boba && isActive }
-    var hasFoam: Bool { stationType == .foam && isActive }
-    var hasTea:  Bool { stationType == .tea  && isActive }
-    var hasLid:  Bool { stationType == .lid  && isActive }
-    
-    func resetToDefault() {
-        isActive = false
-        updateVisuals()
-        
-        let flash = SKAction.sequence([
-            SKAction.colorize(with: .red, colorBlendFactor: 0.5, duration: 0.1),
-            SKAction.colorize(with: .white, colorBlendFactor: 0.0, duration: 0.2),
-            SKAction.colorize(withColorBlendFactor: 0.0, duration: 0.1)
-        ])
-        run(flash)
+}
+
+private extension IngredientStation {
+    static func string(from type: StationType) -> String {
+        switch type {
+        case .ice:   return "ice"
+        case .boba:  return "boba"
+        case .foam:  return "foam"
+        case .tea:   return "tea"
+        case .lid:   return "lid"
+        case .trash: return "trash"
+        }
+    }
+
+    static func stationType(from string: String?) -> StationType {
+        switch string {
+        case "ice":   return .ice
+        case "boba":  return .boba
+        case "foam":  return .foam
+        case "lid":   return .lid
+        case "trash": return .trash
+        default:      return .tea
+        }
     }
 }
 
@@ -74,11 +136,12 @@ class IngredientStation: RotatableObject {
 extension IngredientStation.StationType {
     var preferredSpriteNames: [String] {
         switch self {
-        case .ice:  return ["station_ice", "station_default"]
-        case .boba: return ["station_boba", "station_default"]
-        case .foam: return ["station_foam", "station_default"]
-        case .tea:  return ["station_tea", "station_default"]
-        case .lid:  return ["station_lid", "station_default"]
+        case .ice:   return ["station_ice",   "station_default"]
+        case .boba:  return ["station_boba",  "station_default"]
+        case .foam:  return ["station_foam",  "station_default"]
+        case .tea:   return ["station_tea",   "station_default"]
+        case .lid:   return ["station_lid",   "station_default"]
+        case .trash: return ["station_trash", "station_default"]
         }
     }
 }
@@ -92,18 +155,15 @@ extension IngredientStation {
         }
         
         let texture = atlas.textureNamed(foundName)
-        let node = SKSpriteNode(texture: texture)
-        node.name = "station_sprite_\(foundName)"
-        node.zPosition = 1
-        node.position = .zero
-        node.anchorPoint = CGPoint(x: 0.5, y: 0.5)
-        node.setScale(0.7)
+        texture.filteringMode = .nearest
 
         self.children
             .filter { $0.name?.hasPrefix("station_") == true || $0.name?.hasPrefix("shape_") == true }
             .forEach { $0.removeFromParent() }
 
-        self.addChild(node)
+        self.texture = texture
+        self.color = .white
+        self.colorBlendFactor = 0.0
         return true
     }
 

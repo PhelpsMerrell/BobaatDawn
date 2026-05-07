@@ -19,7 +19,9 @@ extension GameScene: MultiplayerServiceDelegate {
             addLocalPlayerLabel()
             spawnRemoteCharacter()
             if MultiplayerService.shared.isHost {
-                sendHostHandshake()
+                scheduleInitialHostSyncBurst()
+            } else {
+                sendGuestReady()
             }
         }
     }
@@ -62,37 +64,48 @@ extension GameScene: MultiplayerServiceDelegate {
         Log.info(.network, "Sent host handshake")
     }
 
+    private func sendAuthoritativeWorldSync() {
+        let worldSync = SaveService.shared.exportWorldSync(timeService: timeService)
+        MultiplayerService.shared.send(type: .worldSync, payload: worldSync)
+        Log.info(.network, "Sent authoritative world sync")
+    }
+
+    private func sendGuestReady() {
+        guard MultiplayerService.shared.isGuest else { return }
+        MultiplayerService.shared.send(
+            type: .guestReady,
+            payload: GuestReady(guestDisplayName: "Guest")
+        )
+        Log.info(.network, "Guest ready in GameScene")
+    }
+
+    private func scheduleInitialHostSyncBurst() {
+        guard MultiplayerService.shared.isHost else { return }
+        let delays: [TimeInterval] = [0.15, 0.75]
+        for (index, delay) in delays.enumerated() {
+            let action = SKAction.sequence([
+                SKAction.wait(forDuration: delay),
+                SKAction.run { [weak self] in
+                    guard let self, MultiplayerService.shared.isHost else { return }
+                    self.sendHostHandshake()
+                    self.sendAuthoritativeWorldSync()
+                }
+            ])
+            run(action, withKey: "initial_host_sync_\(index)")
+        }
+    }
+
     // MARK: - MultiplayerServiceDelegate
 
     func multiplayerDidConnect(isHost: Bool) {
         Log.info(.network, "GameScene: connected as \(isHost ? "HOST" : "GUEST")")
         addLocalPlayerLabel()
         spawnRemoteCharacter()
-        
-        // Both players exchange save timestamps. The player with the newer
-        // save sends a full WorldSync to the other so both devices share
-        // the same persistent world.
-        let myTimestamp = SaveService.shared.getSaveTimestamp()
-        
+
         if isHost {
-            sendHostHandshake()
-            // Send our timestamp too so the guest can compare.
-            // If the guest's save is newer, THEY will send worldSync to us.
-            MultiplayerService.shared.send(
-                type: .stateRequest,
-                payload: StateRequestMessage(
-                    requestingScene: "shop",
-                    saveTimestamp: myTimestamp
-                )
-            )
+            scheduleInitialHostSyncBurst()
         } else {
-            MultiplayerService.shared.send(
-                type: .stateRequest,
-                payload: StateRequestMessage(
-                    requestingScene: "shop",
-                    saveTimestamp: myTimestamp
-                )
-            )
+            sendGuestReady()
         }
     }
 
@@ -111,6 +124,12 @@ extension GameScene: MultiplayerServiceDelegate {
 
     func multiplayerDidReceive(_ envelope: NetworkEnvelope) {
         switch envelope.type {
+
+        case .guestReady:
+            guard MultiplayerService.shared.isHost else { return }
+            _ = try? envelope.decode(GuestReady.self)
+            sendHostHandshake()
+            sendAuthoritativeWorldSync()
 
         case .playerPosition:
             guard let msg = try? envelope.decode(PlayerPositionMessage.self) else { return }
@@ -143,22 +162,24 @@ extension GameScene: MultiplayerServiceDelegate {
             SaveService.shared.recordNPCDrinkReceived(msg.npcID)
 
         case .stationToggled:
+            // Post-refactor: station toggles don't mutate any drink state.
+            // This message now exists purely so the remote player sees
+            // OUR station pulse when we use it — a cosmetic "your partner
+            // just scooped tea" cue. Do NOT call station.interact() here
+            // because that would fire the pulse a second time on the
+            // sender (they already saw it locally); instead play a
+            // lighter pulse directly.
             guard let msg = try? envelope.decode(StationToggledMessage.self) else { return }
             if let station = ingredientStations.first(where: { "\($0.stationType)" == msg.stationName }) {
-                station.interact()
-                drinkCreator.updateDrink(from: ingredientStations)
-                // NOTE: Do NOT rebuild the local player's carried drink here.
-                // Remote station toggles update the station visuals and the
-                // counter display, but only YOUR OWN toggles should change
-                // the drink in your hand. Local rebuilds happen in
-                // GameScene.handleGameSceneLongPress.
+                let pulse = animationService.stationInteractionPulse(station)
+                animationService.run(pulse, on: station, withKey: AnimationKeys.stationInteraction, completion: nil)
             }
 
         case .drinkPlacedOnTable:
             guard let msg = try? envelope.decode(DrinkPlacedOnTableMessage.self) else { return }
             // Find the table nearest to the broadcast position
             let tables = children.compactMap { $0 as? RotatableObject }.filter {
-                $0.name == "table" || $0.name == "sacred_table"
+                isTableNode($0)
             }
             if let table = tables.min(by: {
                 hypot($0.position.x - msg.tablePosition.cgPoint.x,
@@ -179,6 +200,25 @@ extension GameScene: MultiplayerServiceDelegate {
                 drinkOnTable.position = offsets[slot]
                 drinkOnTable.zPosition = ZLayers.childLayer(for: ZLayers.tables)
                 drinkOnTable.name = "drink_on_table"
+                
+                // Mirror the local-placement registry behaviour so the drink
+                // persists on this device too. Skip sacred_table — its drink
+                // is consumed by the ritual and is never restored.
+                if table.name != "sacred_table" {
+                    let item = WorldItemRegistry.makeDrinkOnTable(
+                        tablePosition: table.position,
+                        slotIndex: slot,
+                        hasTea:  msg.hasTea,
+                        hasIce:  msg.hasIce,
+                        hasBoba: msg.hasBoba,
+                        hasFoam: msg.hasFoam,
+                        hasLid:  msg.hasLid
+                    )
+                    WorldItemRegistry.shared.add(item)
+                    drinkOnTable.userData = NSMutableDictionary()
+                    drinkOnTable.userData?["worldItemID"] = item.id
+                }
+                
                 table.addChild(drinkOnTable)
                 Log.info(.network, "Remote drink placed on table")
             }
@@ -208,18 +248,59 @@ extension GameScene: MultiplayerServiceDelegate {
 
         case .trashCleaned:
             guard let msg = try? envelope.decode(TrashCleanedMessage.self) else { return }
+            // Only react to shop-scoped trash messages. Forest-scoped
+            // messages (location like "forest_room_3") are handled by
+            // ForestScene's own multiplayer handler; without this filter
+            // we'd try to match forest coordinates against shop trash and
+            // potentially clean an unrelated piece.
+            guard msg.location == "shop" else { return }
             let trashNodes = children.compactMap { $0 as? Trash }
             if let nearest = trashNodes.min(by: {
                 hypot($0.position.x - msg.position.cgPoint.x, $0.position.y - msg.position.cgPoint.y)
                 <
                 hypot($1.position.x - msg.position.cgPoint.x, $1.position.y - msg.position.cgPoint.y)
             }) {
+                // Unregister from the world registry so the shared persistent
+                // state matches. Prefer the stamped ID; fall back to spatial lookup.
+                if let itemID = nearest.userData?["worldItemID"] as? String {
+                    WorldItemRegistry.shared.remove(id: itemID)
+                } else if let match = WorldItemRegistry.shared.nearestItem(
+                    kind: .trash, at: .shop, near: msg.position.cgPoint) {
+                    WorldItemRegistry.shared.remove(id: match.id)
+                }
                 nearest.pickUp { Log.debug(.network, "Remote trash cleaned") }
+                // Chronicle hook (host receiving guest's clean event).
+                DailyChronicleLedger.shared.recordTrashCleaned(location: "shop")
             }
 
         case .npcLiberated:
             guard let msg = try? envelope.decode(NPCLiberatedMessage.self) else { return }
             SaveService.shared.markNPCAsLiberated(msg.npcID)
+
+        case .npcSatisfactionSync:
+            // Per-NPC satisfaction broadcast. Either side can send this
+            // — typically from the dev menu, but also from any future
+            // gameplay path that mutates satisfaction without going
+            // through the host. We mirror the entries into local
+            // SwiftData and refresh any visible debug menu so the user
+            // sees the partner's change land in real time.
+            guard let msg = try? envelope.decode(NPCSatisfactionSync.self) else { return }
+            for entry in msg.entries {
+                guard let memory = SaveService.shared.getNPCMemory(entry.npcID) else { continue }
+                memory.satisfactionScore = entry.satisfactionScore
+                memory.totalDrinksReceived = entry.totalDrinksReceived
+                // Liberation flag is sticky on the receiving side: if the
+                // sender turned liberation OFF (debug reset) we follow;
+                // if they turned it ON, we follow too. liberationDate is
+                // recomputed only when going from not-liberated → liberated.
+                if memory.isLiberated != entry.isLiberated {
+                    memory.isLiberated = entry.isLiberated
+                    memory.liberationDate = entry.isLiberated ? Date() : nil
+                }
+                SaveService.shared.persistNPCMemoryChanges(memory)
+            }
+            NPCDebugMenu.refreshIfOpen(in: self)
+            Log.info(.network, "Applied \(msg.entries.count) NPC satisfaction sync entr\(msg.entries.count == 1 ? "y" : "ies")")
 
         case .fullStateSync:
             guard MultiplayerService.shared.isGuest else { return }
@@ -237,17 +318,72 @@ extension GameScene: MultiplayerServiceDelegate {
             applySnailSync(msg)
 
         case .dialogueShown:
+            // LEGACY non-streaming path — still used for liberation
+            // farewells and any non-LLM path that goes through the old
+            // single-shot broadcast. New host-authoritative streaming
+            // dialogue uses dialogueOpened/dialogueLineDelta/etc instead.
             guard let msg = try? envelope.decode(DialogueShownMessage.self) else { return }
+            guard msg.sceneType == DialogueService.sceneTypeKey(for: self) else { return }
             DialogueService.shared.showRemoteDialogue(
                 npcID: msg.npcID,
                 speakerName: msg.speakerName,
                 text: msg.text,
+                mood: msg.mood,
                 at: msg.position.cgPoint,
                 in: self
             )
 
+        case .dialogueOpenRequest:
+            // Either player may send this. Only the host actually opens
+            // the dialogue (and broadcasts `dialogueOpened`). Guests
+            // ignore — they should never receive this anyway, since
+            // GKMatch broadcasts to all players and the requester's own
+            // message comes back through the loopback path on host.
+            guard MultiplayerService.shared.isHost else { return }
+            guard let msg = try? envelope.decode(DialogueOpenRequestMessage.self) else { return }
+            DialogueService.shared.hostHandleOpenRequest(msg, in: self)
+
+        case .dialogueOpened:
+            // Host → both. Open a matching empty bubble so we can fill it
+            // in via subsequent dialogueLineDelta messages.
+            guard let msg = try? envelope.decode(DialogueOpenedMessage.self) else { return }
+            DialogueService.shared.applyDialogueOpened(msg, in: self)
+
+        case .dialogueLineDelta:
+            guard let msg = try? envelope.decode(DialogueLineDeltaMessage.self) else { return }
+            DialogueService.shared.applyDialogueLineDelta(msg)
+
+        case .dialogueFollowupsReady:
+            guard let msg = try? envelope.decode(DialogueFollowupsReadyMessage.self) else { return }
+            DialogueService.shared.applyDialogueFollowupsReady(msg, in: self)
+
         case .dialogueDismissed:
-            DialogueService.shared.dismissRemoteDialogue()
+            // Per-NPC dismiss (npcID present) or legacy global flush (nil).
+            let msg = try? envelope.decode(DialogueDismissedMessage.self)
+            DialogueService.shared.dismissRemoteDialogue(forNPCID: msg?.npcID)
+
+        case .dialogueFollowupChosen:
+            guard let msg = try? envelope.decode(DialogueFollowupChosenMessage.self) else { return }
+            // Show the partner's choice as a brief beat on whichever
+            // bubble exists locally.
+            DialogueService.shared.showRemoteFollowupChoice(
+                npcID: msg.npcID, chosenText: msg.chosenText, tone: msg.tone, in: self
+            )
+            // Host runs turn-2 in response to a guest's pill-tap.
+            if MultiplayerService.shared.isHost {
+                DialogueService.shared.applyRemoteFollowupChosen(
+                    npcID: msg.npcID, chosenText: msg.chosenText, toneRaw: msg.tone
+                )
+            }
+
+        case .npcConversationLine:
+            guard let msg = try? envelope.decode(NPCConversationLineMessage.self) else { return }
+            guard msg.sceneType == DialogueService.sceneTypeKey(for: self) else { return }
+            NPCConversationService.shared.handleRemoteLine(msg, in: self)
+
+        case .npcConversationEnded:
+            guard let msg = try? envelope.decode(NPCConversationEndedMessage.self) else { return }
+            NPCConversationService.shared.handleRemoteEnd(msg)
 
         case .ritualStepCompleted:
             guard let msg = try? envelope.decode(RitualStepMessage.self) else { return }
@@ -258,35 +394,69 @@ extension GameScene: MultiplayerServiceDelegate {
             applyRemoteRitualState(msg)
 
         case .stateRequest:
-            // Other player sent their save timestamp. Compare with ours.
-            // If our save is newer, we send them the full world state.
+            // In the lobby-driven flow the host owns the session's world.
+            // Any guest reconciliation request gets the host's current save.
+            guard MultiplayerService.shared.isHost else { return }
             guard let msg = try? envelope.decode(StateRequestMessage.self) else { return }
-            let myTimestamp = SaveService.shared.getSaveTimestamp()
-            
-            if myTimestamp >= msg.saveTimestamp {
-                // Our save is newer (or equal) — we are the source of truth.
-                let worldSync = SaveService.shared.exportWorldSync(timeService: timeService)
-                MultiplayerService.shared.send(type: .worldSync, payload: worldSync)
-                Log.info(.network, "Our save is newer (\(myTimestamp) vs \(msg.saveTimestamp)) — sending world sync")
-            } else {
-                // Their save is newer — they'll send us the worldSync when
-                // they receive our stateRequest.
-                Log.info(.network, "Their save is newer (\(msg.saveTimestamp) vs \(myTimestamp)) — waiting for their world sync")
-            }
-            
-            // Also respond with handshake if we're host (for real-time state)
-            if MultiplayerService.shared.isHost {
-                sendHostHandshake()
-            }
+            Log.info(.network, "Host answering state request from \(msg.requestingScene)")
+            sendHostHandshake()
+            sendAuthoritativeWorldSync()
 
         case .worldSync:
             guard let msg = try? envelope.decode(WorldSyncMessage.self) else { return }
             applyWorldSync(msg)
 
+        case .dailySummaryGenerated:
+            guard let msg = try? envelope.decode(DailySummaryGeneratedMessage.self) else { return }
+            SaveService.shared.applyDailySummaryEntry(msg.entry)
+            Log.info(.network, "Received chronicle for day \(msg.entry.dayCount)")
+
         case .timeSync:
             guard MultiplayerService.shared.isGuest else { return }
             guard let msg = try? envelope.decode(TimeSyncMessage.self) else { return }
             applyTimeSync(msg)
+
+        case .itemForaged:
+            guard let msg = try? envelope.decode(ItemForagedMessage.self) else { return }
+            // Just update the foraging manager — visual removal happens in
+            // ForestScene / CaveScene when the player is actually there.
+            ForagingManager.shared.collect(spawnID: msg.spawnID)
+
+        case .storageDeposited:
+            guard let msg = try? envelope.decode(StorageDepositedMessage.self) else { return }
+            let ok = StorageRegistry.shared.store(ingredient: msg.ingredient, in: msg.containerName)
+            if !ok {
+                // Registry state has drifted between host and guest. Shouldn't
+                // happen in practice — log so we notice if it does.
+                Log.warn(.network, "Remote deposit rejected: \(msg.containerName) can't accept \(msg.ingredient). Possible desync.")
+            }
+            if let storage = storageContainers.first(where: { $0.storageType.rawValue == msg.containerName }) {
+                storage.onInventoryChanged()
+            }
+            Log.info(.network, "Remote deposited \(msg.ingredient) into \(msg.containerName)")
+
+        case .storageRetrieved:
+            guard let msg = try? envelope.decode(StorageRetrievedMessage.self) else { return }
+            let ok = StorageRegistry.shared.retrieveOne(ingredient: msg.ingredient, from: msg.containerName)
+            if !ok {
+                Log.warn(.network, "Remote retrieve rejected: \(msg.containerName) had no \(msg.ingredient). Possible desync.")
+            }
+            if let storage = storageContainers.first(where: { $0.storageType.rawValue == msg.containerName }) {
+                storage.onInventoryChanged()
+            }
+            Log.info(.network, "Remote retrieved \(msg.ingredient) from \(msg.containerName)")
+
+        case .objectPickedUp:
+            guard let msg = try? envelope.decode(ObjectPickedUpMessage.self) else { return }
+            applyRemoteObjectPickedUp(msg)
+
+        case .objectDropped:
+            guard let msg = try? envelope.decode(ObjectDroppedMessage.self) else { return }
+            applyRemoteObjectDropped(msg)
+
+        case .objectRotated:
+            guard let msg = try? envelope.decode(ObjectRotatedMessage.self) else { return }
+            applyRemoteObjectRotated(msg)
 
         default:
             Log.debug(.network, "Unhandled message type: \(envelope.type.rawValue)")
@@ -362,9 +532,10 @@ extension GameScene: MultiplayerServiceDelegate {
     /// Overwrites local NPC memories, day count, and world state so both
     /// devices share the same persistent world.
     private func applyWorldSync(_ msg: WorldSyncMessage) {
-        Log.info(.network, "Applying world sync: day \(msg.dayCount), \(msg.npcMemories.count) NPC memories")
+        Log.info(.network, "Applying world sync: day \(msg.dayCount), \(msg.npcMemories.count) NPC memories, \(msg.worldItems.count) world items")
         
-        // Import into SwiftData (overwrites NPC memories + world state)
+        // Import into SwiftData (overwrites NPC memories + world state +
+        // world item registry).
         SaveService.shared.importWorldSync(msg)
         
         // Update runtime state to match
@@ -373,6 +544,20 @@ extension GameScene: MultiplayerServiceDelegate {
         if let phase = TimePhase.allCases.first(where: { $0.displayName == msg.timePhase }) {
             timeService.setDebugPhase(phase)
             lastTimePhase = phase
+        }
+        
+        // Reconcile the live scene against the freshly-imported registry so
+        // trash + drinks on tables reflect the other player's state without
+        // waiting for a scene reload.
+        reconcileSceneWithWorldItemRegistry()
+        // Re-apply the movable-object registry on top of the live scene so
+        // any rearrangement the partner made before we connected lands here.
+        applyMovableObjectRegistryToScene()
+        
+        // Refresh any open/closed pantry/fridge so their label counts and
+        // slot sprites match the freshly-imported StorageRegistry contents.
+        for container in storageContainers {
+            container.onInventoryChanged()
         }
         
         Log.info(.network, "Shared world loaded from other player (day \(msg.dayCount))")
@@ -481,5 +666,104 @@ extension GameScene: MultiplayerServiceDelegate {
         if msg.hasLid  { addLayer("lid_straw",       z: 5) }
         
         return tableDrink
+    }
+
+    // MARK: - Movable Object Sync (Remote)
+
+    /// Find the editor-placed node by `editorName` (e.g. `table_3`,
+    /// `furniture_arrow`). Sacred table is excluded.
+    private func findMovableObject(named editorName: String) -> RotatableObject? {
+        guard editorName != "sacred_table" else { return nil }
+        for child in children {
+            if let rot = child as? RotatableObject, rot.name == editorName {
+                return rot
+            }
+        }
+        return nil
+    }
+
+    /// Remote player picked up a table/furniture. Detach from the grid
+    /// (free its old cell), bump z-position so it floats, and stop any
+    /// in-flight movement. We do NOT visibly parent it to the
+    /// RemoteCharacter — the partner's position deltas already convey
+    /// where they are, and floating the object at its current spot until
+    /// the matching `objectDropped` arrives is simpler and avoids
+    /// per-frame parent reattachment.
+    private func applyRemoteObjectPickedUp(_ msg: ObjectPickedUpMessage) {
+        guard let node = findMovableObject(named: msg.editorName) else {
+            Log.debug(.network, "Remote pickup ignored — no node for \(msg.editorName)")
+            return
+        }
+        // Mirror local registry update so a worldSync at this moment
+        // would carry the right state.
+        MovableObjectRegistry.shared.recordPickup(
+            editorName: msg.editorName,
+            byHost: msg.byHost
+        )
+
+        // Free its old cell so the local player can walk through where
+        // the table used to be.
+        let oldCell = gridService.worldToGrid(node.position)
+        gridService.freeCell(oldCell)
+        node.zPosition = ZLayers.carriedItems
+        // Cancel any in-flight tween (e.g. mid-drop animation).
+        node.removeAllActions()
+
+        Log.info(.network, "Remote picked up \(msg.editorName)")
+    }
+
+    /// Remote player dropped a table/furniture at a specific position +
+    /// rotation. Tween the local copy to match, then occupy the new
+    /// grid cell.
+    private func applyRemoteObjectDropped(_ msg: ObjectDroppedMessage) {
+        guard let node = findMovableObject(named: msg.editorName) else {
+            Log.debug(.network, "Remote drop ignored — no node for \(msg.editorName)")
+            return
+        }
+        // Mirror local registry.
+        MovableObjectRegistry.shared.recordPlacement(
+            editorName: msg.editorName,
+            position: msg.position.cgPoint,
+            rotationDegrees: msg.rotationDegrees
+        )
+
+        let target = msg.position.cgPoint
+        let distance = hypot(target.x - node.position.x, target.y - node.position.y)
+        let duration = max(0.15, min(0.4, TimeInterval(distance / 400)))
+
+        node.removeAllActions()
+        let move = SKAction.move(to: target, duration: duration)
+        move.timingMode = .easeOut
+        node.run(move) { [weak self] in
+            guard let self = self else { return }
+            // Apply rotation snap.
+            if let state = RotationState(rawValue: msg.rotationDegrees) {
+                node.setRotationState(state)
+            }
+            // Restore floor z + occupy the new cell.
+            node.zPosition = ZLayers.tables   // tables layer; furniture also OK on this layer for our purposes
+            let newCell = self.gridService.worldToGrid(target)
+            let go = GameObject(
+                skNode: node,
+                gridPosition: newCell,
+                objectType: node.objectType,
+                gridService: self.gridService
+            )
+            self.gridService.occupyCell(newCell, with: go)
+        }
+        Log.info(.network, "Remote dropped \(msg.editorName) at \(target)")
+    }
+
+    /// Remote player rotated the carried object. Animate the local copy
+    /// to match.
+    private func applyRemoteObjectRotated(_ msg: ObjectRotatedMessage) {
+        guard let node = findMovableObject(named: msg.editorName) else { return }
+        MovableObjectRegistry.shared.recordRotation(
+            editorName: msg.editorName,
+            rotationDegrees: msg.rotationDegrees
+        )
+        if let state = RotationState(rawValue: msg.rotationDegrees) {
+            node.setRotationState(state)
+        }
     }
 }
