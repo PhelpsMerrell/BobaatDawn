@@ -33,7 +33,12 @@ class NPCResident {
     var lastDrinkTime: TimeInterval?
     var drinkCooldown: TimeInterval = 0
     var homeHouse: Int
-    
+
+    /// Today's plan as set by NPCDailyScheduler at dawn rollover.
+    /// Empty plan on init — the scheduler fills it in on the first
+    /// dawn after the world is loaded.
+    var dailyPlan: NPCDailyPlan = .empty
+
     init(npcData: NPCData) {
         self.npcData = npcData
         self.status = .atHome(room: npcData.homeRoom)
@@ -80,6 +85,7 @@ class NPCResidentManager {
             resident.status = .atHome(room: resident.npcData.homeRoom)
             resident.lastDrinkTime = nil
             resident.drinkCooldown = 0
+            resident.dailyPlan = .empty
         }
         assignHouseNumbers()
         pendingForestTrash.removeAll()
@@ -155,6 +161,9 @@ class NPCResidentManager {
         let shopNPC = scene.createShopNPC(animalType: animal, resident: resident)
         resident.shopNPC = shopNPC
         resident.status = .inShop
+        // Mark today's mandatory shop visit as complete in the daily plan.
+        // No-op if the plan is empty (e.g. before first dawn rollover).
+        NPCDailyScheduler.shared.markActivityComplete(.visitShop, npcID: resident.npcData.id)
         Log.info(.resident, "\(resident.npcData.name) moved to shop")
         // Chronicle hook
         DailyChronicleLedger.shared.recordNPCArrivedShop(
@@ -217,6 +226,15 @@ class NPCResidentManager {
         switch newPhase {
         case .dusk, .night, .dawn:
             sendAllShopNPCsHome(excludeRitualNPC: newPhase == .dawn)
+            if newPhase == .dawn {
+                // Roll fresh activity plans for every resident at dawn.
+                // Uses GnomeManager's current day count so the log line
+                // matches what the gnome simulation reports for the
+                // same rollover.
+                NPCDailyScheduler.shared.rollPlansForAllResidents(
+                    dayCount: GnomeManager.shared.currentDayCount
+                )
+            }
         case .day:
             maintainShopPopulation()
         }

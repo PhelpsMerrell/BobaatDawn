@@ -20,20 +20,8 @@ extension GameScene {
         print("🎯 \(object.name ?? "Object") moved to grid \(gridPos) = world \(object.position)")
     }
     
-    /// Move time window to a new grid position
-    /// - Parameter gridPos: New grid coordinate for time window
-    func moveTimeWindow(to gridPos: GridCoordinate) {
-        repositionObject(timeWindow, to: gridPos)
-        repositionObject(timeLabel, to: gridPos) // Keep label with window
-        print("⏰ Time window repositioned to grid \(gridPos)")
-    }
+ 
     
-    /// Move time breaker to a new grid position  
-    /// - Parameter gridPos: New grid coordinate for time breaker
-    func moveTimeBreaker(to gridPos: GridCoordinate) {
-        repositionObject(timeBreaker, to: gridPos)
-        print("🔌 Time breaker repositioned to grid \(gridPos)")
-    }
     
     /// Move front door to a new grid position
     /// - Parameter gridPos: New grid coordinate for front door
@@ -57,8 +45,7 @@ extension GameScene {
     func printCurrentPositions() {
         print("📍 CURRENT GRID POSITIONS:")
         print("   Character: \(getCurrentGridPosition(of: character))")
-        print("   Time Window: \(getCurrentGridPosition(of: timeWindow))")
-        print("   Time Breaker: \(getCurrentGridPosition(of: timeBreaker))")
+        
         if let door = childNode(withName: "front_door") {
             print("   Front Door: \(getCurrentGridPosition(of: door))")
         }

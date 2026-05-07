@@ -21,6 +21,14 @@ class StandardTimeService: TimeService {
     var isTimeActive: Bool {
         return TimeManager.shared.isTimeActive
     }
+
+    var currentSubphase: TimeSubphase {
+        return TimeManager.shared.currentSubphase
+    }
+
+    var subphaseProgress: Float {
+        return TimeManager.shared.subphaseProgress
+    }
     
     // MARK: - Day Counter (persisted via SaveService)
     
@@ -71,5 +79,10 @@ class StandardTimeService: TimeService {
     func setDebugPhase(_ phase: TimePhase) {
         let currentTime = CFAbsoluteTimeGetCurrent()
         TimeManager.shared.setPhase(phase, at: currentTime)
+    }
+
+    func setDebugSubphase(_ subphase: TimeSubphase) {
+        let currentTime = CFAbsoluteTimeGetCurrent()
+        TimeManager.shared.setSubphase(subphase, at: currentTime)
     }
 }

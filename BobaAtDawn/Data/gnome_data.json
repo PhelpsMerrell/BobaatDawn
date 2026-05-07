@@ -426,29 +426,35 @@
     },
 
     {
-      "id": "gnome_lobby_greeter",
-      "name": "Greeter",
+      "id": "gnome_npc_broker",
+      "name": "Broker",
       "gender": "",
       "age": 0,
-      "role": "housekeeper",
+      "role": "npcBroker",
       "rank": null,
       "home_oak_room": 1,
       "lore": "",
+      "duties": "Runs the trading desk in the oak lobby. Buys forest items from visiting NPCs in exchange for gems. When the broker box fills up, walks the wares to the kitchen pantry/fridge, then collects a fresh stack of gems from the treasurer.",
       "personality": {
         "archetype": "",
-        "traits": ["welcoming", "gossipy", "old", "loves the front door"],
-        "speech_quirks": []
+        "traits": ["welcoming", "gossipy", "old", "loves a fair trade", "never haggles"],
+        "speech_quirks": [
+          "says 'fair trade' the way other gnomes say hello",
+          "refers to forest NPCs as 'forest folk' or 'visiting folk', never by species",
+          "comments on what's currently in the broker box as if it were a meal in progress",
+          "asks after the treasurer like asking after the weather"
+        ]
       },
       "opinion_stances": {
-        "gems":        3,
+        "gems":        4,
         "rocks":       3,
         "the_machine": 3,
-        "the_cave":    3,
-        "the_snail":   3,
-        "the_forest":  3,
-        "npcs":        3,
-        "the_oak":     3,
-        "trash":       3,
+        "the_cave":    2,
+        "the_snail":   2,
+        "the_forest":  4,
+        "npcs":        4,
+        "the_oak":     4,
+        "trash":       2,
         "promotion":   3,
         "the_cart":    3
       },
@@ -457,31 +463,37 @@
     },
 
     {
-      "id": "gnome_fireplace_keeper",
-      "name": "Hearth",
+      "id": "gnome_treasurer",
+      "name": "Treasurer",
       "gender": "",
       "age": 0,
-      "role": "housekeeper",
+      "role": "treasurer",
       "rank": null,
       "home_oak_room": 1,
       "lore": "",
+      "duties": "Keeps a desk in the bottom-left of the oak lobby. Pulls gems from the treasury pile to refill the broker's till on demand. If the pile is empty, the broker leaves empty-handed.",
       "personality": {
         "archetype": "",
-        "traits": ["quiet", "watches the fire", "smells of woodsmoke"],
-        "speech_quirks": []
+        "traits": ["meticulous", "protective of the pile", "counts under their breath", "trusts the pile more than people"],
+        "speech_quirks": [
+          "counts out loud at random moments ('eight, nine… ten') even mid-sentence",
+          "says 'all accounted' as a verbal full stop",
+          "speaks of the treasury pile as if it has moods ('pile's quiet today')",
+          "refuses to round numbers— always exact"
+        ]
       },
       "opinion_stances": {
-        "gems":        3,
-        "rocks":       3,
+        "gems":        5,
+        "rocks":       2,
         "the_machine": 3,
         "the_cave":    3,
-        "the_snail":   3,
-        "the_forest":  3,
-        "npcs":        3,
-        "the_oak":     3,
-        "trash":       3,
+        "the_snail":   2,
+        "the_forest":  2,
+        "npcs":        2,
+        "the_oak":     4,
+        "trash":       1,
         "promotion":   3,
-        "the_cart":    3
+        "the_cart":    4
       },
       "explicit_relationships": [],
       "voice_lines": []
@@ -496,6 +508,7 @@
       "rank": null,
       "home_oak_room": 1,
       "lore": "",
+      "duties": "Runs the oak kitchen. Cooks breakfast and dinner for the whole roster. At meal time, cycles between the cook station and the dining tables, plating up and checking on diners. Empties the pantry and fridge into each meal so the broker's deposits get used.",
       "personality": {
         "archetype": "",
         "traits": ["bossy", "stirring something", "dusty apron"],
@@ -532,6 +545,7 @@
       "rank": null,
       "home_oak_room": 2,
       "lore": "",
+      "duties": "Tidies the left bedroom and the lobby's left side. Joins the post-breakfast cleanup beat with the rest of the housekeepers.",
       "personality": {
         "archetype": "",
         "traits": ["ancient", "tells the same story twice", "knows the cave's history"],
@@ -563,6 +577,7 @@
       "rank": null,
       "home_oak_room": 3,
       "lore": "",
+      "duties": "Tidies the middle bedroom and the lobby's right side. Joins the post-breakfast cleanup beat with the rest of the housekeepers.",
       "personality": {
         "archetype": "",
         "traits": ["dreamy", "reads gem patterns", "claims to predict the machine"],

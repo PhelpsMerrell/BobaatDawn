@@ -8,15 +8,18 @@
 //
 //  The 18 gnomes that used to be hand-authored here as `static let`
 //  records are now built on first access from the JSON. The named
-//  accessors (bossThork, apprenticePip, kitchenCook, …) are preserved
-//  so callers that reference a specific gnome by name (e.g.
-//  GnomeManager.dinnerMinglePosition uses `kitchenCook.id`) continue
-//  to compile — each is now a computed lookup by stable id.
+//  accessors (bossThork, apprenticePip, kitchenCook, npcBroker,
+//  treasurer, …) are preserved so callers that reference a specific
+//  gnome by name (e.g. GnomeManager.dinnerMinglePosition uses
+//  `kitchenCook.id`) continue to compile — each is now a computed
+//  lookup by stable id.
 //
 //  Counts the manager expects (must match what the JSON ships):
 //    1 boss          — supervises the mines
 //    12 miners       — work the mines daily
-//    5 housekeepers  — never leave the oak; cooks, cleaners, treasurer
+//    3 housekeepers  — cook + clean (live in the oak)
+//    1 npcBroker     — runs the lobby trading desk
+//    1 treasurer     — runs the lobby treasury desk
 //
 //  Authoring rule: any gnome referenced by id from Swift code (anchor
 //  names, debug menu, etc.) MUST exist in `gnome_data.json`. Missing
@@ -78,8 +81,8 @@ enum GnomeRoster {
     // MARK: - All
 
     /// The full roster, in JSON order. Cached on first access.
-    /// JSON order today is: boss → 12 miners → 5 housekeepers, which
-    /// matches the previous hand-authored ordering one-for-one.
+    /// JSON order today is: boss → 12 miners → 3 housekeepers →
+    /// 1 npcBroker → 1 treasurer.
     static var all: [GnomeIdentity] { cachedAll }
 
     /// Lazy cache. `static let` semantics make this run exactly once on
@@ -116,6 +119,19 @@ enum GnomeRoster {
         all.filter { $0.role == .housekeeper }
     }
 
+    /// The (single) NPC broker.
+    static var broker: GnomeIdentity { npcBroker }
+
+    /// The (single) treasurer.
+    static var treasury: GnomeIdentity { treasurer }
+
+    /// All gnomes whose daily life is inside the oak (housekeepers,
+    /// broker, treasurer). Convenience for code that needs to act on
+    /// "the lobby crew" as a whole.
+    static var oakResidents: [GnomeIdentity] {
+        all.filter { $0.role.livesInOak }
+    }
+
     /// The (single) boss.
     static var boss: GnomeIdentity { bossThork }
 
@@ -142,12 +158,16 @@ enum GnomeRoster {
     static var minerSedge:    GnomeIdentity { findRequired("gnome_miner_sedge") }
     static var minerToma:     GnomeIdentity { findRequired("gnome_miner_toma") }
 
-    // 5 housekeepers
-    static var lobbyGreeter:       GnomeIdentity { findRequired("gnome_lobby_greeter") }
-    static var fireplaceKeeper:    GnomeIdentity { findRequired("gnome_fireplace_keeper") }
+    // 3 housekeepers (cook + cleaners)
     static var kitchenCook:        GnomeIdentity { findRequired("gnome_kitchen_cook") }
     static var leftBedroomElder:   GnomeIdentity { findRequired("gnome_left_bedroom_elder") }
     static var middleBedroomSeer:  GnomeIdentity { findRequired("gnome_middle_bedroom_seer") }
+
+    // 1 npcBroker
+    static var npcBroker:          GnomeIdentity { findRequired("gnome_npc_broker") }
+
+    // 1 treasurer
+    static var treasurer:          GnomeIdentity { findRequired("gnome_treasurer") }
 
     // MARK: - JSON → Runtime Bridge
 
@@ -177,10 +197,13 @@ enum GnomeRoster {
     /// unknown values so the bridge can drop the row.
     private static func parseRole(_ raw: String) -> GnomeRole? {
         switch raw {
-        case "boss":        return .boss
-        case "miner":       return .miner
-        case "housekeeper": return .housekeeper
-        default:            return nil
+        case "boss":         return .boss
+        case "miner":        return .miner
+        case "housekeeper":  return .housekeeper
+        case "npcBroker",
+             "npc_broker":   return .npcBroker
+        case "treasurer":    return .treasurer
+        default:             return nil
         }
     }
 
@@ -206,16 +229,16 @@ enum GnomeRoster {
     /// details rather than identity data, so they are derived here
     /// instead of being authored in JSON.
     ///
-    /// Anchor map (matches the previous hand-authored values exactly):
-    ///   gnome_lobby_greeter      → gnome_anchor_greeter
-    ///   gnome_fireplace_keeper   → gnome_anchor_fireplace_keeper
+    /// Anchor map (lobby-crew assignments):
+    ///   gnome_npc_broker         → gnome_anchor_broker_desk
+    ///   gnome_treasurer          → gnome_anchor_treasurer_desk
     ///   gnome_kitchen_cook       → gnome_anchor_kitchen
     ///   gnome_boss_thork         → gnome_anchor_greeter (shares lobby)
     ///   everyone else            → gnome_anchor_bedroom
     private static func anchorName(for id: String) -> String {
         switch id {
-        case "gnome_lobby_greeter":    return "gnome_anchor_greeter"
-        case "gnome_fireplace_keeper": return "gnome_anchor_fireplace_keeper"
+        case "gnome_npc_broker":       return "gnome_anchor_broker_desk"
+        case "gnome_treasurer":        return "gnome_anchor_treasurer_desk"
         case "gnome_kitchen_cook":     return "gnome_anchor_kitchen"
         case "gnome_boss_thork":       return "gnome_anchor_greeter"
         default:                       return "gnome_anchor_bedroom"

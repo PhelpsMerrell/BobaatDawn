@@ -36,6 +36,7 @@ enum MessageType: String, Codable {
     case drinkPlacedOnTable
     case drinkServed
     case timePhaseChanged
+    case timeSubphaseRequest
     case timeSync
     case trashSpawned
     case trashCleaned
@@ -181,6 +182,16 @@ struct DrinkServedMessage: Codable {
 
 struct TimePhaseChangedMessage: Codable {
     let newPhase: String
+    let dayCount: Int
+}
+
+/// Sent when a player presses the debug time-control button. Either
+/// host or guest may send. The host applies it locally; if a guest
+/// sent the request, the host echoes the same message back so the
+/// guest's local view matches without waiting for the next periodic
+/// `timeSync`.
+struct TimeSubphaseRequestMessage: Codable {
+    let subphaseRawValue: String
     let dayCount: Int
 }
 

@@ -93,6 +93,23 @@ struct GeneratedGnomeConversationLineModel {
     @Guide(.anyOf(["delighted", "happy", "neutral", "wistful", "anxious", "upset", "weary"]))
     let mood: String
 }
+
+@available(iOS 26.0, *)
+@Generable
+struct GeneratedCookReactionBatch {
+    @Guide(description: """
+    Three SHORT compliments seated gnomes might say to the cook \
+    walking past their table during a meal. EACH line MUST be no \
+    longer than 8 words. Practical, working-class voices — thanking \
+    the cook, praising the food, asking for seconds. Never poetic. \
+    Never reference the boba shop, drinks, ghosts, the afterlife. \
+    Each line is a complete utterance from a different seated gnome \
+    — vary the phrasing across the three. Examples of the right \
+    register: 'This is incredible, Cook.' / 'Best stew yet.' / \
+    'Save me seconds, would you?'
+    """)
+    let lines: [String]
+}
 #endif
 
 // MARK: - Service
@@ -151,6 +168,36 @@ final class LLMGnomeDialogueService {
         }
         #endif
         return nil
+    }
+
+    // MARK: - Cook Reaction Batch
+
+    /// Generate a batch of short reaction lines ("This is incredible, Cook!")
+    /// for seated gnomes to deliver as the cook walks past their tables
+    /// during a meal. Returns nil if Apple Intelligence isn't available;
+    /// caller should fall back to `GnomeSeating.staticReactionPool`.
+    ///
+    /// `count` is advisory — the model may return fewer than requested.
+    /// `meal` is "breakfast" or "dinner" so the prompt can subtly nudge
+    /// register ("morning bread" vs "evening stew").
+    func streamCookReactionBatch(
+        seatedSample: [GnomeAgent],
+        cook: GnomeAgent,
+        meal: String,
+        timeContext: TimeContext
+    ) async -> [String] {
+        guard isAvailable else { return [] }
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            return await _generateCookReactionBatch(
+                seatedSample: seatedSample,
+                cook: cook,
+                meal: meal,
+                timeContext: timeContext
+            )
+        }
+        #endif
+        return []
     }
 }
 
@@ -539,6 +586,10 @@ private extension LLMGnomeDialogueService {
             return "miner (\(rankLabel)) — feeds rocks to the mine machine"
         case .housekeeper:
             return "housekeeper — keeps the oak running"
+        case .npcBroker:
+            return "npc broker — trades gems for forest items at a lobby desk"
+        case .treasurer:
+            return "treasurer — minds the gem pile and the broker's till"
         }
     }
 
@@ -579,7 +630,106 @@ private extension LLMGnomeDialogueService {
         case .celebrating:             return "celebrating the daily turn-in at the treasury"
         case .supervising:             return "watching over the mine entrance from the boss's spot"
         case .carryingGemToTreasury:   return "carrying a gem toward the treasury (legacy task)"
+        case .dining:                  return "sitting at a table eating, chatting with neighbors"
+        case .cookServingFromStation:  return "plating up the next round at the cook station"
+        case .cookDeliveringToTable:   return "walking a fresh plate over to a table"
+        case .cookCheckingOnTable:     return "checking in at a table, asking how the food is"
+        case .tidyingTables:           return "clearing dishes and putting tables away after the meal"
         }
+    }
+
+    // MARK: - Cook Reaction Batch
+
+    /// One-shot batch generation. The model returns up to N short
+    /// reaction lines; the caller (GnomeSeating) caches them and
+    /// pops one per cook visit. We don't stream because the consumer
+    /// only needs the full set to start sampling.
+    func _generateCookReactionBatch(
+        seatedSample: [GnomeAgent],
+        cook: GnomeAgent,
+        meal: String,
+        timeContext: TimeContext
+    ) async -> [String] {
+        let instructions = cookReactionSystemInstructions()
+        let prompt = buildCookReactionPrompt(
+            seatedSample: seatedSample,
+            cook: cook,
+            meal: meal,
+            timeContext: timeContext
+        )
+        let session = LanguageModelSession(instructions: instructions)
+        do {
+            let response = try await session.respond(
+                generating: GeneratedCookReactionBatch.self
+            ) { prompt }
+            // Defensively trim and drop overlong lines so the ≤8-word
+            // rule holds even if the model overshoots.
+            let cleaned = response.content.lines
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .filter { $0.split(separator: " ").count <= 8 }
+            return cleaned
+        } catch {
+            Log.warn(.dialogue, "[Gnome LLM] cook-reaction batch failed: \(error)")
+            return []
+        }
+    }
+
+    func cookReactionSystemInstructions() -> String {
+        """
+        You are writing THREE short reaction lines for an iOS game \
+        called "Boba at Dawn". A gnome cook is walking past tables of \
+        seated gnome diners during a meal. Each line is what one of \
+        those seated gnomes might say to the cook — a quick \
+        compliment, thank-you, or request for seconds.
+
+        STRICT FORMAT
+        - Output exactly THREE strings in `lines`.
+        - EACH line is at most 8 words.
+        - Each line is a complete utterance — no leading speaker name.
+        - Vary the three lines noticeably (different praise angles, \
+          different cadences).
+
+        VOICE
+        Working-class, practical, fond of the cook. Plain. Specific to \
+        food (stew, bread, plate, bowl, seconds, salt, pepper). Not \
+        poetic.
+
+        FORBIDDEN
+        - The boba shop, drinks, pearls, ghosts, the afterlife.
+        - Self-introductions or speaker tags.
+        - More than 8 words per line.
+        """
+    }
+
+    func buildCookReactionPrompt(
+        seatedSample: [GnomeAgent],
+        cook: GnomeAgent,
+        meal: String,
+        timeContext: TimeContext
+    ) -> String {
+        let sampleNames = seatedSample.prefix(4)
+            .map { $0.identity.displayName }
+            .joined(separator: ", ")
+        let timeWord = timeContext.isNight ? "evening" : "morning"
+        let mealWord = meal == "breakfast" ? "breakfast (bread, porridge, eggs)"
+                                            : "dinner (stew, bread, root vegetables)"
+        return """
+        SCENE
+        It is \(timeWord). The gnomes are seated at dining tables in \
+        the oak's lobby. \(cook.identity.displayName) the cook is \
+        making the rounds with a tray of \(mealWord), checking in on \
+        each table.
+
+        A FEW OF THE SEATED GNOMES (for flavor, not all of them):
+        \(sampleNames.isEmpty ? "(various miners and housekeepers)" : sampleNames)
+
+        TASK
+        Generate THREE short reaction lines (≤8 words each) that \
+        seated gnomes might call out to the cook as the cook passes. \
+        Vary them. Keep each one a complete, plain compliment, \
+        thank-you, or seconds-request.
+        """
     }
 
     /// Format the strongest opinion stances onto the prompt, if any.

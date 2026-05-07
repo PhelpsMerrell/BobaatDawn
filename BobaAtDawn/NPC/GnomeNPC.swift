@@ -155,7 +155,7 @@ class GnomeNPC: SKNode {
             case .senior:   rankBadge.text = "··"
             case .foreman:  rankBadge.text = "★"
             }
-        case .housekeeper:
+        case .housekeeper, .npcBroker, .treasurer:
             rankBadge.text = ""
         }
     }

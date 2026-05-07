@@ -2,7 +2,25 @@
 //  TimeControlButton.swift
 //  BobaAtDawn
 //
-//  Debug button for advancing time phases during development
+//  Debug button for advancing time phases during development.
+//
+//  This used to be a small circular ⏰ button that long-pressed to
+//  advance one phase at a time, host-only. The redesign:
+//
+//    * Horizontal pill (~180×44) showing the current SUBPHASE name and
+//      a percentage progress through that subphase.
+//    * Background gradient interpolates across a 24-hour palette
+//      (deep navy at midnight → peach at dawn → warm yellow at noon →
+//      coral at dusk → fading back to navy at night). The fill updates
+//      every frame so the button visibly tracks the day/night cycle.
+//    * Tap = advance ONE subphase forward (dawn1 → dawn2 → day →
+//      dusk1 → dusk2 → dusk3 → dusk4 → night → dawn1).
+//    * Long-press = same as tap (kept so muscle memory survives).
+//    * EITHER player can drive it. Host applies locally and broadcasts
+//      `timeSubphaseRequest`; guest sends `timeSubphaseRequest` and
+//      waits for the host's echo before mutating local time state.
+//      This keeps the simulation host-authoritative while still letting
+//      the guest control time.
 //
 
 import SpriteKit
@@ -10,251 +28,231 @@ import Foundation
 
 // MARK: - Time Control Button
 class TimeControlButton: SKNode {
-    
-    private let buttonBackground: SKSpriteNode
-    private let buttonIcon: SKLabelNode
-    private let progressIndicator: SKShapeNode
+
+    private let buttonSize = CGSize(width: 200, height: 44)
+
+    private let background: SKShapeNode
+    private let topLabel: SKLabelNode      // subphase name
+    private let bottomLabel: SKLabelNode   // percentage progress
+
     private weak var timeService: TimeService?
-    
-    // Visual properties
-    private let buttonSize = CGSize(width: 60, height: 60)
-    private let baseColor = SKColor(red: 0.2, green: 0.3, blue: 0.4, alpha: 0.8)
-    private let pressedColor = SKColor(red: 0.3, green: 0.4, blue: 0.5, alpha: 0.9)
-    
-    // Long press handling
-    private var longPressTimer: Timer?
-    private let longPressDuration: TimeInterval = 0.5
-    
+
     // MARK: - Initialization
+
     init(timeService: TimeService) {
         self.timeService = timeService
-        
-        // Create button background
-        buttonBackground = SKSpriteNode(color: baseColor, size: buttonSize)
-        buttonBackground.name = "time_control_button"
-        
-        // Create button icon (clock emoji)
-        buttonIcon = SKLabelNode(text: "⏰")
-        buttonIcon.fontSize = 28
-        buttonIcon.verticalAlignmentMode = .center
-        buttonIcon.horizontalAlignmentMode = .center
-        
-        // Create progress indicator (circle around button)
-        let progressPath = CGPath(ellipseIn: CGRect(
-            x: -buttonSize.width/2 - 3,
-            y: -buttonSize.height/2 - 3,
-            width: buttonSize.width + 6,
-            height: buttonSize.height + 6
-        ), transform: nil)
-        
-        progressIndicator = SKShapeNode(path: progressPath)
-        progressIndicator.strokeColor = SKColor.cyan
-        progressIndicator.lineWidth = 3
-        progressIndicator.fillColor = .clear
-        progressIndicator.alpha = 0
-        
+
+        // Rounded rectangle background; we set fillColor every frame.
+        background = SKShapeNode(rectOf: buttonSize, cornerRadius: 10)
+        background.name = "time_control_button"
+        background.lineWidth = 1.5
+        background.strokeColor = SKColor.white.withAlphaComponent(0.35)
+        background.fillColor = SKColor(red: 0.2, green: 0.3, blue: 0.5, alpha: 0.9)
+
+        // Subphase name (top line).
+        topLabel = SKLabelNode(fontNamed: "AvenirNext-DemiBold")
+        topLabel.fontSize = 12
+        topLabel.fontColor = .white
+        topLabel.verticalAlignmentMode = .center
+        topLabel.horizontalAlignmentMode = .center
+        topLabel.position = CGPoint(x: 0, y: 8)
+
+        // Percentage (bottom line, smaller).
+        bottomLabel = SKLabelNode(fontNamed: "AvenirNext-Regular")
+        bottomLabel.fontSize = 10
+        bottomLabel.fontColor = SKColor.white.withAlphaComponent(0.8)
+        bottomLabel.verticalAlignmentMode = .center
+        bottomLabel.horizontalAlignmentMode = .center
+        bottomLabel.position = CGPoint(x: 0, y: -8)
+
         super.init()
-        
-        // Add components
-        addChild(buttonBackground)
-        addChild(buttonIcon)
-        addChild(progressIndicator)
-        
-        // Set properties
+
+        addChild(background)
+        addChild(topLabel)
+        addChild(bottomLabel)
+
         isUserInteractionEnabled = true
-        zPosition = 1000 // Always on top
-        
-        // Start with current time phase color
+        zPosition = 1000  // Always on top
+
         updateButtonAppearance()
-        
-        print("⏰ Time control button created")
     }
-    
+
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    
+
     // MARK: - Visual Updates
+
+    /// Called every frame from GameScene's update loop via `update()`.
+    func update() {
+        updateButtonAppearance()
+    }
+
     private func updateButtonAppearance() {
         guard let timeService = timeService else { return }
-        
-        // Update icon and color based on current phase
-        let phase = timeService.currentPhase
-        let progress = timeService.phaseProgress
-        
+        let subphase = timeService.currentSubphase
+        let pct = Int((timeService.subphaseProgress * 100).rounded())
+
+        topLabel.text = subphase.displayName
+        bottomLabel.text = "\(pct)%"
+        background.fillColor = gradientColor(
+            for: timeService.currentPhase,
+            phaseProgress: timeService.phaseProgress
+        )
+    }
+
+    /// 24-hour palette. We treat the day as a circle and pick a color
+    /// by interpolating between phase anchors:
+    ///
+    ///   dawn  start -> #1E2845 (deep navy)
+    ///   dawn  end   -> #FCC78A (peach)
+    ///   day   start -> #FCC78A (peach)
+    ///   day   end   -> #FFF1A8 (warm yellow)
+    ///   dusk  start -> #FFF1A8 (warm yellow)
+    ///   dusk  end   -> #E2725B (coral)
+    ///   night start -> #E2725B (coral)
+    ///   night end   -> #1E2845 (deep navy)
+    ///
+    /// Within a phase we lerp linearly between the start and end
+    /// anchors using `phaseProgress`. The result is a smooth fill that
+    /// always reflects roughly where in the day cycle we are.
+    private func gradientColor(for phase: TimePhase, phaseProgress: Float) -> SKColor {
+        let t = CGFloat(max(0, min(1, phaseProgress)))
+        let (a, b) = anchors(for: phase)
+        return lerpColor(from: a, to: b, t: t)
+    }
+
+    private func anchors(for phase: TimePhase) -> (SKColor, SKColor) {
+        let navy = SKColor(red: 0.118, green: 0.157, blue: 0.271, alpha: 0.95)   // #1E2845
+        let peach = SKColor(red: 0.988, green: 0.780, blue: 0.541, alpha: 0.95)  // #FCC78A
+        let warm = SKColor(red: 1.000, green: 0.945, blue: 0.659, alpha: 0.95)   // #FFF1A8
+        let coral = SKColor(red: 0.886, green: 0.447, blue: 0.357, alpha: 0.95)  // #E2725B
+
         switch phase {
-        case .dawn:
-            buttonIcon.text = "🌅"
-            buttonBackground.color = SKColor(red: 1.0, green: 0.6, blue: 0.3, alpha: 0.8)
-        case .day:
-            buttonIcon.text = "☀️"
-            buttonBackground.color = SKColor(red: 1.0, green: 1.0, blue: 0.3, alpha: 0.8)
-        case .dusk:
-            buttonIcon.text = "🌆"
-            buttonBackground.color = SKColor(red: 0.8, green: 0.4, blue: 0.2, alpha: 0.8)
-        case .night:
-            buttonIcon.text = "🌙"
-            buttonBackground.color = SKColor(red: 0.2, green: 0.2, blue: 0.4, alpha: 0.8)
+        case .dawn:  return (navy,  peach)
+        case .day:   return (peach, warm)
+        case .dusk:  return (warm,  coral)
+        case .night: return (coral, navy)
         }
-        
-        // Update progress indicator
-        let progressAngle = CGFloat(progress) * 2 * .pi
-        updateProgressIndicator(progress: progressAngle)
     }
-    
-    private func updateProgressIndicator(progress: CGFloat) {
-        progressIndicator.removeAllActions()
-        
-        // Create arc path showing progress through current phase
-        let center = CGPoint.zero
-        let radius: CGFloat = buttonSize.width/2 + 3
-        let startAngle: CGFloat = -.pi/2 // Start at top
-        let endAngle = startAngle + progress
-        
-        let arcPath = CGMutablePath()
-        arcPath.addArc(center: center, radius: radius, startAngle: startAngle, endAngle: endAngle, clockwise: false)
-        
-        progressIndicator.path = arcPath
-        progressIndicator.alpha = 0.7
+
+    private func lerpColor(from a: SKColor, to b: SKColor, t: CGFloat) -> SKColor {
+        var ar: CGFloat = 0, ag: CGFloat = 0, ab: CGFloat = 0, aa: CGFloat = 0
+        var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0, ba: CGFloat = 0
+        a.getRed(&ar, green: &ag, blue: &ab, alpha: &aa)
+        b.getRed(&br, green: &bg, blue: &bb, alpha: &ba)
+        return SKColor(
+            red:   ar + (br - ar) * t,
+            green: ag + (bg - ag) * t,
+            blue:  ab + (bb - ab) * t,
+            alpha: aa + (ba - aa) * t
+        )
     }
-    
+
     // MARK: - Touch Handling
+
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        // Visual feedback - press down
-        buttonBackground.color = pressedColor
-        let scaleDown = SKAction.scale(to: 0.95, duration: 0.1)
-        buttonBackground.run(scaleDown)
-        
-        // Start long press timer
-        startLongPress()
-        
-        // Light haptic feedback
+        let press = SKAction.scale(to: 0.96, duration: 0.08)
+        background.run(press)
         let impact = UIImpactFeedbackGenerator(style: .light)
         impact.impactOccurred()
     }
-    
+
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        cancelLongPress()
-        resetButtonAppearance()
+        let release = SKAction.scale(to: 1.0, duration: 0.08)
+        background.run(release)
+        advanceSubphase()
     }
-    
+
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        cancelLongPress()
-        resetButtonAppearance()
+        let release = SKAction.scale(to: 1.0, duration: 0.08)
+        background.run(release)
     }
-    
-    private func resetButtonAppearance() {
-        // Reset visual state
-        let scaleUp = SKAction.scale(to: 1.0, duration: 0.1)
-        buttonBackground.run(scaleUp)
-        updateButtonAppearance() // Reset to phase color
-    }
-    
-    // MARK: - Long Press System
-    private func startLongPress() {
-        longPressTimer = Timer.scheduledTimer(withTimeInterval: longPressDuration, repeats: false) { [weak self] _ in
-            self?.handleLongPress()
-        }
-    }
-    
-    private func cancelLongPress() {
-        longPressTimer?.invalidate()
-        longPressTimer = nil
-    }
-    
-    private func handleLongPress() {
-        print("⏰ Time control activated - advancing to next phase!")
-        
-        // Strong haptic feedback for time advance
+
+    // MARK: - Time Control
+
+    /// Advance one subphase forward and broadcast to the partner.
+    /// Either player can call this; the message handler in
+    /// GameScene+Multiplayer applies the change on whichever side
+    /// receives it.
+    private func advanceSubphase() {
+        guard let timeService = timeService else { return }
+        let next = timeService.currentSubphase.next
+
         let impact = UIImpactFeedbackGenerator(style: .medium)
         impact.impactOccurred()
-        
-        // Advance time phase
-        advanceTimePhase()
-        
-        // Visual effect for time advance
+
+        if MultiplayerService.shared.isConnected && MultiplayerService.shared.isGuest {
+            // Guest: send a request and wait for the host's echo. Don't
+            // mutate local time state directly — the world is host-
+            // authoritative, and applying it locally before the host
+            // confirms can flicker the gnome simulation when the next
+            // host timeSync arrives.
+            MultiplayerService.shared.send(
+                type: .timeSubphaseRequest,
+                payload: TimeSubphaseRequestMessage(
+                    subphaseRawValue: next.rawValue,
+                    dayCount: timeService.dayCount
+                )
+            )
+            Log.info(.time, "Guest requested subphase \(next.rawValue) from host")
+            createTimeAdvanceEffect()
+            return
+        }
+
+        // Host (or solo): apply locally and broadcast to the guest.
+        timeService.setDebugSubphase(next)
+        if MultiplayerService.shared.isHost && MultiplayerService.shared.isConnected {
+            MultiplayerService.shared.send(
+                type: .timeSubphaseRequest,
+                payload: TimeSubphaseRequestMessage(
+                    subphaseRawValue: next.rawValue,
+                    dayCount: timeService.dayCount
+                )
+            )
+        }
+
+        Log.info(.time, "Advanced subphase to \(next.rawValue)")
         createTimeAdvanceEffect()
-        
-        longPressTimer = nil
-    }
-    
-    // MARK: - Time Control
-    private func advanceTimePhase() {
-        guard let timeService = timeService else { return }
-        
-        // Get current phase and advance to next
-        let currentPhase = timeService.currentPhase
-        let nextPhase = getNextPhase(currentPhase)
-        
-        print("⏰ Advancing from \(currentPhase.displayName) to \(nextPhase.displayName)")
-        
-        // Force set the time service to the next phase
-        timeService.setDebugPhase(nextPhase)
-        
-        // Update button appearance immediately
         updateButtonAppearance()
     }
-    
-    private func getNextPhase(_ current: TimePhase) -> TimePhase {
-        switch current {
-        case .dawn:
-            return .day
-        case .day:
-            return .dusk
-        case .dusk:
-            return .night
-        case .night:
-            return .dawn
-        }
-    }
-    
+
     // MARK: - Visual Effects
+
     private func createTimeAdvanceEffect() {
-        // Create ripple effect
-        let ripple = SKShapeNode(circleOfRadius: buttonSize.width/2)
-        ripple.strokeColor = .cyan
-        ripple.lineWidth = 3
+        // Brief pulse on the button itself.
+        let flash = SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.5, duration: 0.05),
+            SKAction.fadeAlpha(to: 1.0, duration: 0.05),
+            SKAction.fadeAlpha(to: 0.5, duration: 0.05),
+            SKAction.fadeAlpha(to: 1.0, duration: 0.05)
+        ])
+        topLabel.run(flash)
+        bottomLabel.run(flash)
+
+        // Ripple — a rounded outline expanding outward from the pill.
+        let ripple = SKShapeNode(rectOf: buttonSize, cornerRadius: 10)
+        ripple.strokeColor = SKColor.white.withAlphaComponent(0.6)
+        ripple.lineWidth = 2
         ripple.fillColor = .clear
-        ripple.alpha = 0.8
         ripple.zPosition = -1
         addChild(ripple)
-        
-        // Animate ripple
-        let expand = SKAction.scale(to: 3.0, duration: 0.6)
-        let fade = SKAction.fadeOut(withDuration: 0.6)
+
+        let expand = SKAction.scale(to: 1.6, duration: 0.5)
+        let fade = SKAction.fadeOut(withDuration: 0.5)
         let remove = SKAction.removeFromParent()
-        
-        let rippleSequence = SKAction.sequence([
+        ripple.run(SKAction.sequence([
             SKAction.group([expand, fade]),
             remove
-        ])
-        
-        ripple.run(rippleSequence)
-        
-        // Flash button
-        let flash = SKAction.sequence([
-            SKAction.fadeAlpha(to: 0.3, duration: 0.1),
-            SKAction.fadeAlpha(to: 1.0, duration: 0.1),
-            SKAction.fadeAlpha(to: 0.3, duration: 0.1),
-            SKAction.fadeAlpha(to: 1.0, duration: 0.1)
-        ])
-        
-        buttonIcon.run(flash)
+        ]))
     }
-    
-    // MARK: - Update
-    func update() {
-        // Update appearance if time has changed
-        updateButtonAppearance()
-    }
-    
+
     // MARK: - Debug Info
     func printStatus() {
         guard let timeService = timeService else { return }
         print("⏰ === TIME CONTROL STATUS ===")
-        print("⏰ Current Phase: \(timeService.currentPhase.displayName)")
-        print("⏰ Progress: \(Int(timeService.phaseProgress * 100))%")
-        print("⏰ Button Icon: \(buttonIcon.text ?? "none")")
+        print("⏰ Phase:    \(timeService.currentPhase.displayName) — \(Int(timeService.phaseProgress * 100))%")
+        print("⏰ Subphase: \(timeService.currentSubphase.rawValue) — \(Int(timeService.subphaseProgress * 100))%")
         print("⏰ =============================")
     }
 }

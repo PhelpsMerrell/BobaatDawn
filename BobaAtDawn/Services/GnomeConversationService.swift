@@ -260,8 +260,11 @@ final class GnomeConversationService {
 
             switch agent.task {
             case .sleeping, .idle, .supervising,
-                 .haulingCart, .celebrating:
-                // Resting, parading, or celebrating — chat away.
+                 .haulingCart, .celebrating,
+                 .dining, .tidyingTables,
+                 .cookServingFromStation, .cookDeliveringToTable, .cookCheckingOnTable:
+                // Resting, parading, celebrating, dining, or actively
+                // doing meal-time housekeeping — all chat-friendly.
                 return true
             case .commutingToMine, .commutingHome,
                  .lookingForRock,
@@ -537,6 +540,22 @@ final class GnomeConversationService {
             return GnomePoolLines.bossLines.randomElement() ?? "Pick up the pace."
         }
 
+        // Broker — works the lobby trading desk.
+        if speaker.identity.role == .npcBroker {
+            let pool = (timeContext == .night)
+                ? GnomePoolLines.brokerNight
+                : GnomePoolLines.brokerDay
+            return pool.randomElement() ?? "Fair trade. Fair trade."
+        }
+
+        // Treasurer — keeps the till.
+        if speaker.identity.role == .treasurer {
+            let pool = (timeContext == .night)
+                ? GnomePoolLines.treasurerNight
+                : GnomePoolLines.treasurerDay
+            return pool.randomElement() ?? "Counted twice already."
+        }
+
         // Housekeeper-flavored lines — they don't see rocks all day.
         if speaker.identity.role == .housekeeper {
             let pool = (timeContext == .night)
@@ -570,6 +589,16 @@ final class GnomeConversationService {
                     ? GnomePoolLines.housekeeperNight.randomElement()
                     : GnomePoolLines.housekeeperDay.randomElement())
                 ?? "Mind the floor — fresh polished."
+        case .npcBroker:
+            return (timeContext == .night
+                    ? GnomePoolLines.brokerNight.randomElement()
+                    : GnomePoolLines.brokerDay.randomElement())
+                ?? "Fair trade. Fair trade."
+        case .treasurer:
+            return (timeContext == .night
+                    ? GnomePoolLines.treasurerNight.randomElement()
+                    : GnomePoolLines.treasurerDay.randomElement())
+                ?? "Counted twice already."
         }
     }
 }
@@ -666,6 +695,50 @@ private enum GnomePoolLines {
         "Heard something outside. Probably the wind.",
         "Rest is rest. Don't waste it talking.",
         "Boss is up late again. Counting things."
+    ]
+
+    // Broker day — lobby trading desk
+    static let brokerDay: [String] = [
+        "Fair trade. Fair trade for all.",
+        "What've they brought me today, I wonder.",
+        "Box is filling up. Cook'll be pleased.",
+        "Forest folk come and go. Quiet ones today.",
+        "A gem for a leaf, a gem for a stem.",
+        "Mushrooms again. Cook'll grumble.",
+        "That one had sad eyes. They mostly do.",
+        "Treasurer owes me a refill.",
+        "Slow morning. The forest must be busy.",
+        "They never haggle. Never. Strange folk."
+    ]
+
+    // Broker night — desk's closed, broker's puttering
+    static let brokerNight: [String] = [
+        "Desk's closed. Box is stocked. Day's done.",
+        "They wander past at night. Don't trade. Just wander.",
+        "Tally was even. Even is good.",
+        "Some nights they look right through me.",
+        "Counted the gems out. All accounted."
+    ]
+
+    // Treasurer day — minds the till
+    static let treasurerDay: [String] = [
+        "Counted twice already. Once more, just to be sure.",
+        "Pile's smaller than yesterday. Mining's slow.",
+        "Broker'll be back any minute now.",
+        "Ten gems out, ten gems out, that's the rule.",
+        "I do not LOSE gems. I will not LOSE gems.",
+        "Fenn writes them down. I just feel them.",
+        "A good day shows in the pile. Today's middling.",
+        "If the cart comes empty, the broker waits. Simple."
+    ]
+
+    // Treasurer night
+    static let treasurerNight: [String] = [
+        "All accounted. All accounted.",
+        "Pile's quiet at night. Easier to count.",
+        "Broker turned in clean. Good day, that.",
+        "I trust the pile. I trust the pile.",
+        "Tomorrow I'll start fresh. New day, new tally."
     ]
 }
 

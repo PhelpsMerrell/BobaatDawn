@@ -209,10 +209,12 @@ struct GameConfig {
     
     // MARK: - Time System Configuration
     struct Time {
-        // Phase durations (in seconds)
-        static let dawnDuration: TimeInterval = 4 * 60  // 4 minutes
-        static let dayDuration: TimeInterval = 12 * 60  // 12 minutes  
-        static let duskDuration: TimeInterval = 4 * 60  // 4 minutes
+        // Phase durations (in seconds). Edit ONLY here — the gnome
+        // schedule constants in GnomeManager derive their phase
+        // breakdowns from these values automatically.
+        static let dawnDuration: TimeInterval = 10 * 60  // 10 minutes
+        static let dayDuration: TimeInterval = 12 * 60   // 12 minutes
+        static let duskDuration: TimeInterval = 10 * 60  // 10 minutes
         static let nightDuration: TimeInterval = 12 * 60 // 12 minutes
         
         // FIXED: Time system positioning using grid coordinates

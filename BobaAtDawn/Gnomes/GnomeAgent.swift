@@ -63,35 +63,58 @@ final class GnomeAgent {
     /// to pick the most-productive miner for promotion.
     var gemsDeliveredToday: Int = 0
 
-    /// Whether this gnome is on mine duty today. Boss + housekeepers
-    /// always false. Rotates among miners across days so everyone gets
-    /// a rest.
+    /// Whether this gnome is on mine duty today. Oak-only roles always
+    /// stay off duty; the boss and miners are assigned by the manager.
     var isOnMineDutyToday: Bool
+
+    // MARK: - Meal-time State
+
+    /// Anchor name of the seat this gnome is assigned to for the
+    /// current meal beat (e.g. "gnome_seat_3_2"). Set by
+    /// `GnomeSeating.assignSeats(forMeal:)` at the start of breakfast
+    /// and dinner. Cleared when the meal ends. Cook never has a seat.
+    var currentSeatAnchor: String?
+
+    /// Cook-only: the table number (1...5) the cook is currently
+    /// delivering to or checking on. Reset each cook-cycle. Other
+    /// gnomes leave this nil.
+    var cookTargetTableIndex: Int?
+
+    /// Cook-only: the agent id of the gnome the cook is currently
+    /// chatting with at a table. Used by `GnomeSeating` to fire the
+    /// reaction bubble on the right gnome. Reset each cook-cycle.
+    var cookTargetSeatedAgentID: String?
+
+    /// Where this gnome should head when its current commute ends.
+    /// Used by phase-change reroute logic. See `GnomeArrivalIntent`.
+    /// Defaults to `.nothing` (use the task's normal arrival branch).
+    var arrivalIntent: GnomeArrivalIntent = .nothing
 
     // MARK: - Init
 
     init(identity: GnomeIdentity, startTime: TimeInterval) {
         self.identity = identity
         self.rank = identity.initialRank
-        self.task = (identity.role == .housekeeper) ? .idle : .sleeping
+        self.task = identity.role.livesInOak ? .idle : .sleeping
         self.carried = nil
         self.taskStartedAt = startTime
         self.position = .zero
         self.location = .oakRoom(identity.homeOakRoom)
         // Default everyone (including boss) to mine duty initially.
         // Manager rotates per-day at dawn.
-        self.isOnMineDutyToday = (identity.role == .miner || identity.role == .boss)
+        self.isOnMineDutyToday = !identity.role.livesInOak
     }
 
     // MARK: - Convenience
 
-    /// Display name with rank suffix for miners and boss. Housekeepers
-    /// just get their flavor name.
+    /// Display name with rank suffix for miners and boss. Oak-only
+    /// support roles just get their flavor name.
     var fullDisplayName: String {
         switch identity.role {
         case .boss:        return "\(identity.displayName), \(rank.title)"
         case .miner:       return "\(identity.displayName), \(rank.title)"
-        case .housekeeper: return identity.displayName
+        case .housekeeper, .npcBroker, .treasurer:
+            return identity.displayName
         }
     }
 

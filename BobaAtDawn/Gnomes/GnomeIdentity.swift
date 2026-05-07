@@ -14,11 +14,31 @@ import Foundation
 /// What kind of life this gnome leads.
 /// - `boss`: oversees mining ops, lives in oak lobby. One per world.
 /// - `miner`: works the mines during the day, sleeps in oak at night.
-/// - `housekeeper`: never leaves the oak — cooks, cleans, manages the treasury.
+/// - `housekeeper`: never leaves the oak — cooks and cleans.
+/// - `npcBroker`: never leaves the oak — runs a desk in the lobby where
+///   forest NPCs trade gathered items for gems. Carries a broker box of
+///   wares to the kitchen pantry/fridge when full, then visits the
+///   treasurer to refill on gems.
+/// - `treasurer`: never leaves the oak — keeps a desk in the lobby and
+///   pulls gems from the treasury pile to refill the broker on demand.
 enum GnomeRole: String, Codable {
     case boss
     case miner
     case housekeeper
+    case npcBroker
+    case treasurer
+
+    /// True for any role whose daily life keeps them inside the oak
+    /// rather than in the mines. Includes housekeepers, the npcBroker,
+    /// and the treasurer. Used throughout `GnomeManager` to gate dawn
+    /// breakfast, dusk dinner, and tidying behaviors so the lobby crew
+    /// stays put while the mine crew commutes.
+    var livesInOak: Bool {
+        switch self {
+        case .housekeeper, .npcBroker, .treasurer: return true
+        case .boss, .miner: return false
+        }
+    }
 }
 
 // MARK: - Miner Rank
@@ -132,6 +152,33 @@ enum GnomeTask: String, Codable {
     /// Boss-only: stands near the machine in the entrance, occasionally
     /// barks orders or hands out promotions.
     case supervising
+
+    // MARK: - Meal-time tasks (gnome dining loop)
+
+    /// Generic dining task — a gnome is seated at a table during
+    /// breakfast or dinner. They drift gently and may receive cook
+    /// reaction bubbles. Used by every gnome EXCEPT the cook during
+    /// meal beats.
+    case dining
+
+    /// Cook-only: standing at `gnome_cook_station`, plating up the
+    /// next round before walking it out to a table. Brief beat
+    /// (~1s) inside the ~5s cook cycle.
+    case cookServingFromStation
+
+    /// Cook-only: walking from the cook station to a specific table
+    /// to drop off food. Target table is stashed on the agent.
+    case cookDeliveringToTable
+
+    /// Cook-only: standing at a table for a beat (~2s) so a seated
+    /// gnome can compliment the meal. Reaction bubble fires here.
+    case cookCheckingOnTable
+
+    /// Housekeeper task during the dawn cleanup beat — walking
+    /// between tables tidying up. Cook joins this task too once
+    /// breakfast has wound down. Tables fade out partway through
+    /// the beat to imply they're being put away.
+    case tidyingTables
 }
 
 // MARK: - Gnome Carried
@@ -139,6 +186,31 @@ enum GnomeTask: String, Codable {
 enum GnomeCarried: String, Codable {
     case rock
     case gem
+}
+
+// MARK: - Gnome Arrival Intent
+/// What a gnome should do when they finish their current commute. Used
+/// by the phase-change reroute logic in GnomeManager: when the time
+/// phase flips, the manager sets each gnome's task to a commute and
+/// stamps an `arrivalIntent` so the on-arrival branch in
+/// `advanceCommuteHome` / `advanceCommuteToMine` knows whether to seat
+/// them at a table, gather them at the cart, send them to bed, etc.
+///
+/// Default is `.nothing`, which preserves the original arrival
+/// behavior (sleep on arrival in the oak, supervise on arrival in
+/// the cave entrance for the boss, etc.). Anything else is a phase-
+/// change override that gets cleared once consumed.
+enum GnomeArrivalIntent: String, Codable {
+    /// No override — use the default arrival branch for the task.
+    case nothing
+    /// Sit down at a dining table on arrival in oak_1.
+    case seatAtTable
+    /// Join the cart-gathering huddle on arrival in cave_1.
+    case gatherAtCart
+    /// Lie down to sleep on arrival in the home bedroom.
+    case sleep
+    /// Stand around the lobby tidying up.
+    case tidyTables
 }
 
 // MARK: - Mine Cart State

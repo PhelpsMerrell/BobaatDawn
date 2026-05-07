@@ -239,6 +239,32 @@ extension GameScene: MultiplayerServiceDelegate {
                 timeService.syncDayCount(msg.dayCount)
             }
 
+        case .timeSubphaseRequest:
+            // Subphase debug request from the partner. Both host and
+            // guest accept these so either player can drive the time-
+            // control button. Host treats incoming requests from the
+            // guest as authoritative and echoes the same message back
+            // (closing the loop so the guest's local UI updates without
+            // waiting for the next periodic timeSync).
+            guard let msg = try? envelope.decode(TimeSubphaseRequestMessage.self) else { return }
+            guard let subphase = TimeSubphase(rawValue: msg.subphaseRawValue) else { return }
+            timeService.setDebugSubphase(subphase)
+            lastTimePhase = subphase.phase
+            residentManager.handleTimePhaseChange(subphase.phase)
+            handleRitualTimePhaseChange(subphase.phase)
+            GnomeManager.shared.handleTimePhaseChange(subphase.phase, dayCount: timeService.dayCount)
+            // Host echoes back to guest so its local time-control button
+            // re-renders immediately. Guest never echoes (would loop).
+            if MultiplayerService.shared.isHost {
+                MultiplayerService.shared.send(
+                    type: .timeSubphaseRequest,
+                    payload: TimeSubphaseRequestMessage(
+                        subphaseRawValue: msg.subphaseRawValue,
+                        dayCount: timeService.dayCount
+                    )
+                )
+            }
+
         case .trashSpawned:
             guard let msg = try? envelope.decode(TrashSpawnedMessage.self) else { return }
             if msg.location == "shop" {

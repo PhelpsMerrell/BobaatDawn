@@ -66,8 +66,7 @@ class GameScene: BaseGameScene {
     internal var npcStatusTracker: SaveSystemButton!
     
     // MARK: - Time System
-    internal var timeBreaker: PowerBreaker!
-    internal var timeWindow: Window!
+
     internal var timeLabel: SKLabelNode!
     
     // MARK: - Ritual System
@@ -569,20 +568,15 @@ class GameScene: BaseGameScene {
     // MARK: - Time System
     
     private func setupTimeSystem() {
-        timeBreaker = requiredSceneNode(named: "power_breaker", as: PowerBreaker.self)
-        timeBreaker.zPosition = ZLayers.timeSystem
+       
 
-        timeWindow = requiredSceneNode(named: "time_window", as: Window.self)
-        timeWindow.zPosition = ZLayers.timeSystem
+       
 
-        timeLabel = requiredSceneNode(named: "time_label", as: SKLabelNode.self)
-        timeLabel.zPosition = ZLayers.timeSystemLabels
+       
 
         timeControlButton = TimeControlButton(timeService: timeService)
         if let timeControlAnchor = sceneNode(named: "time_control_anchor", as: SKNode.self) {
             timeControlButton?.position = timeControlAnchor.positionInSceneCoordinates()
-        } else {
-            timeControlButton?.position = CGPoint(x: timeWindow.position.x + 80, y: timeWindow.position.y)
         }
         if let timeControlButton {
             addChild(timeControlButton)
@@ -666,7 +660,7 @@ class GameScene: BaseGameScene {
             }
         }
         
-        updateTimeDisplay()
+        
         timeControlButton?.update()
         residentManager.update(deltaTime: 1.0 / 60.0)
         
@@ -730,19 +724,7 @@ class GameScene: BaseGameScene {
         }
     }
     
-    private func updateTimeDisplay() {
-        let phase = timeService.currentPhase
-        let pct = Int(timeService.phaseProgress * 100)
-        let ritual = timeService.isRitualDay ? " 🕯️" : ""
-        timeLabel.text = "D\(timeService.dayCount) \(phase.displayName.uppercased()) \(pct)%\(ritual)"
-        
-        switch phase {
-        case .dawn:  timeLabel.fontColor = .systemPink
-        case .day:   timeLabel.fontColor = .blue
-        case .dusk:  timeLabel.fontColor = .orange
-        case .night: timeLabel.fontColor = .purple
-        }
-    }
+   
     
     // MARK: - Shop NPC Management
     
@@ -974,9 +956,6 @@ class GameScene: BaseGameScene {
         
         if node == character.carriedItem {
             character.dropItem()
-            
-        } else if node == timeBreaker {
-            timeBreaker.toggle()
             
         } else if let station = node as? IngredientStation {
             handleStationInteraction(station)

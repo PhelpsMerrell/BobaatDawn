@@ -288,7 +288,7 @@ final class GnomeManager {
         for agent in agents {
             agent.rank = agent.identity.initialRank
             agent.location = .oakRoom(agent.identity.homeOakRoom)
-            agent.task = (agent.identity.role == .housekeeper) ? .idle : .sleeping
+            agent.task = agent.identity.role.livesInOak ? .idle : .sleeping
             agent.carried = nil
             agent.taskStartedAt = now
             agent.position = restingPosition(for: agent.location, agent: agent)
@@ -300,7 +300,7 @@ final class GnomeManager {
             agent.carriedRockSpawnID = nil
             agent.workingCaveFloor = nil
             agent.gemsDeliveredToday = 0
-            agent.isOnMineDutyToday = (agent.identity.role == .miner || agent.identity.role == .boss)
+            agent.isOnMineDutyToday = !agent.identity.role.livesInOak
         }
 
         oakScene?.updateTreasuryPileIfPresent(count: 0, didReset: true)
@@ -312,6 +312,18 @@ final class GnomeManager {
     func registerOakScene(_ scene: BigOakTreeScene) { oakScene = scene }
     func registerCaveScene(_ scene: CaveScene) { caveScene = scene }
     func registerForestScene(_ scene: ForestScene) { forestScene = scene }
+
+    /// If the player enters the oak during dawn phase 1 after the meal
+    /// would normally have started, recover the breakfast seating state
+    /// now that the seat anchors are finally available.
+    func ensureOakBreakfastIfNeeded(now: TimeInterval = CACurrentMediaTime()) {
+        guard oakScene != nil else { return }
+        guard TimeManager.shared.currentPhase == .dawn else { return }
+        guard TimeManager.shared.phaseProgress < 0.5 else { return }
+        guard !dawnReturnStarted else { return }
+        guard !GnomeSeating.shared.isMealActive else { return }
+        stageDawnBreakfast(now: now)
+    }
 
     // MARK: - Public API: Scene Spawning Hooks
 
@@ -464,9 +476,29 @@ final class GnomeManager {
         cartVisual?.setCount(0, animated: false)
         cartVisual?.stopRolling()
 
+        // Try to seat everyone at dining tables. Falls back gracefully
+        // (returns false) if the SKS doesn't have seat anchors yet, in
+        // which case we drop through to the legacy free-mingle path.
+        let seated = GnomeSeating.shared.beginMeal(
+            .breakfast, agents: agents, oakScene: oakScene, now: now
+        )
+
         for agent in agents {
-            let target = dinnerMinglePosition(for: agent)
-            agent.task = .idle
+            // Cook gets the cookServingFromStation task; everyone else
+            // gets .dining when seated, .idle otherwise (back-compat).
+            let isCook = agent.identity.id == GnomeRoster.kitchenCook.id
+            let target: CGPoint
+            if seated {
+                target = GnomeSeating.shared.mealPosition(
+                    for: agent,
+                    oakScene: oakScene,
+                    fallbackMinglePosition: dinnerMinglePosition(for: agent)
+                )
+                agent.task = isCook ? .cookServingFromStation : .dining
+            } else {
+                target = dinnerMinglePosition(for: agent)
+                agent.task = .idle
+            }
             agent.taskStartedAt = now
             agent.location = .oakRoom(1)
             agent.position = target
@@ -477,8 +509,8 @@ final class GnomeManager {
             respawnVisualIfRoomVisible(agent: agent)
         }
 
-        Log.info(.npc, "[Gnomes][Dawn] phase 1/2 started: breakfast and mingling (\(Int(GnomeTiming.dawnBreakfastDuration))s)")
-        logDawnSnapshot("breakfast mingling started")
+        Log.info(.npc, "[Gnomes][Dawn] phase 1/2 started: breakfast seating (\(Int(GnomeTiming.dawnBreakfastDuration))s)")
+        logDawnSnapshot("breakfast seating started")
     }
 
     private func launchMineShiftImmediately(now: TimeInterval) {
@@ -519,7 +551,7 @@ final class GnomeManager {
                     agent.position = restingPosition(for: agent.location, agent: agent)
                     agent.wanderTarget = agent.position
                 }
-            case .housekeeper:
+            case .housekeeper, .npcBroker, .treasurer:
                 agent.task = .idle
                 agent.location = .oakRoom(agent.identity.homeOakRoom)
                 agent.position = restingPosition(for: agent.location, agent: agent)
@@ -560,12 +592,13 @@ final class GnomeManager {
     private func forceAllHomeDirectly(now: TimeInterval) {
         clearCartDuskTiming()
         let recallCrew = orderedTransitAgents(
-            from: agents.filter { $0.identity.role != .housekeeper },
+            from: agents.filter { !$0.identity.role.livesInOak },
             salt: "dusk_\(max(0, currentDayCount))"
         )
         for agent in agents {
-            // Housekeepers stay where they are, just go idle/sleeping.
-            if agent.identity.role == .housekeeper {
+            // Lobby crew (housekeepers + broker + treasurer) stay where
+            // they are, just go idle/sleeping.
+            if agent.identity.role.livesInOak {
                 agent.task = .idle
                 agent.taskStartedAt = now
                 agent.wanderTarget = restingPosition(for: agent.location, agent: agent)
@@ -598,7 +631,7 @@ final class GnomeManager {
         cartTaskStartedAt = now
 
         for agent in agents {
-            if agent.identity.role == .housekeeper {
+            if agent.identity.role.livesInOak {
                 // Oak gnomes are already preparing supper while the
                 // miners gather the cart. Keep them in the lobby so
                 // the player can actually find them during dusk.
@@ -643,7 +676,7 @@ final class GnomeManager {
         for miner in miners {
             miner.isOnMineDutyToday = true
         }
-        for hk in agents where hk.identity.role == .housekeeper {
+        for hk in agents where hk.identity.role.livesInOak {
             hk.isOnMineDutyToday = false
         }
     }
@@ -1006,11 +1039,13 @@ final class GnomeManager {
 
         let now = CACurrentMediaTime()
         tickDawnState(now: now)
+        tickDiningForMeal(now: now)
         for agent in agents {
             advanceAgent(agent, now: now, deltaTime: deltaTime)
             updateVisualPosition(for: agent)
         }
         tickCartState(now: now)
+        tickCookForMeal(now: now)
 
         stateSyncAccumulator += deltaTime
         if MultiplayerService.shared.isHost,
@@ -1075,6 +1110,25 @@ final class GnomeManager {
 
         case .supervising:
             tickWander(agent, now: now)
+            advanceHiddenWanderIfNeeded(
+                agent,
+                deltaTime: deltaTime,
+                fallback: restingPosition(for: agent.location, agent: agent),
+                speed: GnomeTiming.idleWalkSpeed
+            )
+
+        case .dining,
+             .cookServingFromStation,
+             .cookDeliveringToTable,
+             .cookCheckingOnTable,
+             .tidyingTables:
+            // Meal-time and cleanup tasks. Position is owned by
+            // GnomeSeating (mealPosition / cookCurrentPosition). The
+            // per-frame movement is just a gentle drift toward the
+            // current wanderTarget, which gets refreshed each meal
+            // beat. The cook's task transitions and reaction bubbles
+            // are driven by `tickCookForMeal` below; everyone else
+            // just stays put.
             advanceHiddenWanderIfNeeded(
                 agent,
                 deltaTime: deltaTime,
@@ -1687,7 +1741,10 @@ final class GnomeManager {
         case .sleeping, .idle, .supervising,
              .lookingForRock, .usingMachine,
              .depositingGemAtCart, .dumpingRockInWasteBin,
-             .celebrating:
+             .celebrating,
+             .dining, .cookServingFromStation,
+             .cookDeliveringToTable, .cookCheckingOnTable,
+             .tidyingTables:
             return .neutral
         }
     }
@@ -1929,6 +1986,14 @@ final class GnomeManager {
             walkAgentToMachine(agent)
         } else if agent.task == .dumpingRockInWasteBin {
             walkAgentToBin(agent)
+        } else if agent.task == .dining, let target = agent.wanderTarget {
+            let dist = hypot(target.x - visibleStart.x, target.y - visibleStart.y)
+            if dist > 8 {
+                let duration = max(0.25, TimeInterval(dist / GnomeTiming.taskWalkSpeed))
+                gnome.gnomeTraverse(from: visibleStart, to: target, duration: duration)
+            } else {
+                gnome.gnomeStandAt(target)
+            }
         } else if let target = agent.wanderTarget {
             gnome.gnomeWanderTo(target)
         } else {
@@ -2150,12 +2215,30 @@ final class GnomeManager {
         cartVisual?.position = cartPosition
         cartVisual?.startRolling()
 
-        for agent in agents where agent.identity.role != .housekeeper && agent.isOnMineDutyToday {
+        // End the breakfast meal: clear seat assignments, but keep the
+        // authored dining tables visible as permanent room props.
+        GnomeSeating.shared.endMeal(agents: agents, oakScene: oakScene)
+
+        for agent in agents where !agent.identity.role.livesInOak && agent.isOnMineDutyToday {
             agent.task = .haulingCart
             agent.taskStartedAt = now
             agent.location = .oakRoom(1)
             agent.position = cartPosition
             agent.wanderTarget = nil
+            agent.hasRealPosition = true
+            agent.sceneNode?.removeFromParent()
+            agent.sceneNode = nil
+            respawnVisualIfRoomVisible(agent: agent)
+        }
+
+        // Lobby crew (housekeepers + broker + treasurer) shift into
+        // tidying. Cook joins the cleanup beat per the design even
+        // though she was working through breakfast.
+        for agent in agents where agent.identity.role.livesInOak {
+            agent.task = .tidyingTables
+            agent.taskStartedAt = now
+            agent.location = .oakRoom(1)
+            agent.wanderTarget = dinnerMinglePosition(for: agent)
             agent.hasRealPosition = true
             agent.sceneNode?.removeFromParent()
             agent.sceneNode = nil
@@ -2170,7 +2253,7 @@ final class GnomeManager {
         if agent.identity.id == GnomeRoster.kitchenCook.id {
             return CGPoint(x: 210, y: 35)
         }
-        if agent.identity.role == .housekeeper {
+        if agent.identity.role.livesInOak {
             return CGPoint(
                 x: -120 + stableSignedOffset(for: "oak_dinner_housekeeper_x_\(agent.identity.id)", magnitude: 60),
                 y: 10 + stableSignedOffset(for: "oak_dinner_housekeeper_y_\(agent.identity.id)", magnitude: 35)
@@ -2502,10 +2585,27 @@ final class GnomeManager {
         cartVisual?.position = cartPosition
         cartVisual?.stopRolling()
 
+        // Try to seat everyone at dining tables. Falls back to
+        // free-mingle if no seat anchors are authored yet.
+        let seated = GnomeSeating.shared.beginMeal(
+            .dinner, agents: agents, oakScene: oakScene, now: now
+        )
+
         for agent in agents {
-            let target = dinnerMinglePosition(for: agent)
+            let isCook = agent.identity.id == GnomeRoster.kitchenCook.id
+            let target: CGPoint
+            if seated {
+                target = GnomeSeating.shared.mealPosition(
+                    for: agent,
+                    oakScene: oakScene,
+                    fallbackMinglePosition: dinnerMinglePosition(for: agent)
+                )
+                agent.task = isCook ? .cookServingFromStation : .dining
+            } else {
+                target = dinnerMinglePosition(for: agent)
+                agent.task = .idle
+            }
             agent.location = .oakRoom(1)
-            agent.task = .idle
             agent.taskStartedAt = now
             agent.position = target
             agent.wanderTarget = target
@@ -2528,6 +2628,12 @@ final class GnomeManager {
         cartVisual?.position = cartPosition
         cartVisual?.stopRolling()
         clearCartDuskTiming()
+
+        // End any active meal: clear seat assignments while leaving
+        // the authored tables in place. (Idempotent if no meal was
+        // running.)
+        GnomeSeating.shared.endMeal(agents: agents, oakScene: oakScene)
+
         for agent in agents {
             // Hop them straight to their home oak room and put them
             // to sleep — night has clearly fallen by now.
@@ -2713,8 +2819,20 @@ final class GnomeManager {
                           node.position.y - agent.position.y)
 
         switch agent.task {
+        case .dining:
+            if drift > 26 {
+                node.gnomeStandAt(agent.position)
+            } else if drift > 8 {
+                node.gnomeWanderTo(agent.position)
+            } else if node.isTraversing || node.isWandering {
+                node.gnomeStandAt(agent.position)
+            }
+
         case .sleeping, .idle, .supervising, .lookingForRock,
-             .celebrating, .depositingGemAtCart:
+             .celebrating, .depositingGemAtCart,
+             .cookServingFromStation,
+             .cookDeliveringToTable, .cookCheckingOnTable,
+             .tidyingTables:
             // Leave any active wander alone — let the SKAction finish.
             // Once it finishes, kick a new gentle wander toward
             // authoritative position so the gnome doesn't sit still.
@@ -2857,5 +2975,137 @@ final class GnomeManager {
 
     func agentsCurrentlyIn(_ location: GnomeLocation) -> [GnomeAgent] {
         agents.filter { $0.location == location }
+    }
+
+    // MARK: - Dining Tick
+
+    /// Keep dawn/dusk diners centered on their assigned seats, with
+    /// only brief near-table stretches so the room still feels alive.
+    private func tickDiningForMeal(now: TimeInterval) {
+        guard GnomeSeating.shared.isMealActive else { return }
+        guard let scene = oakScene else { return }
+
+        let cookID = GnomeRoster.kitchenCook.id
+        for agent in agents
+            where agent.identity.id != cookID
+            && agent.task == .dining
+            && agent.location == .oakRoom(1) {
+            let seat = GnomeSeating.shared.mealPosition(
+                for: agent,
+                oakScene: scene,
+                fallbackMinglePosition: dinnerMinglePosition(for: agent)
+            )
+            let target = nextDiningTarget(for: agent, seat: seat, now: now)
+            agent.wanderTarget = target
+
+            guard let node = agent.sceneNode, !node.isFrozen else { continue }
+
+            let distToTarget = hypot(node.position.x - target.x, node.position.y - target.y)
+            let seatOffset = hypot(target.x - seat.x, target.y - seat.y)
+
+            if seatOffset <= 10 {
+                if distToTarget > 12 {
+                    let duration = max(0.25, TimeInterval(distToTarget / GnomeTiming.taskWalkSpeed))
+                    node.gnomeTraverse(from: node.position, to: target, duration: duration)
+                } else if distToTarget > 2 || node.isTraversing || node.isWandering {
+                    node.gnomeStandAt(target)
+                }
+                continue
+            }
+
+            if distToTarget > 8 && !node.isTraversing {
+                node.gnomeWanderTo(target)
+            } else if distToTarget <= 4 && (node.isTraversing || node.isWandering) {
+                node.gnomeStandAt(target)
+            }
+        }
+    }
+
+    private func nextDiningTarget(
+        for agent: GnomeAgent,
+        seat: CGPoint,
+        now: TimeInterval
+    ) -> CGPoint {
+        let currentTarget = clamp(agent.wanderTarget ?? seat, to: agent.location)
+        let currentSeatOffset = hypot(currentTarget.x - seat.x, currentTarget.y - seat.y)
+
+        guard agent.wanderTarget == nil
+            || now >= agent.nextWanderAt
+            || currentSeatOffset > 80 else {
+            return currentTarget
+        }
+
+        agent.nextWanderAt = now + Double.random(in: 2.8...5.2)
+
+        if Double.random(in: 0...1) < 0.2 {
+            let angle = Double.random(in: 0...(2 * Double.pi))
+            let radiusX = CGFloat.random(in: 20...44)
+            let radiusY = CGFloat.random(in: 10...26)
+            let target = CGPoint(
+                x: seat.x + CGFloat(cos(angle)) * radiusX,
+                y: seat.y + CGFloat(sin(angle)) * radiusY
+            )
+            return clamp(target, to: agent.location)
+        }
+
+        let seatFidget = CGPoint(
+            x: seat.x + CGFloat.random(in: -5...5),
+            y: seat.y + CGFloat.random(in: -3...3)
+        )
+        return clamp(seatFidget, to: agent.location)
+    }
+
+    // MARK: - Cook Tick (meal-time)
+
+    /// Per-frame hook that drives the cook's cycle during a meal.
+    /// Delegates to GnomeSeating for the actual sub-state machine and
+    /// reaction bubbles; this method's job is to (a) gate on whether
+    /// a meal is in progress, (b) move the cook's agent.position to
+    /// wherever the seating service says it should be (cook station,
+    /// or the table the cook is currently delivering to / checking on),
+    /// and (c) drive the visual SKAction so it walks smoothly.
+    private func tickCookForMeal(now: TimeInterval) {
+        guard GnomeSeating.shared.isMealActive else { return }
+        guard let cook = agents.first(where: { $0.identity.id == GnomeRoster.kitchenCook.id }) else {
+            return
+        }
+        // The cook always lives in oak_1 during a meal.
+        guard cook.location == .oakRoom(1) else { return }
+
+        // Advance the seating sub-state machine. This may flip
+        // cook.task to .cookServingFromStation/.cookDeliveringToTable/
+        // .cookCheckingOnTable and update cookTargetTableIndex.
+        GnomeSeating.shared.tickCook(
+            cook: cook,
+            agents: agents,
+            oakScene: oakScene,
+            now: now
+        )
+
+        // Authoritative position for this frame from seating.
+        let target = GnomeSeating.shared.cookCurrentPosition(
+            cook: cook,
+            oakScene: oakScene,
+            fallbackMinglePosition: dinnerMinglePosition(for: cook)
+        )
+        cook.position = target
+        cook.wanderTarget = target
+        cook.hasRealPosition = true
+
+        // Drive the visual: walk to the target if we're not already
+        // close. Skip during checking (the cook stands still at the
+        // table during reactions).
+        guard let node = cook.sceneNode, !node.isFrozen else { return }
+        let dist = hypot(node.position.x - target.x, node.position.y - target.y)
+        if cook.task == .cookDeliveringToTable {
+            if !node.isTraversing && dist > 8 {
+                let dur = max(0.4, TimeInterval(dist / GnomeTiming.taskWalkSpeed))
+                node.gnomeTraverse(from: node.position, to: target, duration: dur)
+            }
+        } else if cook.task == .cookServingFromStation || cook.task == .cookCheckingOnTable {
+            if dist > 14 && !node.isTraversing {
+                node.gnomeStandAt(target)
+            }
+        }
     }
 }
