@@ -28,6 +28,18 @@ enum SpawnRule {
     /// can repeat (multiple spawns in one room possible). Every listed
     /// room is guaranteed at least one as long as `count >=` list size.
     case scatteredTotal(count: Int)
+
+    /// Per-day total per location, distributed randomly throughout the
+    /// day instead of all at dawn. The room never holds more than
+    /// `maxConcurrent` uncollected spawns of this ingredient at once —
+    /// pending spawns wait their turn if the room is full. Each room
+    /// in `locations` gets an independent count rolled in [`minPerDay`,
+    /// `maxPerDay`]. Used for the forest economy (matcha + strawberry).
+    case scatteredPerLocationOverDay(
+        minPerDay: Int,
+        maxPerDay: Int,
+        maxConcurrent: Int
+    )
 }
 
 // MARK: - Profile

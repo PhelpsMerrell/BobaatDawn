@@ -65,6 +65,44 @@
           "Do you ever hear screeching tires in the distance?",
           "I feel like a deer caught in headlights..."
         ]
+      },
+      "tap_followups": {
+        "kind": [
+          "It's safe in here.",
+          "Take your time.",
+          "Sit, breathe.",
+          "You're alright.",
+          "Have a sip."
+        ],
+        "blunt": [
+          "Don't startle.",
+          "Just relax.",
+          "Drink up.",
+          "Mhm. Sure.",
+          "Settle down."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "I keep thinking I hear something behind me.",
+          "The oaks are full of light today.",
+          "I startled at a leaf this morning, can you imagine.",
+          "Have you been near the road lately? I haven't.",
+          "My ears won't sit still — no reason.",
+          "There's a clover patch behind my cabin I'm watching.",
+          "I almost dropped my basket at the gate again.",
+          "Quiet days are the loudest, somehow."
+        ],
+        "night": [
+          "The path back felt longer tonight.",
+          "Something rushed past me on the way over.",
+          "My head's been feeling heavy. Probably nothing.",
+          "I keep glancing behind me. Force of habit.",
+          "Did you see the lanterns swaying? Or — was it lanterns.",
+          "I forget where I am sometimes, in the dark.",
+          "It's so still tonight. That's the part that bothers me.",
+          "Cold air on my face — it almost felt like being struck."
+        ]
       }
     },
     {
@@ -114,6 +152,44 @@
           "My paws tremble like I haven't eaten in days.",
           "I know the feeling of hunger too well..."
         ]
+      },
+      "tap_followups": {
+        "kind": [
+          "Eat slow.",
+          "Plenty for everyone.",
+          "Take seconds.",
+          "Always good to see you.",
+          "On me today."
+        ],
+        "blunt": [
+          "Just one cup.",
+          "Don't loiter.",
+          "Mhm.",
+          "Drink it then.",
+          "Off you hop."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "I had two breakfasts and I'd have a third.",
+          "The mint behind the houses is coming in thick.",
+          "I never quite feel full, even after a meal.",
+          "Hazel and I share a patch — did I tell you?",
+          "Pearls for breakfast, that's the dream.",
+          "I watched a butterfly for an hour today, just chewing.",
+          "My burrow feels too big sometimes. Quiet, you know.",
+          "I keep snacks tucked in three different spots."
+        ],
+        "night": [
+          "My belly keeps growling. Even with stew in it.",
+          "I dreamed I was eating clover that turned to dust.",
+          "The cold makes me feel hollow.",
+          "I keep biting at things that aren't there.",
+          "Have you ever felt full and empty at the same time?",
+          "Hazel's lights are still on. That's a comfort.",
+          "I check my pantry three times before sleep.",
+          "Sometimes I just nibble at the air, by accident."
+        ]
       }
     },
     {
@@ -160,6 +236,44 @@
           "My throat burns at night, though I only sip tea.",
           "I feel faint, like something is coursing through me.",
           "Poison has a way of making one wary of sweetness..."
+        ]
+      },
+      "tap_followups": {
+        "kind": [
+          "Sit a while, dearie.",
+          "Always welcome here.",
+          "Tea's fresh today.",
+          "Take your time.",
+          "Glad you came in."
+        ],
+        "blunt": [
+          "Mm. Yes, dearie.",
+          "If you say so.",
+          "Drink up, dearie.",
+          "Hmph.",
+          "Some other time."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "I watched a stranger pass twice today, dearie.",
+          "These oaks have seen everything. They know.",
+          "I'm slower than I used to be. But sharper, too.",
+          "I keep my back to the wall, even here.",
+          "Did you sniff this cup before you sipped it, dearie?",
+          "The forest used to be wilder. Or I did.",
+          "I trust the cold weather more than most folks.",
+          "There's a song I used to know. It's gone now."
+        ],
+        "night": [
+          "Something tasted off in my last cup. Probably nothing.",
+          "My throat burns when I lie down, dearie.",
+          "I've been sleeping with one ear up, like always.",
+          "The night doesn't scare me — never has.",
+          "I keep watching my own paws. Strange habit.",
+          "Faint, I felt faint earlier. It passed.",
+          "Every sip reminds me of something I can't name.",
+          "Old wolves know when to be careful. Even with sweets."
         ]
       }
     },
@@ -210,6 +324,44 @@
           "Sometimes I dream of resting, but never wake refreshed.",
           "Overworked... over and over, until I collapse."
         ]
+      },
+      "tap_followups": {
+        "kind": [
+          "Rest a while.",
+          "No hurry today.",
+          "Take a seat.",
+          "Glad you stopped in.",
+          "You earned this."
+        ],
+        "blunt": [
+          "Sit or go.",
+          "Mm. Right.",
+          "Drink and rest.",
+          "Long day, huh.",
+          "Move along."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "...the bench by my cabin is the only thing I trust.",
+          "...my back's been talking to me again.",
+          "...some days I just sit on the porch counting birds.",
+          "...Oscar and I sat for an hour without saying a word.",
+          "...the path here feels longer every day.",
+          "...I keep dreaming I'm pulling something. I don't remember what.",
+          "...the creek behind my place runs slow this time of year.",
+          "...I've stopped trying to hurry. Doesn't help anything."
+        ],
+        "night": [
+          "...my legs ache even when I'm sitting.",
+          "...I keep thinking I forgot to put something down.",
+          "...some weight sits on my chest at night.",
+          "...I dream of resting. Never quite get there.",
+          "...the lamps look heavier in the dark.",
+          "...I sat down two hours ago and haven't moved.",
+          "...sleep is harder than walking, lately.",
+          "...I keep listening for a whistle. Don't know whose."
+        ]
       }
     },
     {
@@ -256,6 +408,44 @@
           "My breaths come short and sharp in the dark.",
           "Do you ever choke on joy? I think I did once.",
           "Boba is sweet... until it isn't."
+        ]
+      },
+      "tap_followups": {
+        "kind": [
+          "Glad to see you!",
+          "Always a treat.",
+          "Easy, easy.",
+          "Plenty here.",
+          "Take your time."
+        ],
+        "blunt": [
+          "Quieter, please.",
+          "Mhm, mhm.",
+          "Just sip.",
+          "Yes, James.",
+          "Settle down."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "I drank THREE today and I want a FOURTH!",
+          "Did you SEE the new pearls? Did you?",
+          "Music! There should be music. There should always be music!",
+          "I tried to sing under the creek and I got water up my nose.",
+          "Ivy and I have a HARMONY worked out. Wait — not now.",
+          "Cold weather is the WORST. The actual worst.",
+          "I forgot what I was going to say! Anyway —",
+          "I PUFFED UP at a butterfly today. By accident. Mostly."
+        ],
+        "night": [
+          "I tried to laugh just now and it caught.",
+          "Sometimes my chest just — locks up. Strange.",
+          "Quiet nights make me uneasy. Too quiet.",
+          "I keep clearing my throat. No reason.",
+          "Pearls felt funny earlier. Big. Stuck-feeling.",
+          "Music helps. There's no music tonight.",
+          "My breath comes short sometimes, then it doesn't.",
+          "I deflated a bit. Don't tell anyone."
         ]
       }
     },
@@ -304,6 +494,44 @@
           "My head spins, as if the world tilts under me.",
           "I see the ground in flashes—closer, closer..."
         ]
+      },
+      "tap_followups": {
+        "kind": [
+          "I'm here.",
+          "Tell me more.",
+          "Take your time.",
+          "I'm listening.",
+          "It's good you came."
+        ],
+        "blunt": [
+          "Mm.",
+          "I see.",
+          "Go on, then.",
+          "Yes, alright.",
+          "Drink, then."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "I watched the same branch for an hour today.",
+          "Most things become clearer if you wait.",
+          "I think the gnomes are louder than they need to be.",
+          "There's a kind of music that only happens at dawn.",
+          "I haven't decided about the cave yet.",
+          "Tall trees worry me more than they used to.",
+          "I owe Echo a long conversation. Maybe tonight.",
+          "Some questions are better left where they are."
+        ],
+        "night": [
+          "I keep dreaming about falling, lately.",
+          "The branches looked unsteady this evening.",
+          "I don't perch as high as I used to.",
+          "Strange how the ground gets closer in dreams.",
+          "I felt my wings stutter on the way over.",
+          "Quiet sky tonight. I've been listening for it.",
+          "I think I almost remembered something. Then I didn't.",
+          "Some nights I sit with my eyes closed. It's not sleep."
+        ]
       }
     },
     {
@@ -350,6 +578,44 @@
           "I can't run as fast when the moon is up.",
           "Even freedom tastes bitter if you've been trapped.",
           "Some wounds never heal, even if you limp on..."
+        ]
+      },
+      "tap_followups": {
+        "kind": [
+          "Glad you came by.",
+          "Sit, talk a while.",
+          "Easy company today.",
+          "Stay as long as you want.",
+          "On me, this round."
+        ],
+        "blunt": [
+          "Sure. And?",
+          "Mhm.",
+          "Skip it.",
+          "Get on with it.",
+          "Drink up, fox."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "Have you been to the cave lately, or is that a stupid question?",
+          "I saw something shiny near the creek. Or did I?",
+          "Did Rascal really say that, or are you making it up?",
+          "I don't trust gnomes. Never have. You?",
+          "Ask me where I was this morning. Go on.",
+          "There's a path nobody uses. I use it.",
+          "Music tonight, you think? Or no?",
+          "I keep my secrets like the squirrels keep nuts."
+        ],
+        "night": [
+          "My leg's been stiff. Don't ask why.",
+          "I dream the same dream. Won't bore you with it.",
+          "Did you hear something snap, just now? No?",
+          "I prefer the night, though I shouldn't.",
+          "There's a sound metal makes — never mind.",
+          "I limp a little when nobody's looking.",
+          "Quiet, this evening. Suspiciously quiet, isn't it?",
+          "I changed my route home. Don't ask."
         ]
       }
     },
@@ -398,6 +664,44 @@
           "The night feels like an endless pane of glass.",
           "I hear the sound of shattering every evening..."
         ]
+      },
+      "tap_followups": {
+        "kind": [
+          "Sing a little.",
+          "Glad you came.",
+          "Lovely as always.",
+          "Take a moment.",
+          "Always welcome."
+        ],
+        "blunt": [
+          "Quieter, Ivy.",
+          "Mm. Yes.",
+          "Save it for later.",
+          "Drink, don't sing.",
+          "Off you hop."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "I worked out a new tune this morning — hmm-hmm-hmm.",
+          "Della and I should sing together more often.",
+          "The light hits my window just right at noon.",
+          "Have you ever sung underwater? You should.",
+          "I trill at sparrows — they never trill back.",
+          "There's a song I keep almost remembering.",
+          "The oldest trees hum, did you know?",
+          "I love a flat surface. I don't know why I said that."
+        ],
+        "night": [
+          "I dreamed of glass again. So clear it hurt.",
+          "My wings ache, even sitting still.",
+          "I keep flying into things I can't see.",
+          "The night feels — it feels like something I'm about to hit.",
+          "Did you hear that — like a tap, like a chime?",
+          "I sing softer at night. Don't know why.",
+          "My reflection startled me earlier. Just for a moment.",
+          "Sometimes the air shimmers. Like a pane."
+        ]
       }
     },
     {
@@ -444,6 +748,44 @@
           "My fur feels scorched under the moon.",
           "The forest crackles with flames in my dreams.",
           "Ash lingers in my throat with every sip..."
+        ]
+      },
+      "tap_followups": {
+        "kind": [
+          "Take your time.",
+          "Always room for you.",
+          "Slow day, hm?",
+          "Glad you're here.",
+          "Sit and stay."
+        ],
+        "blunt": [
+          "Mhm.",
+          "If you say.",
+          "Drink up, then.",
+          "Sure, Oscar.",
+          "Move along."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "Stanuel and I sat together yesterday. Said nothing. Lovely.",
+          "I'd... I'd like a quieter walk home, I think.",
+          "The creek behind my cabin is colder than usual.",
+          "I noticed... well, never mind.",
+          "Honey would go nicely with this. Just thinking aloud.",
+          "I'm slow today. Slower than usual.",
+          "The trees are so still. It's a kind of peace.",
+          "I almost — no, it's not worth saying."
+        ],
+        "night": [
+          "I keep smelling smoke. I know there isn't any.",
+          "My fur feels warm where it shouldn't.",
+          "I dreamed of crackling. Don't want to talk about it.",
+          "I checked my hearth twice before coming over.",
+          "Some nights the air tastes like ash. Just to me, maybe.",
+          "I... I'd rather not say what I was thinking.",
+          "Heat lingers under my coat. Phantom heat.",
+          "I sat in the cold for a while. It helped."
         ]
       }
     },
@@ -494,6 +836,44 @@
           "The night swirls like a cup too full.",
           "I can't quite catch my breath after sipping..."
         ]
+      },
+      "tap_followups": {
+        "kind": [
+          "It's quiet here.",
+          "Take your time.",
+          "Stay as long as you like.",
+          "You're alright.",
+          "Sit close, then."
+        ],
+        "blunt": [
+          "Squeak softer.",
+          "Mm. Yes.",
+          "Drink up.",
+          "Just a sip, Mira.",
+          "Off you go."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "I FOUND another shiny stone today. Don't tell anyone.",
+          "These pearls are TOO BIG. (...so beautiful, though.)",
+          "The creek scared me this morning. I crossed anyway.",
+          "I keep my whiskers dry on purpose, you know.",
+          "Echo's quiet places remind me of mine.",
+          "I've collected three buttons this week. THREE.",
+          "The gnomes are HEAVY-HANDED. (I love how they sing, though.)",
+          "Tiny pawprints aren't tiny when you're me."
+        ],
+        "night": [
+          "I had THE DREAM again. The water one.",
+          "Some nights I can't catch my breath.",
+          "I check my door three times. It's not enough.",
+          "The drink swirled in my cup tonight. Made me dizzy.",
+          "I HEARD rushing earlier. There's no creek nearby.",
+          "My fur feels damp. It isn't, but it feels it.",
+          "I keep my treasures close at night. Just in case.",
+          "Echo's lamp was off. Did you notice."
+        ]
       }
     },
     {
@@ -538,6 +918,44 @@
           "I hear the roar of machines when the forest is quiet.",
           "It feels like I was cut short... in more ways than one.",
           "Even in the dark, I sense sharp things closing in."
+        ]
+      },
+      "tap_followups": {
+        "kind": [
+          "Quietly, then.",
+          "Take your time.",
+          "Glad you came.",
+          "Sit close.",
+          "All's well."
+        ],
+        "blunt": [
+          "Mhm.",
+          "Yes, Hazel.",
+          "Drink, then.",
+          "Carry on.",
+          "Hop along."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "Timothy showed me a new clover patch.",
+          "I rolled up at a sneeze this morning. Felt silly.",
+          "The oaks make me feel small in a good way.",
+          "I've been knitting. Slowly. Very slowly.",
+          "I startled at my own shadow today.",
+          "I prefer quiet visitors. Don't tell anyone.",
+          "The path between our houses got mossier.",
+          "Sometimes I sleep curled up for no reason."
+        ],
+        "night": [
+          "A loud noise made me curl tight tonight. Couldn't tell what.",
+          "I keep listening for blades. There aren't any.",
+          "Some nights I can't uncurl right away.",
+          "I dreamed of being short of something. Of myself.",
+          "The lanterns hummed strangely tonight.",
+          "I checked under my door for shadows. Habit.",
+          "Cold metal smells. Even when there isn't any.",
+          "I sat under a fern for an hour just to feel hidden."
         ]
       }
     },
@@ -586,6 +1004,44 @@
           "Do you ever feel your skin cracking in silence?",
           "I croak, but no sound comes out anymore."
         ]
+      },
+      "tap_followups": {
+        "kind": [
+          "Stay cool.",
+          "Glad you came, Rivet.",
+          "Sip slowly.",
+          "Take your time.",
+          "Always welcome."
+        ],
+        "blunt": [
+          "Croak less.",
+          "Mhm.",
+          "Drink up.",
+          "Just sip.",
+          "Hop along."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "The pond's down by an inch since yesterday — croak.",
+          "I love a damp morning. Croak.",
+          "My tongue's slower than it used to be. Croak.",
+          "Did you see the lily flowers open today?",
+          "I sang to a tadpole. Croak. They ignored me.",
+          "Cold weather suits me better than people think.",
+          "I keep my skin damp on purpose. Most do not.",
+          "There's a stone in the creek I sit on. Just mine. Croak."
+        ],
+        "night": [
+          "My throat feels tight tonight. ...croak.",
+          "I dream of dry ponds. Cracking. Pieces.",
+          "The moon dries everything out. I swear it does.",
+          "I croaked earlier and nothing came out.",
+          "My skin... my skin tightens when I sleep.",
+          "Some nights I forget I'm wet.",
+          "The silence presses on me. Croak.",
+          "I sip and sip and stay thirsty. Croak."
+        ]
       }
     },
     {
@@ -633,6 +1089,44 @@
           "I cough sometimes, like I swallowed something foul.",
           "Quack... quack... the sound fades under black water."
         ]
+      },
+      "tap_followups": {
+        "kind": [
+          "Stay a while.",
+          "Glad you came.",
+          "Take your time.",
+          "Easy now.",
+          "Always a treat."
+        ],
+        "blunt": [
+          "Mm.",
+          "If you say.",
+          "Drink up, Della.",
+          "Carry on.",
+          "Off you go."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "...so I was thinking — anyway, the pond's calm today.",
+          "Ivy and I should sing together more. We keep meaning to.",
+          "The reeds bend funny in the south wind.",
+          "...and that's why I avoid the road. Was that out loud?",
+          "I keep my feathers preened. Don't ask why.",
+          "The water looked thick this morning. Probably nothing.",
+          "I forgot what I was — oh, the bread. That was it.",
+          "Cold weather makes my joints chatter."
+        ],
+        "night": [
+          "My feathers feel heavy. Same as last night.",
+          "...and the water was black, but anyway, how are you?",
+          "I dreamed of a slick on the pond again.",
+          "I cough sometimes. From nothing.",
+          "The night smells off. To me, at least.",
+          "I float worse at night. I know that's strange.",
+          "Quack — sorry, that just slipped out.",
+          "...somewhere there was a sound — never mind."
+        ]
       }
     },
     {
@@ -677,6 +1171,44 @@
           "Sometimes I feel flattened, like I'm paper thin.",
           "The night smells like oil and garbage mixed.",
           "I can't get rid of the weight pressing down on me."
+        ]
+      },
+      "tap_followups": {
+        "kind": [
+          "Tell me everything.",
+          "Glad you came.",
+          "Sit, sit.",
+          "Always good to see you.",
+          "Take your time."
+        ],
+        "blunt": [
+          "Save it.",
+          "Mhm. Sure.",
+          "Quieter, Rascal.",
+          "Drink, then go.",
+          "Some other time."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "Listen — listen — Finn was acting strange last night.",
+          "I saw something shiny under a stump. Didn't take it. Didn't.",
+          "The gnomes are up to something. They always are.",
+          "Did Della tell you about her dream? She told me.",
+          "I know a path nobody walks. Don't tell.",
+          "Music tonight? I'll find out.",
+          "Someone left a button by the gate. Could've been anyone.",
+          "I keep a list. Don't ask whose names are on it."
+        ],
+        "night": [
+          "I keep hearing something heavy on the road. You?",
+          "There's a weight in my chest that won't lift.",
+          "I had THE dream — metal walls, no way out.",
+          "Something flattened a path through the bushes. Wasn't me.",
+          "I smell oil where there isn't any. Always have.",
+          "Late nights make me feel paper-thin.",
+          "Did you see Oscar earlier? He looked bad.",
+          "I check my fur in the lantern light. Habit."
         ]
       }
     },
@@ -723,6 +1255,44 @@
           "The forest hums with wires strung too close.",
           "One spark was all it took to end my climb."
         ]
+      },
+      "tap_followups": {
+        "kind": [
+          "Slow down, Nixie.",
+          "Take a breath.",
+          "Glad you came.",
+          "Sit, then.",
+          "All in time."
+        ],
+        "blunt": [
+          "Quieter.",
+          "Mhm. Mhm.",
+          "Drink, please.",
+          "Off you go.",
+          "Move along."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "Did you hear — wait — okay, did you hear about — no, never mind.",
+          "I climbed three trees today, FOUR — was it four? Four.",
+          "Music! Music makes me — anyway, what were we saying?",
+          "I'm storing nuts in places I'll forget. As usual.",
+          "The deeper woods are LOUD lately. Loud how? I don't know.",
+          "Did you see — okay, you didn't.",
+          "Boba pearls are SO chewy and — what's that smell?",
+          "I forgot what I was — TAIL. That was the thing. My tail."
+        ],
+        "night": [
+          "A jolt — just a tiny one — went up my paw earlier.",
+          "My fur stood up for no reason. Nothing was there.",
+          "I keep smelling — burnt. Burnt something. Where?",
+          "The sky hummed earlier — I swear. Or that was me.",
+          "I climbed too high once. Don't remember when.",
+          "My paws twitch even when I'm still.",
+          "Did you hear THAT? No? Okay. Okay.",
+          "Lanterns flicker funny tonight. They flicker funny, right?"
+        ]
       }
     },
     {
@@ -767,6 +1337,44 @@
           "My wings ache like they were pinned by stone.",
           "Darkness isn't scary—it's the weight above me that is.",
           "When I close my eyes, I'm buried all over again."
+        ]
+      },
+      "tap_followups": {
+        "kind": [
+          "Sit a while.",
+          "Tell me, then.",
+          "Glad you flew in.",
+          "Take your time.",
+          "Always welcome."
+        ],
+        "blunt": [
+          "Mm.",
+          "If you say.",
+          "Drink, then.",
+          "Quieter, Echo.",
+          "Carry on."
+        ]
+      },
+      "chatter": {
+        "day": [
+          "Luna's been quiet today. More than usual.",
+          "I dreamed of a ceiling. Just a ceiling.",
+          "Mira keeps treasures the way I keep silences.",
+          "I prefer corners. You'd be amazed how many there are.",
+          "There's a kind of dark that smells like stone.",
+          "The cave is closer than I'd like, on some days.",
+          "I've stopped flapping fast. It's nicer this way.",
+          "I heard the gnomes from a mile off. As one does."
+        ],
+        "night": [
+          "The ceiling at home felt low tonight.",
+          "I don't go anywhere with a roof I don't trust.",
+          "Something shifted in the dark. Probably nothing.",
+          "My wings ache, like I've been hung from them.",
+          "I dreamed of dust. Just dust, settling.",
+          "I left a candle on. That's a first.",
+          "Sometimes the silence weighs.",
+          "If a stone fell in the woods... never mind."
         ]
       }
     }

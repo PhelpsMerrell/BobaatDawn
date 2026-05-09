@@ -191,13 +191,16 @@ final class NPCDailyScheduler {
         var activities: [NPCDailyActivity] = [.visitShop]
 
         // Determine eligibility for each pool option.
+        // .dropTrashAtEnemy is intentionally NOT in the pool — trash
+        // dropping is reactive only (the existing 35% chance on a
+        // hostile NPC's drink-finish in NPCResidentManager.
+        // scheduleForestTrash). Adding it as a planned activity
+        // would double up.
         let friendCandidates = friendlyTargets(for: resident)
-        let enemyCandidates  = hostileTargets(for: resident)
         let likesCaves       = doesNPCLikeCaves(resident)
 
         var pool: [NPCDailyActivity] = [.forageAndTrade]
         if !friendCandidates.isEmpty { pool.append(.visitFriend) }
-        if !enemyCandidates.isEmpty  { pool.append(.dropTrashAtEnemy) }
         if likesCaves                { pool.append(.gatherCaveMushrooms) }
 
         // Pick 2 from the pool, no duplicates.
@@ -227,21 +230,17 @@ final class NPCDailyScheduler {
 
         // Resolve targets where applicable.
         var visitFriendTargetID: String? = nil
-        var dropTrashTargetID: String? = nil
 
         if activities.contains(.visitFriend),
            let friend = pickWeighted(friendCandidates) {
             visitFriendTargetID = friend.npcID
         }
-        if activities.contains(.dropTrashAtEnemy),
-           let enemy = pickWeighted(enemyCandidates) {
-            dropTrashTargetID = enemy.npcID
-        }
+        // .dropTrashAtEnemy is reactive-only — not scheduled here.
 
         return NPCDailyPlan(
             activities: activities,
             visitFriendTargetID: visitFriendTargetID,
-            dropTrashTargetID: dropTrashTargetID,
+            dropTrashTargetID: nil,
             completed: []
         )
     }
@@ -254,15 +253,6 @@ final class NPCDailyScheduler {
         let rows = SaveService.shared.relationshipsOf(resident.npcData.id)
         return rows
             .filter { $0.score >= HostilityThreshold.friendly }
-            .map { ($0.towardNPCID, $0.score) }
-    }
-
-    /// Enemy candidates: relationships where score ≤ hostile threshold
-    /// (-45). Returns (npcID, score) sorted naturally for inspection.
-    private func hostileTargets(for resident: NPCResident) -> [(npcID: String, score: Int)] {
-        let rows = SaveService.shared.relationshipsOf(resident.npcData.id)
-        return rows
-            .filter { $0.score <= HostilityThreshold.hostile }
             .map { ($0.towardNPCID, $0.score) }
     }
 

@@ -142,6 +142,90 @@ private enum GnomeTiming {
     static let taskWalkSpeed: CGFloat = 28
 }
 
+// MARK: - Broker Economy Constants
+
+private enum BrokerEconomyTuning {
+    /// How many wares the broker can hold in the box before they have
+    /// to walk it to the kitchen.
+    static let boxCapacity: Int = 10
+
+    /// How many gems the broker requests from the treasurer per refill.
+    /// Sized to match `boxCapacity` so the two errands fall together.
+    static let gemRefillSize: Int = 10
+
+    /// How many gems the broker starts each new game with so trades
+    /// are possible before the first treasury refill cycle has run.
+    static let starterGemReserve: Int = 10
+
+    /// Walk speed for broker / treasurer foot-traffic in the lobby —
+    /// crisp enough that the player can see each errand complete
+    /// within a small fraction of the day.
+    static let lobbyWalkSpeed: CGFloat = 30
+
+    /// Time the broker spends standing at the kitchen pantry/fridge
+    /// dumping the box.
+    static let dumpDuration: TimeInterval = 4.0
+
+    /// Time the broker waits at the treasurer's desk for the hand-off.
+    /// Treasurer's round-trip drives the actual delay; this is a
+    /// safety floor for cases where the treasurer is interrupted.
+    static let waitForTreasurerTimeout: TimeInterval = 30.0
+
+    /// Time the treasurer spends at the pile collecting gems.
+    static let pileCollectDuration: TimeInterval = 3.0
+
+    /// Time the treasurer spends at the broker's desk handing over
+    /// gems before walking back to their own desk.
+    static let handoffDuration: TimeInterval = 1.5
+}
+
+// MARK: - Broker Economy State
+
+/// Live snapshot of the broker desk: what's in the box, how many
+/// gems are in the till, whether either gnome is mid-errand. This is
+/// the only piece of "NPC economy" state in the simulation that can
+/// transit between the broker, treasurer, and treasury pile, so it's
+/// kept in one place inside GnomeManager (private) and exposed via
+/// a tiny read-only API on the manager itself.
+///
+/// Note: forest-NPC trade calls live on the manager (`brokerReceiveItem`,
+/// `brokerPayGem`) so 3c can drive trades without poking these fields
+/// directly.
+///
+/// Codable for save persistence and `worldSync` transmission. The
+/// computed properties (`isBoxFull`, `isGemsEmpty`) are skipped by
+/// Codable synthesis automatically. The default values aren't part of
+/// the encoded form — a fresh decode produces whatever the encoder
+/// captured. Empty `"{}"` decodes back to all-defaults via
+/// `JSONDecoder.decode` failing, which the apply path treats as a
+/// no-op rather than a reset (intentional: a corrupt save shouldn't
+/// wipe the live economy).
+private struct BrokerEconomyState: Codable {
+    /// Wares the broker is currently holding in the box. FIFO.
+    var boxItems: [ForageableIngredient] = []
+
+    /// Gems the broker has on hand to pay NPCs.
+    var gemReserve: Int = BrokerEconomyTuning.starterGemReserve
+
+    /// True while the broker is mid-errand and shouldn't accept new
+    /// trades. Set when the broker leaves the desk; cleared when they
+    /// return to `.brokerIdleAtDesk`.
+    var brokerAwayFromDesk: Bool = false
+
+    /// True while the treasurer has been dispatched to the pile and
+    /// hasn't returned. Used to keep the broker from re-requesting a
+    /// refill while one is already in flight.
+    var treasurerDispatched: Bool = false
+
+    /// How many gems the treasurer is currently carrying back to the
+    /// broker. Pulled from `treasuryGemCount` at pickup time.
+    var treasurerCarriedGems: Int = 0
+
+    /// Convenience.
+    var isBoxFull: Bool { boxItems.count >= BrokerEconomyTuning.boxCapacity }
+    var isGemsEmpty: Bool { gemReserve <= 0 }
+}
+
 // MARK: - Geometry Constants (room layout)
 
 private enum GnomeGeometry {
@@ -243,11 +327,38 @@ final class GnomeManager {
     // MARK: - Sync Timing
     private var stateSyncAccumulator: TimeInterval = 0
 
+    // MARK: - Broker Economy
+
+    /// Mutable state for the lobby economy loop. Populated and ticked
+    /// only on the host — guests get a reflection via the standard
+    /// gnome-state sync (broker/treasurer task + carried already cover
+    /// the visual story) plus dedicated broadcasts when forest NPCs
+    /// trade with the broker.
+    private var brokerEconomy = BrokerEconomyState()
+
+    /// Read-only view of the box contents. Used by 3c+ for trade UI
+    /// and by debug menus.
+    var brokerBoxItemsView: [ForageableIngredient] { brokerEconomy.boxItems }
+
+    /// Read-only view of the broker's gem reserve.
+    var brokerGemReserveView: Int { brokerEconomy.gemReserve }
+
+    /// True if the broker is currently at their desk and able to
+    /// accept a trade. False while they're walking to the kitchen,
+    /// at the treasurer, or returning. Forest-NPC activity execution
+    /// (3c) checks this before approaching the desk.
+    var isBrokerAvailable: Bool {
+        guard let broker = agents.first(where: { $0.identity.role == .npcBroker }) else { return false }
+        return broker.task == .brokerIdleAtDesk && !brokerEconomy.brokerAwayFromDesk
+    }
+
     // MARK: - Init
 
     private init() {
         let now = CACurrentMediaTime()
         agents = GnomeRoster.all.map { GnomeAgent(identity: $0, startTime: now) }
+
+        brokerEconomy = BrokerEconomyState()
 
         for agent in agents {
             agent.task = .sleeping
@@ -284,6 +395,7 @@ final class GnomeManager {
         todaysRankChangeIsPromotion = true
         todaysBossLine = nil
         stateSyncAccumulator = 0
+        brokerEconomy = BrokerEconomyState()
 
         for agent in agents {
             agent.rank = agent.identity.initialRank
@@ -476,6 +588,12 @@ final class GnomeManager {
         cartVisual?.setCount(0, animated: false)
         cartVisual?.stopRolling()
 
+        // Cook draws ingredients from the pantry to make breakfast.
+        // (No-op if the pantry is empty — design says resources just
+        // "get used"; nothing punishes the gnomes for an empty pantry
+        // beyond the implicit story of "thin meal today".)
+        consumePantryForMeal(.breakfast)
+
         // Try to seat everyone at dining tables. Falls back gracefully
         // (returns false) if the SKS doesn't have seat anchors yet, in
         // which case we drop through to the legacy free-mingle path.
@@ -552,7 +670,7 @@ final class GnomeManager {
                     agent.wanderTarget = agent.position
                 }
             case .housekeeper, .npcBroker, .treasurer:
-                agent.task = .idle
+                agent.task = brokerOrTreasurerDayTask(for: agent)
                 agent.location = .oakRoom(agent.identity.homeOakRoom)
                 agent.position = restingPosition(for: agent.location, agent: agent)
                 agent.wanderTarget = agent.position
@@ -1135,6 +1253,31 @@ final class GnomeManager {
                 fallback: restingPosition(for: agent.location, agent: agent),
                 speed: GnomeTiming.idleWalkSpeed
             )
+
+        case .brokerIdleAtDesk:
+            advanceBrokerIdleAtDesk(agent, elapsed: elapsed, now: now, deltaTime: deltaTime)
+        case .brokerWalkingToKitchen:
+            advanceBrokerWalkingToKitchen(agent, elapsed: elapsed, now: now, deltaTime: deltaTime)
+        case .brokerDumpingAtKitchen:
+            advanceBrokerDumpingAtKitchen(agent, elapsed: elapsed, now: now, deltaTime: deltaTime)
+        case .brokerWalkingToTreasurer:
+            advanceBrokerWalkingToTreasurer(agent, elapsed: elapsed, now: now, deltaTime: deltaTime)
+        case .brokerCollectingGems:
+            advanceBrokerCollectingGems(agent, elapsed: elapsed, now: now, deltaTime: deltaTime)
+        case .brokerWalkingToDesk:
+            advanceBrokerWalkingToDesk(agent, elapsed: elapsed, now: now, deltaTime: deltaTime)
+        case .treasurerIdleAtDesk:
+            advanceTreasurerIdleAtDesk(agent, elapsed: elapsed, now: now, deltaTime: deltaTime)
+        case .treasurerWalkingToPile:
+            advanceTreasurerWalkingToPile(agent, elapsed: elapsed, now: now, deltaTime: deltaTime)
+        case .treasurerCollectingFromPile:
+            advanceTreasurerCollectingFromPile(agent, elapsed: elapsed, now: now, deltaTime: deltaTime)
+        case .treasurerWalkingToBroker:
+            advanceTreasurerWalkingToBroker(agent, elapsed: elapsed, now: now, deltaTime: deltaTime)
+        case .treasurerHandingGems:
+            advanceTreasurerHandingGems(agent, elapsed: elapsed, now: now, deltaTime: deltaTime)
+        case .treasurerWalkingToDesk:
+            advanceTreasurerWalkingToDesk(agent, elapsed: elapsed, now: now, deltaTime: deltaTime)
         }
     }
 
@@ -1744,7 +1887,13 @@ final class GnomeManager {
              .celebrating,
              .dining, .cookServingFromStation,
              .cookDeliveringToTable, .cookCheckingOnTable,
-             .tidyingTables:
+             .tidyingTables,
+             .brokerIdleAtDesk, .brokerWalkingToKitchen,
+             .brokerDumpingAtKitchen, .brokerWalkingToTreasurer,
+             .brokerCollectingGems, .brokerWalkingToDesk,
+             .treasurerIdleAtDesk, .treasurerWalkingToPile,
+             .treasurerCollectingFromPile, .treasurerWalkingToBroker,
+             .treasurerHandingGems, .treasurerWalkingToDesk:
             return .neutral
         }
     }
@@ -2585,6 +2734,9 @@ final class GnomeManager {
         cartVisual?.position = cartPosition
         cartVisual?.stopRolling()
 
+        // Cook draws ingredients from the pantry to make dinner.
+        consumePantryForMeal(.dinner)
+
         // Try to seat everyone at dining tables. Falls back to
         // free-mingle if no seat anchors are authored yet.
         let seated = GnomeSeating.shared.beginMeal(
@@ -2650,6 +2802,626 @@ final class GnomeManager {
         }
         Log.info(.npc, "[Gnomes] Celebration over — gnomes scatter home for the night")
         logDuskSnapshot("night sleep started")
+    }
+
+    // MARK: - Broker / Treasurer Helpers
+
+    // MARK: - Pantry Consumption (cook at meals)
+
+    /// How many pantry units the cook draws per meal. Tuned so the
+    /// pantry feels like it's actually being used — a single broker
+    /// box (10 items) covers ~3 meals, so the broker has to refill
+    /// the pantry every 1–2 days for the kitchen to keep up.
+    private static let pantryUnitsPerMeal: Int = 3
+
+    /// Drain a few units from the pantry to represent the cook making
+    /// breakfast or dinner. No-op on guest (host-authoritative). Logs
+    /// what was consumed and what (if anything) was left short.
+    private func consumePantryForMeal(_ meal: GnomeMeal) {
+        guard !MultiplayerService.shared.isGuest else { return }
+        let want = Self.pantryUnitsPerMeal
+        let consumed = StorageRegistry.shared.consume(
+            upTo: want,
+            from: "pantry"
+        )
+        let totalConsumed = consumed.reduce(0) { $0 + $1.amount }
+        if totalConsumed == 0 {
+            Log.info(.npc, "[Cook] \(meal.rawValue): pantry empty — thin meal today")
+            return
+        }
+        let summary = consumed
+            .map { "\($0.ingredient)×\($0.amount)" }
+            .sorted()
+            .joined(separator: ", ")
+        if totalConsumed < want {
+            Log.info(.npc, "[Cook] \(meal.rawValue): used \(totalConsumed)/\(want) from pantry (\(summary)) — ran short")
+        } else {
+            Log.info(.npc, "[Cook] \(meal.rawValue): used \(totalConsumed) from pantry (\(summary))")
+        }
+    }
+
+    /// Day-time task for non-mining oak residents. Broker and
+    /// treasurer get their idle-at-desk states so they can be
+    /// driven by the lobby-economy advance methods. Cook and the
+    /// other housekeepers stay on `.idle` (existing behavior).
+    private func brokerOrTreasurerDayTask(for agent: GnomeAgent) -> GnomeTask {
+        switch agent.identity.role {
+        case .npcBroker: return .brokerIdleAtDesk
+        case .treasurer: return .treasurerIdleAtDesk
+        default:         return .idle
+        }
+    }
+
+    /// Resolve the broker desk anchor position. Falls back to a
+    /// designed lobby position when the .sks doesn't have the anchor
+    /// authored yet, so the system works during early development.
+    private func brokerDeskPosition() -> CGPoint {
+        if let scene = oakScene,
+           scene.currentOakRoom == .lobby,
+           let p = scene.brokerDeskPosition() {
+            return p
+        }
+        // Fallback: left side of the lobby, near the entry path.
+        return CGPoint(x: -260, y: -40)
+    }
+
+    /// Resolve the treasurer desk anchor position with fallback.
+    private func treasurerDeskPosition() -> CGPoint {
+        if let scene = oakScene,
+           scene.currentOakRoom == .lobby,
+           let p = scene.treasurerDeskPosition() {
+            return p
+        }
+        // Fallback: right side of the lobby. Sits opposite the broker.
+        return CGPoint(x: 260, y: -40)
+    }
+
+    /// Resolve the kitchen-dump position with fallback. Used by the
+    /// broker when carrying a full box of wares to the pantry.
+    private func kitchenDumpPosition() -> CGPoint {
+        if let scene = oakScene,
+           scene.currentOakRoom == .lobby,
+           let p = scene.kitchenDumpPosition() {
+            return p
+        }
+        // Fallback: cook's mingle position is a reasonable kitchen
+        // proxy (it's where the cook stands during meals).
+        return CGPoint(x: 210, y: 35)
+    }
+
+    /// Resolve a stand-near-the-pile position for the treasurer when
+    /// they walk into the treasury room to grab gems. The exact pile
+    /// anchor isn't exposed through the scene API yet, but the
+    /// treasury room's resting position lands the treasurer in a
+    /// good spot — we just need a stable target.
+    private func treasuryPilePosition() -> CGPoint {
+        // Use the treasury room's pile anchor fallback (matches the
+        // existing TreasuryPile install path).
+        return OakLayout.treasuryPileFallback
+    }
+
+    // MARK: - Broker / Treasurer Public API
+
+    /// Export the broker economy as JSON for save persistence and
+    /// `worldSync` transmission. Returns `"{}"` if encoding fails so
+    /// callers always get a writable string.
+    func exportBrokerEconomyJSON() -> String {
+        guard let data = try? JSONEncoder().encode(brokerEconomy),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
+    }
+
+    /// Apply a previously-exported broker economy snapshot. Called
+    /// from disk-load and `worldSync` paths. No-op on empty or
+    /// unparseable input — we never wipe live state because of a
+    /// corrupt save. The decoded state replaces the live one wholesale,
+    /// including transient flags (`brokerAwayFromDesk`,
+    /// `treasurerDispatched`) so a mid-errand snapshot resumes
+    /// correctly.
+    func applyBrokerEconomyJSON(_ json: String) {
+        guard !json.isEmpty, json != "{}",
+              let data = json.data(using: .utf8),
+              let state = try? JSONDecoder().decode(BrokerEconomyState.self, from: data) else {
+            return
+        }
+        brokerEconomy = state
+        Log.info(.npc, "[Broker] Restored economy: box=\(state.boxItems.count)/\(BrokerEconomyTuning.boxCapacity), gems=\(state.gemReserve), brokerAway=\(state.brokerAwayFromDesk), treasurerDispatched=\(state.treasurerDispatched), treasurerCarrying=\(state.treasurerCarriedGems)")
+    }
+
+    /// Add an item to the broker's box and pay out one gem to the
+    /// trader. Returns true if the trade succeeded, false if the
+    /// broker isn't currently available (away from desk, gems empty).
+    /// Called by forest-NPC activity execution in 3c when an NPC
+    /// arrives at the desk with a forageable in hand.
+    @discardableResult
+    func brokerReceiveTrade(item: ForageableIngredient) -> Bool {
+        guard !MultiplayerService.shared.isGuest else { return false }
+        guard isBrokerAvailable else {
+            Log.debug(.npc, "[Broker] Trade refused — broker unavailable")
+            return false
+        }
+        guard !brokerEconomy.isGemsEmpty else {
+            Log.debug(.npc, "[Broker] Trade refused — gem reserve empty (treasurer should be in flight)")
+            return false
+        }
+        guard !brokerEconomy.isBoxFull else {
+            Log.debug(.npc, "[Broker] Trade refused — box full (broker should be heading to kitchen)")
+            return false
+        }
+        brokerEconomy.boxItems.append(item)
+        brokerEconomy.gemReserve -= 1
+        Log.info(.npc, "[Broker] Received \(item.displayName); box=\(brokerEconomy.boxItems.count)/\(BrokerEconomyTuning.boxCapacity), gems=\(brokerEconomy.gemReserve)")
+        return true
+    }
+
+    // MARK: - Broker / Treasurer Advance Methods
+
+    /// Broker idles at the desk. If the box is full or gems are out,
+    /// kick off the appropriate errand. Box-full takes priority —
+    /// pantry first, then refill on the way back if needed.
+    private func advanceBrokerIdleAtDesk(
+        _ agent: GnomeAgent,
+        elapsed: TimeInterval,
+        now: TimeInterval,
+        deltaTime: TimeInterval
+    ) {
+        // Stay anchored to the desk. Use a small wander around the
+        // anchor so the broker doesn't read as a frozen statue.
+        let desk = brokerDeskPosition()
+        if !agent.hasRealPosition {
+            agent.position = desk
+            agent.hasRealPosition = true
+            agent.wanderTarget = desk
+        }
+        // Gentle drift around the desk anchor.
+        if now >= agent.nextWanderAt {
+            agent.nextWanderAt = now + 5.0 + Double.random(in: 0...3.0)
+            let jitter = CGPoint(
+                x: desk.x + CGFloat.random(in: -16...16),
+                y: desk.y + CGFloat.random(in: -8...8)
+            )
+            agent.wanderTarget = jitter
+            if let node = agent.sceneNode, !node.isFrozen {
+                node.gnomeWanderTo(jitter)
+            }
+        }
+        moveHiddenAgent(
+            agent,
+            toward: agent.wanderTarget ?? desk,
+            deltaTime: deltaTime,
+            speed: GnomeTiming.idleWalkSpeed
+        )
+
+        // Decide whether to leave the desk. Box full takes priority —
+        // we run the kitchen errand first, then check gems on return.
+        if brokerEconomy.isBoxFull {
+            startBrokerKitchenErrand(broker: agent, now: now)
+            return
+        }
+        if brokerEconomy.isGemsEmpty && !brokerEconomy.treasurerDispatched {
+            startBrokerTreasurerErrand(broker: agent, now: now)
+            return
+        }
+    }
+
+    private func startBrokerKitchenErrand(broker: GnomeAgent, now: TimeInterval) {
+        brokerEconomy.brokerAwayFromDesk = true
+        broker.task = .brokerWalkingToKitchen
+        broker.taskStartedAt = now
+        broker.carried = .brokerBox
+        broker.wanderTarget = kitchenDumpPosition()
+        broker.sceneNode?.refreshVisualBadges()
+        Log.info(.npc, "[Broker] Box full — walking to kitchen with \(brokerEconomy.boxItems.count) items")
+    }
+
+    private func startBrokerTreasurerErrand(broker: GnomeAgent, now: TimeInterval) {
+        brokerEconomy.brokerAwayFromDesk = true
+        broker.task = .brokerWalkingToTreasurer
+        broker.taskStartedAt = now
+        broker.wanderTarget = treasurerDeskPosition()
+        Log.info(.npc, "[Broker] Out of gems — walking to treasurer")
+    }
+
+    /// Broker walks to the kitchen pantry/fridge with the box.
+    private func advanceBrokerWalkingToKitchen(
+        _ agent: GnomeAgent,
+        elapsed: TimeInterval,
+        now: TimeInterval,
+        deltaTime: TimeInterval
+    ) {
+        let target = kitchenDumpPosition()
+        moveHiddenAgent(
+            agent,
+            toward: target,
+            deltaTime: deltaTime,
+            speed: BrokerEconomyTuning.lobbyWalkSpeed
+        )
+        if let node = agent.sceneNode, !node.isFrozen, !node.isTraversing {
+            let from = node.position
+            let dist = hypot(target.x - from.x, target.y - from.y)
+            if dist > 8 {
+                let dur = max(0.4, TimeInterval(dist / BrokerEconomyTuning.lobbyWalkSpeed))
+                node.gnomeTraverse(from: from, to: target, duration: dur)
+            }
+        }
+        let dist = hypot(agent.position.x - target.x, agent.position.y - target.y)
+        if dist <= 6 {
+            agent.task = .brokerDumpingAtKitchen
+            agent.taskStartedAt = now
+            agent.position = target
+            agent.wanderTarget = target
+        }
+    }
+
+    /// Broker stands at the kitchen for `dumpDuration`, then drops the
+    /// box's contents into the pantry storage and walks back.
+    private func advanceBrokerDumpingAtKitchen(
+        _ agent: GnomeAgent,
+        elapsed: TimeInterval,
+        now: TimeInterval,
+        deltaTime: TimeInterval
+    ) {
+        // Stand still at the dump point.
+        if let node = agent.sceneNode, node.isTraversing || node.isWandering {
+            node.gnomeStandAt(kitchenDumpPosition())
+        }
+        guard elapsed >= BrokerEconomyTuning.dumpDuration else { return }
+
+        // Empty the box and route each pantry-eligible ingredient
+        // into the pantry storage container. Anything that's not
+        // pantry-depositable (rocks/gems shouldn't be in the box,
+        // but defense-in-depth) is silently dropped. If the pantry
+        // is full (5 unique slots and the new ingredient is novel),
+        // `store()` returns false — we log it but the broker still
+        // walks back; nothing is consumed if the pantry can't hold it.
+        let dumped = brokerEconomy.boxItems
+        brokerEconomy.boxItems.removeAll()
+        var stored = 0
+        var rejected = 0
+        for ingredient in dumped where ingredient.isPantryDepositable {
+            if StorageRegistry.shared.store(
+                ingredient: ingredient.rawValue,
+                in: "pantry"
+            ) {
+                stored += 1
+            } else {
+                rejected += 1
+            }
+        }
+        Log.info(.npc, "[Broker] Dumped \(stored) items into the pantry (\(rejected) rejected, pantry full)")
+        // TODO(future): chronicle hook — add a `.brokerDumpedBox`
+        // event kind to LedgerEvent + DailyChronicleHeadlines so the
+        // dump shows up in the chronicle.
+
+        agent.carried = nil
+        agent.sceneNode?.refreshVisualBadges()
+
+        // Decide where to go next. If gems are also empty, head to
+        // the treasurer; otherwise return to the desk.
+        if brokerEconomy.isGemsEmpty && !brokerEconomy.treasurerDispatched {
+            agent.task = .brokerWalkingToTreasurer
+            agent.taskStartedAt = now
+            agent.wanderTarget = treasurerDeskPosition()
+            Log.info(.npc, "[Broker] Kitchen done — detouring to treasurer")
+        } else {
+            agent.task = .brokerWalkingToDesk
+            agent.taskStartedAt = now
+            agent.wanderTarget = brokerDeskPosition()
+        }
+    }
+
+    /// Broker walks from desk (or kitchen) to the treasurer's desk to
+    /// request a refill on gems.
+    private func advanceBrokerWalkingToTreasurer(
+        _ agent: GnomeAgent,
+        elapsed: TimeInterval,
+        now: TimeInterval,
+        deltaTime: TimeInterval
+    ) {
+        let target = treasurerDeskPosition()
+        moveHiddenAgent(
+            agent,
+            toward: target,
+            deltaTime: deltaTime,
+            speed: BrokerEconomyTuning.lobbyWalkSpeed
+        )
+        if let node = agent.sceneNode, !node.isFrozen, !node.isTraversing {
+            let from = node.position
+            let dist = hypot(target.x - from.x, target.y - from.y)
+            if dist > 8 {
+                let dur = max(0.4, TimeInterval(dist / BrokerEconomyTuning.lobbyWalkSpeed))
+                node.gnomeTraverse(from: from, to: target, duration: dur)
+            }
+        }
+        let dist = hypot(agent.position.x - target.x, agent.position.y - target.y)
+        if dist <= 6 {
+            agent.task = .brokerCollectingGems
+            agent.taskStartedAt = now
+            agent.position = target
+            agent.wanderTarget = target
+            // Mark the dispatch so we don't re-trigger — the
+            // treasurer's tick will pick it up.
+            brokerEconomy.treasurerDispatched = true
+            Log.debug(.npc, "[Broker] Standing at treasurer's desk waiting for refill")
+        }
+    }
+
+    /// Broker waits at the treasurer's desk. The treasurer's own
+    /// state machine drives the actual hand-off when they return
+    /// from the pile (`finishTreasurerHandoff`).
+    private func advanceBrokerCollectingGems(
+        _ agent: GnomeAgent,
+        elapsed: TimeInterval,
+        now: TimeInterval,
+        deltaTime: TimeInterval
+    ) {
+        // Stand still next to the treasurer's desk.
+        if let node = agent.sceneNode, node.isTraversing || node.isWandering {
+            node.gnomeStandAt(treasurerDeskPosition())
+        }
+        // Safety: if something went wrong and we've been waiting too
+        // long, walk back empty-handed. Better that the broker stops
+        // accepting trades than gets stuck blocking the desk.
+        if elapsed >= BrokerEconomyTuning.waitForTreasurerTimeout {
+            Log.warn(.npc, "[Broker] Timed out waiting for treasurer — returning to desk")
+            brokerEconomy.treasurerDispatched = false
+            agent.task = .brokerWalkingToDesk
+            agent.taskStartedAt = now
+            agent.wanderTarget = brokerDeskPosition()
+        }
+    }
+
+    /// Broker walks back to their own desk with (or without) gems.
+    /// On arrival, clear the away flag and resume idling.
+    private func advanceBrokerWalkingToDesk(
+        _ agent: GnomeAgent,
+        elapsed: TimeInterval,
+        now: TimeInterval,
+        deltaTime: TimeInterval
+    ) {
+        let target = brokerDeskPosition()
+        moveHiddenAgent(
+            agent,
+            toward: target,
+            deltaTime: deltaTime,
+            speed: BrokerEconomyTuning.lobbyWalkSpeed
+        )
+        if let node = agent.sceneNode, !node.isFrozen, !node.isTraversing {
+            let from = node.position
+            let dist = hypot(target.x - from.x, target.y - from.y)
+            if dist > 8 {
+                let dur = max(0.4, TimeInterval(dist / BrokerEconomyTuning.lobbyWalkSpeed))
+                node.gnomeTraverse(from: from, to: target, duration: dur)
+            }
+        }
+        let dist = hypot(agent.position.x - target.x, agent.position.y - target.y)
+        if dist <= 6 {
+            agent.task = .brokerIdleAtDesk
+            agent.taskStartedAt = now
+            agent.position = target
+            agent.wanderTarget = target
+            brokerEconomy.brokerAwayFromDesk = false
+            Log.info(.npc, "[Broker] Back at desk (gems=\(brokerEconomy.gemReserve), box=\(brokerEconomy.boxItems.count))")
+        }
+    }
+
+    /// Treasurer idles at the desk. Watches for `treasurerDispatched`
+    /// to flip true (broker has signaled they need a refill) and
+    /// kicks off the pile-walk errand.
+    private func advanceTreasurerIdleAtDesk(
+        _ agent: GnomeAgent,
+        elapsed: TimeInterval,
+        now: TimeInterval,
+        deltaTime: TimeInterval
+    ) {
+        let desk = treasurerDeskPosition()
+        if !agent.hasRealPosition {
+            agent.position = desk
+            agent.hasRealPosition = true
+            agent.wanderTarget = desk
+        }
+        if now >= agent.nextWanderAt {
+            agent.nextWanderAt = now + 5.0 + Double.random(in: 0...3.0)
+            let jitter = CGPoint(
+                x: desk.x + CGFloat.random(in: -16...16),
+                y: desk.y + CGFloat.random(in: -8...8)
+            )
+            agent.wanderTarget = jitter
+            if let node = agent.sceneNode, !node.isFrozen {
+                node.gnomeWanderTo(jitter)
+            }
+        }
+        moveHiddenAgent(
+            agent,
+            toward: agent.wanderTarget ?? desk,
+            deltaTime: deltaTime,
+            speed: GnomeTiming.idleWalkSpeed
+        )
+
+        // Trigger: broker is mid-`brokerCollectingGems` or has flagged
+        // dispatch. We start walking once the broker has actually
+        // arrived at our desk so the visual reads correctly.
+        guard brokerEconomy.treasurerDispatched else { return }
+        guard let broker = agents.first(where: { $0.identity.role == .npcBroker }) else { return }
+        guard broker.task == .brokerCollectingGems else { return }
+
+        agent.task = .treasurerWalkingToPile
+        agent.taskStartedAt = now
+        agent.location = .oakRoom(5) // treasury room
+        agent.wanderTarget = treasuryPilePosition()
+        // Despawn from the lobby so we re-render in the treasury room
+        // when the player walks there.
+        agent.sceneNode?.removeFromParent()
+        agent.sceneNode = nil
+        respawnVisualIfRoomVisible(agent: agent)
+        Log.info(.npc, "[Treasurer] Dispatched to treasury pile")
+    }
+
+    /// Treasurer walks (in the treasury room) to the pile.
+    private func advanceTreasurerWalkingToPile(
+        _ agent: GnomeAgent,
+        elapsed: TimeInterval,
+        now: TimeInterval,
+        deltaTime: TimeInterval
+    ) {
+        let target = treasuryPilePosition()
+        moveHiddenAgent(
+            agent,
+            toward: target,
+            deltaTime: deltaTime,
+            speed: BrokerEconomyTuning.lobbyWalkSpeed
+        )
+        if let node = agent.sceneNode, !node.isFrozen, !node.isTraversing {
+            let from = node.position
+            let dist = hypot(target.x - from.x, target.y - from.y)
+            if dist > 8 {
+                let dur = max(0.4, TimeInterval(dist / BrokerEconomyTuning.lobbyWalkSpeed))
+                node.gnomeTraverse(from: from, to: target, duration: dur)
+            }
+        }
+        let dist = hypot(agent.position.x - target.x, agent.position.y - target.y)
+        if dist <= 8 {
+            agent.task = .treasurerCollectingFromPile
+            agent.taskStartedAt = now
+            agent.position = target
+            agent.wanderTarget = target
+        }
+    }
+
+    /// Treasurer stands at the pile pulling gems. Drains the pile by
+    /// the requested refill amount (or whatever's left). Empty pile =
+    /// returns with 0 gems = broker can't trade until next mining
+    /// cycle. That's the design's scarcity loop.
+    private func advanceTreasurerCollectingFromPile(
+        _ agent: GnomeAgent,
+        elapsed: TimeInterval,
+        now: TimeInterval,
+        deltaTime: TimeInterval
+    ) {
+        if let node = agent.sceneNode, node.isTraversing || node.isWandering {
+            node.gnomeStandAt(treasuryPilePosition())
+        }
+        guard elapsed >= BrokerEconomyTuning.pileCollectDuration else { return }
+
+        // Pull from the treasury pile.
+        let want = BrokerEconomyTuning.gemRefillSize
+        let take = min(want, treasuryGemCount)
+        if take > 0 {
+            treasuryGemCount -= take
+            oakScene?.updateTreasuryPileIfPresent(count: treasuryGemCount, didReset: false)
+            broadcastTreasuryUpdate(didReset: false)
+        }
+        brokerEconomy.treasurerCarriedGems = take
+        agent.carried = take > 0 ? .gemHandful : nil
+        agent.sceneNode?.refreshVisualBadges()
+        agent.task = .treasurerWalkingToBroker
+        agent.taskStartedAt = now
+        agent.location = .oakRoom(1) // back to lobby
+        agent.wanderTarget = brokerDeskPosition()
+        agent.sceneNode?.removeFromParent()
+        agent.sceneNode = nil
+        respawnVisualIfRoomVisible(agent: agent)
+        Log.info(.npc, "[Treasurer] Collected \(take) gems from pile (pile now \(treasuryGemCount))")
+    }
+
+    /// Treasurer walks back to the broker's desk with the gems.
+    private func advanceTreasurerWalkingToBroker(
+        _ agent: GnomeAgent,
+        elapsed: TimeInterval,
+        now: TimeInterval,
+        deltaTime: TimeInterval
+    ) {
+        let target = brokerDeskPosition()
+        moveHiddenAgent(
+            agent,
+            toward: target,
+            deltaTime: deltaTime,
+            speed: BrokerEconomyTuning.lobbyWalkSpeed
+        )
+        if let node = agent.sceneNode, !node.isFrozen, !node.isTraversing {
+            let from = node.position
+            let dist = hypot(target.x - from.x, target.y - from.y)
+            if dist > 8 {
+                let dur = max(0.4, TimeInterval(dist / BrokerEconomyTuning.lobbyWalkSpeed))
+                node.gnomeTraverse(from: from, to: target, duration: dur)
+            }
+        }
+        let dist = hypot(agent.position.x - target.x, agent.position.y - target.y)
+        if dist <= 6 {
+            agent.task = .treasurerHandingGems
+            agent.taskStartedAt = now
+            agent.position = target
+            agent.wanderTarget = target
+        }
+    }
+
+    /// Treasurer is at the broker's desk handing over gems. After
+    /// `handoffDuration`, the gems transfer to the broker's reserve
+    /// and the treasurer turns around and walks home.
+    private func advanceTreasurerHandingGems(
+        _ agent: GnomeAgent,
+        elapsed: TimeInterval,
+        now: TimeInterval,
+        deltaTime: TimeInterval
+    ) {
+        if let node = agent.sceneNode, node.isTraversing || node.isWandering {
+            node.gnomeStandAt(brokerDeskPosition())
+        }
+        guard elapsed >= BrokerEconomyTuning.handoffDuration else { return }
+
+        // Transfer gems.
+        let transferred = brokerEconomy.treasurerCarriedGems
+        brokerEconomy.gemReserve += transferred
+        brokerEconomy.treasurerCarriedGems = 0
+        brokerEconomy.treasurerDispatched = false
+        agent.carried = nil
+        agent.sceneNode?.refreshVisualBadges()
+
+        // Cue the broker to head home now that the refill is done.
+        if let broker = agents.first(where: { $0.identity.role == .npcBroker }),
+           broker.task == .brokerCollectingGems {
+            broker.task = .brokerWalkingToDesk
+            broker.taskStartedAt = now
+            broker.wanderTarget = brokerDeskPosition()
+        }
+
+        agent.task = .treasurerWalkingToDesk
+        agent.taskStartedAt = now
+        agent.wanderTarget = treasurerDeskPosition()
+        Log.info(.npc, "[Treasurer] Handed off \(transferred) gems to broker (broker now has \(brokerEconomy.gemReserve))")
+    }
+
+    /// Treasurer walks back to their own desk and resumes idling.
+    private func advanceTreasurerWalkingToDesk(
+        _ agent: GnomeAgent,
+        elapsed: TimeInterval,
+        now: TimeInterval,
+        deltaTime: TimeInterval
+    ) {
+        let target = treasurerDeskPosition()
+        moveHiddenAgent(
+            agent,
+            toward: target,
+            deltaTime: deltaTime,
+            speed: BrokerEconomyTuning.lobbyWalkSpeed
+        )
+        if let node = agent.sceneNode, !node.isFrozen, !node.isTraversing {
+            let from = node.position
+            let dist = hypot(target.x - from.x, target.y - from.y)
+            if dist > 8 {
+                let dur = max(0.4, TimeInterval(dist / BrokerEconomyTuning.lobbyWalkSpeed))
+                node.gnomeTraverse(from: from, to: target, duration: dur)
+            }
+        }
+        let dist = hypot(agent.position.x - target.x, agent.position.y - target.y)
+        if dist <= 6 {
+            agent.task = .treasurerIdleAtDesk
+            agent.taskStartedAt = now
+            agent.position = target
+            agent.wanderTarget = target
+        }
     }
 
     // MARK: - Public Cart Visual API (called by scenes)
@@ -2832,7 +3604,11 @@ final class GnomeManager {
              .celebrating, .depositingGemAtCart,
              .cookServingFromStation,
              .cookDeliveringToTable, .cookCheckingOnTable,
-             .tidyingTables:
+             .tidyingTables,
+             .brokerIdleAtDesk, .brokerDumpingAtKitchen,
+             .brokerCollectingGems,
+             .treasurerIdleAtDesk, .treasurerCollectingFromPile,
+             .treasurerHandingGems:
             // Leave any active wander alone — let the SKAction finish.
             // Once it finishes, kick a new gentle wander toward
             // authoritative position so the gnome doesn't sit still.
@@ -2893,6 +3669,24 @@ final class GnomeManager {
             }
             if !node.isTraversing && hypot(node.position.x - target.x, node.position.y - target.y) > 6 {
                 walkAgentToBin(agent)
+            }
+
+        case .brokerWalkingToKitchen, .brokerWalkingToTreasurer,
+             .brokerWalkingToDesk,
+             .treasurerWalkingToPile, .treasurerWalkingToBroker,
+             .treasurerWalkingToDesk:
+            // Lobby errands. Use authoritative position as a slow
+            // pull on guest — the host's tick will keep moving them
+            // and we just track it.
+            if drift > 60 {
+                node.gnomeStandAt(agent.position)
+            } else if !node.isTraversing {
+                let from = node.position
+                let dist = hypot(agent.position.x - from.x, agent.position.y - from.y)
+                if dist > 12 {
+                    let dur = max(0.3, TimeInterval(dist / BrokerEconomyTuning.lobbyWalkSpeed))
+                    node.gnomeTraverse(from: from, to: agent.position, duration: dur)
+                }
             }
         }
     }

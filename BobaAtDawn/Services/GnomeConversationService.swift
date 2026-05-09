@@ -25,11 +25,11 @@
 //  the machine, or dumping is excluded so the simulation visibly
 //  keeps moving when the player is watching.
 //
-//  LLM fallback: every LLM call falls back to a hardcoded pool in
-//  `GnomePoolLines` whenever the model is unavailable, errors mid-
-//  stream, or returns an empty line. The pools are deliberately
-//  specific to mining/rocks/oak so the fallback voice still sounds
-//  right.
+//  LLM fallback: every LLM call falls back to a JSON-backed pool in
+//  `GnomeDataLoader.shared.poolLines` whenever the model is unavailable,
+//  errors mid-stream, or returns an empty line. The pools are
+//  deliberately specific to mining/rocks/oak so the fallback voice
+//  still sounds right.
 //
 
 import SpriteKit
@@ -164,10 +164,21 @@ final class GnomeConversationService {
         }
 
         // Try the LLM. If unavailable on this device, render a pool
-        // line synchronously and we're done.
-        guard let stream = LLMGnomeDialogueService.shared.streamSinglePlayerLine(
-            for: agent, timeContext: timeContext
-        ) else {
+        // line synchronously and we're done. Prefer prewarmed entry
+        // when available — that's an instant typewriter replay rather
+        // than a fresh model call.
+        let stream: AsyncThrowingStream<GnomeDialogueStreamUpdate, Error>?
+        if let cached = LLMGnomeDialogueService.shared.consumePrewarmed(
+            forGnomeID: agent.identity.id, isNight: timeContext.isNight
+        ) {
+            Log.debug(.dialogue, "[Gnome prewarm hit] \(agent.identity.displayName)")
+            stream = cached
+        } else {
+            stream = LLMGnomeDialogueService.shared.streamSinglePlayerLine(
+                for: agent, timeContext: timeContext
+            )
+        }
+        guard let stream = stream else {
             let line = fallbackLine(for: agent, timeContext: timeContext)
             renderPlayerDialogue(for: agent, text: line, mood: "neutral", in: scene)
             return
@@ -262,15 +273,20 @@ final class GnomeConversationService {
             case .sleeping, .idle, .supervising,
                  .haulingCart, .celebrating,
                  .dining, .tidyingTables,
-                 .cookServingFromStation, .cookDeliveringToTable, .cookCheckingOnTable:
+                 .cookServingFromStation, .cookDeliveringToTable, .cookCheckingOnTable,
+                 .brokerIdleAtDesk, .brokerDumpingAtKitchen, .brokerCollectingGems,
+                 .treasurerIdleAtDesk, .treasurerCollectingFromPile, .treasurerHandingGems:
                 // Resting, parading, celebrating, dining, or actively
-                // doing meal-time housekeeping — all chat-friendly.
+                // doing meal-time housekeeping / lobby desk work — all
+                // chat-friendly.
                 return true
             case .commutingToMine, .commutingHome,
                  .lookingForRock,
                  .carryingRockToMachine, .carryingGemToTreasury,
                  .depositingGemAtCart, .dumpingRockInWasteBin,
-                 .gatheringForCartTrip, .usingMachine:
+                 .gatheringForCartTrip, .usingMachine,
+                 .brokerWalkingToKitchen, .brokerWalkingToTreasurer, .brokerWalkingToDesk,
+                 .treasurerWalkingToPile, .treasurerWalkingToBroker, .treasurerWalkingToDesk:
                 return false
             }
         }
@@ -535,211 +551,75 @@ final class GnomeConversationService {
         listener: GnomeAgent,
         timeContext: TimeContext
     ) -> String {
+        let pools = GnomeDataLoader.shared.poolLines
+
         // Boss-flavored lines win when the boss is the speaker.
         if speaker.identity.role == .boss {
-            return GnomePoolLines.bossLines.randomElement() ?? "Pick up the pace."
+            return pools.boss.randomElement() ?? "Pick up the pace."
         }
 
         // Broker — works the lobby trading desk.
         if speaker.identity.role == .npcBroker {
             let pool = (timeContext == .night)
-                ? GnomePoolLines.brokerNight
-                : GnomePoolLines.brokerDay
+                ? pools.brokerNight
+                : pools.brokerDay
             return pool.randomElement() ?? "Fair trade. Fair trade."
         }
 
         // Treasurer — keeps the till.
         if speaker.identity.role == .treasurer {
             let pool = (timeContext == .night)
-                ? GnomePoolLines.treasurerNight
-                : GnomePoolLines.treasurerDay
+                ? pools.treasurerNight
+                : pools.treasurerDay
             return pool.randomElement() ?? "Counted twice already."
         }
 
         // Housekeeper-flavored lines — they don't see rocks all day.
         if speaker.identity.role == .housekeeper {
             let pool = (timeContext == .night)
-                ? GnomePoolLines.housekeeperNight
-                : GnomePoolLines.housekeeperDay
+                ? pools.housekeeperNight
+                : pools.housekeeperDay
             return pool.randomElement() ?? "Mm."
         }
 
         // Miner pool — switches by location: oak (resting), cave (working), forest (transit).
         switch speaker.location {
         case .caveRoom:
-            return GnomePoolLines.minerInCave.randomElement() ?? "This rock has a face."
+            return pools.minerCave.randomElement() ?? "This rock has a face."
         case .oakRoom:
-            return GnomePoolLines.minerAtHome.randomElement() ?? "Long shift today."
+            return pools.minerAtHome.randomElement() ?? "Long shift today."
         case .forestRoom:
-            return GnomePoolLines.minerInTransit.randomElement() ?? "Almost there."
+            return pools.minerInTransit.randomElement() ?? "Almost there."
         }
     }
 
     private func fallbackLine(for agent: GnomeAgent, timeContext: TimeContext) -> String {
+        let pools = GnomeDataLoader.shared.poolLines
         switch agent.identity.role {
         case .boss:
-            return GnomePoolLines.bossLines.randomElement() ?? "Stay sharp."
+            return pools.boss.randomElement() ?? "Stay sharp."
         case .miner:
             return (timeContext == .night
-                    ? GnomePoolLines.minerAtHome.randomElement()
-                    : GnomePoolLines.minerInCave.randomElement())
+                    ? pools.minerAtHome.randomElement()
+                    : pools.minerCave.randomElement())
                 ?? "Rocks today, rocks tomorrow."
         case .housekeeper:
             return (timeContext == .night
-                    ? GnomePoolLines.housekeeperNight.randomElement()
-                    : GnomePoolLines.housekeeperDay.randomElement())
+                    ? pools.housekeeperNight.randomElement()
+                    : pools.housekeeperDay.randomElement())
                 ?? "Mind the floor — fresh polished."
         case .npcBroker:
             return (timeContext == .night
-                    ? GnomePoolLines.brokerNight.randomElement()
-                    : GnomePoolLines.brokerDay.randomElement())
+                    ? pools.brokerNight.randomElement()
+                    : pools.brokerDay.randomElement())
                 ?? "Fair trade. Fair trade."
         case .treasurer:
             return (timeContext == .night
-                    ? GnomePoolLines.treasurerNight.randomElement()
-                    : GnomePoolLines.treasurerDay.randomElement())
+                    ? pools.treasurerNight.randomElement()
+                    : pools.treasurerDay.randomElement())
                 ?? "Counted twice already."
         }
     }
-}
-
-// MARK: - Hardcoded Line Pools
-
-private enum GnomePoolLines {
-
-    // Boss — gruff, fair, occasionally fond
-    static let bossLines: [String] = [
-        "Pick up the pace, you lot.",
-        "Good rock today. Real good rock.",
-        "Don't drop it. Don't you DARE drop it.",
-        "Machine's in a mood. Be patient.",
-        "I want fifty by sundown. Or close.",
-        "Whoever found that one — solid work.",
-        "Easy on the new ones. Show 'em the technique.",
-        "Reds happen. Don't take it personal.",
-        "You earn your gem, the gem earns you.",
-        "Keep your head down and your hands moving."
-    ]
-
-    // Miner lines while in cave (working)
-    static let minerInCave: [String] = [
-        "This one's heavy. Heavy means good, sometimes.",
-        "Smell that? That's wet stone. Best smell.",
-        "I named this one. Don't tell Thork.",
-        "Three reds in a row. THREE.",
-        "I love a rock with character.",
-        "The deeper floors hum, you ever notice?",
-        "Pip dropped one again. Bless him.",
-        "Foreman watched me on that last green. Saw me.",
-        "Going up. My back's going up too.",
-        "Quiet down there today. Almost peaceful.",
-        "Fenn keeps counting them. He counts EVERYTHING.",
-        "Nice and round, this one. Round ones go green more, you'll see.",
-        "Gritty floor today. Mind your boots.",
-        "I've got a feeling about the next rock.",
-        "Hold this for a sec — I dropped my pick.",
-        "There's a vein on the third floor. Real proper vein."
-    ]
-
-    // Miner lines at home (oak — resting / sleeping)
-    static let minerAtHome: [String] = [
-        "Bones are tired. Bones are happy.",
-        "That stew tonight was something else.",
-        "Long shift. Worth it. I think.",
-        "I keep gem dust in my beard. On purpose.",
-        "Tomorrow I'm aiming for ten greens.",
-        "Couch is good. Couch is real good.",
-        "Boss looked at me twice today. Means something.",
-        "I dreamed of a giant rock last night.",
-        "Hearth's warm. Anyone got a blanket?",
-        "Pip's already asleep, snoring like a saw.",
-        "Cook saved me a heel of bread. Don't tell.",
-        "Rest day tomorrow? I forget."
-    ]
-
-    // Miner lines in transit (forest rooms)
-    static let minerInTransit: [String] = [
-        "Almost to the oak. Smell the smoke?",
-        "This path's longer when you're carrying.",
-        "Watch the roots. Watch the roots.",
-        "Every day, this same walk. Every day.",
-        "I like this stretch. Birds.",
-        "Rain coming. I can feel it.",
-        "One foot. Other foot. Repeat.",
-        "Boss said don't dawdle. So I'm not.",
-        "Treasury, here we come.",
-        "Hand cramping. Worth it though."
-    ]
-
-    // Housekeeper day
-    static let housekeeperDay: [String] = [
-        "Fresh polish on the lobby floor — mind your boots.",
-        "Bread's rising. Don't slam the door.",
-        "I swept this morning. Twice.",
-        "Greeter's at the door again. Always at the door.",
-        "Stew's on for whoever's home tonight.",
-        "Treasury's looking healthy this week.",
-        "Whose mug is this? Always whose mug.",
-        "I patched the curtain in the middle bedroom.",
-        "Hearth needs another log. Always another log.",
-        "Quiet morning. Suspicious."
-    ]
-
-    // Housekeeper night
-    static let housekeeperNight: [String] = [
-        "Miners back. Stew warm. Good night.",
-        "I'll bank the fire low.",
-        "Lock the door. Yes, properly. Yes, both bolts.",
-        "Pip's already snoring. Bless him.",
-        "Gems up there glow funny in the dark.",
-        "Heard something outside. Probably the wind.",
-        "Rest is rest. Don't waste it talking.",
-        "Boss is up late again. Counting things."
-    ]
-
-    // Broker day — lobby trading desk
-    static let brokerDay: [String] = [
-        "Fair trade. Fair trade for all.",
-        "What've they brought me today, I wonder.",
-        "Box is filling up. Cook'll be pleased.",
-        "Forest folk come and go. Quiet ones today.",
-        "A gem for a leaf, a gem for a stem.",
-        "Mushrooms again. Cook'll grumble.",
-        "That one had sad eyes. They mostly do.",
-        "Treasurer owes me a refill.",
-        "Slow morning. The forest must be busy.",
-        "They never haggle. Never. Strange folk."
-    ]
-
-    // Broker night — desk's closed, broker's puttering
-    static let brokerNight: [String] = [
-        "Desk's closed. Box is stocked. Day's done.",
-        "They wander past at night. Don't trade. Just wander.",
-        "Tally was even. Even is good.",
-        "Some nights they look right through me.",
-        "Counted the gems out. All accounted."
-    ]
-
-    // Treasurer day — minds the till
-    static let treasurerDay: [String] = [
-        "Counted twice already. Once more, just to be sure.",
-        "Pile's smaller than yesterday. Mining's slow.",
-        "Broker'll be back any minute now.",
-        "Ten gems out, ten gems out, that's the rule.",
-        "I do not LOSE gems. I will not LOSE gems.",
-        "Fenn writes them down. I just feel them.",
-        "A good day shows in the pile. Today's middling.",
-        "If the cart comes empty, the broker waits. Simple."
-    ]
-
-    // Treasurer night
-    static let treasurerNight: [String] = [
-        "All accounted. All accounted.",
-        "Pile's quiet at night. Easier to count.",
-        "Broker turned in clean. Good day, that.",
-        "I trust the pile. I trust the pile.",
-        "Tomorrow I'll start fresh. New day, new tally."
-    ]
 }
 
 // MARK: - DialogueService Static-Bubble Convenience

@@ -179,6 +179,49 @@ enum GnomeTask: String, Codable {
     /// breakfast has wound down. Tables fade out partway through
     /// the beat to imply they're being put away.
     case tidyingTables
+
+    // MARK: - Broker / Treasurer tasks (lobby economy loop)
+
+    /// Broker stands at the lobby desk, ready to receive items from
+    /// forest NPCs and pay them gems. Default daytime state.
+    case brokerIdleAtDesk
+
+    /// Broker is carrying a full box of wares to the kitchen.
+    case brokerWalkingToKitchen
+
+    /// Broker is at the pantry/fridge dumping the box's contents.
+    case brokerDumpingAtKitchen
+
+    /// Broker is walking from the desk to the treasurer's desk to
+    /// request a refill on gems.
+    case brokerWalkingToTreasurer
+
+    /// Broker is standing at the treasurer's desk waiting for the
+    /// gem hand-off.
+    case brokerCollectingGems
+
+    /// Broker is walking back to their own desk to resume trading.
+    case brokerWalkingToDesk
+
+    /// Treasurer stands at the lobby desk, idle.
+    case treasurerIdleAtDesk
+
+    /// Treasurer is walking from their desk to the treasury pile in
+    /// the back room to grab a handful of gems.
+    case treasurerWalkingToPile
+
+    /// Treasurer is at the treasury pile picking up gems.
+    case treasurerCollectingFromPile
+
+    /// Treasurer is carrying gems from the pile back to the broker's
+    /// desk.
+    case treasurerWalkingToBroker
+
+    /// Treasurer is at the broker's desk handing over gems.
+    case treasurerHandingGems
+
+    /// Treasurer is walking back to their own desk to resume idling.
+    case treasurerWalkingToDesk
 }
 
 // MARK: - Gnome Carried
@@ -186,6 +229,12 @@ enum GnomeTask: String, Codable {
 enum GnomeCarried: String, Codable {
     case rock
     case gem
+    /// Broker carrying a full box of wares to the kitchen. Visual is
+    /// a box emoji over the broker's head.
+    case brokerBox
+    /// Treasurer carrying a handful of gems from the treasury pile to
+    /// the broker's desk. Visual is a small pile-of-gems emoji.
+    case gemHandful
 }
 
 // MARK: - Gnome Arrival Intent

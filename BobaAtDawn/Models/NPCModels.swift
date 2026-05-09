@@ -35,6 +35,12 @@ struct NPCData: Codable {
     let explicitRelationships: [ExplicitRelationship]
     let pastLifeEchoes: [PastLifeEcho]
 
+    // Schema v2.1 additions (optional — powers JSON-only fallback paths
+    // when LLM dialogue is unavailable). Both decode-if-present so older
+    // saves and partial JSONs still load cleanly.
+    let tapFollowups: NPCTapFollowups?
+    let chatter: NPCChatter?
+
     enum CodingKeys: String, CodingKey {
         case id, name, animal, dialogue
         case causeOfDeath = "cause_of_death"
@@ -44,6 +50,8 @@ struct NPCData: Codable {
         case opinionStances = "opinion_stances"
         case explicitRelationships = "explicit_relationships"
         case pastLifeEchoes = "past_life_echoes"
+        case tapFollowups = "tap_followups"
+        case chatter
     }
 
     init(from decoder: Decoder) throws {
@@ -60,6 +68,9 @@ struct NPCData: Codable {
         opinionStances         = try c.decodeIfPresent([String: OpinionStance].self, forKey: .opinionStances) ?? [:]
         explicitRelationships  = try c.decodeIfPresent([ExplicitRelationship].self, forKey: .explicitRelationships) ?? []
         pastLifeEchoes         = try c.decodeIfPresent([PastLifeEcho].self, forKey: .pastLifeEchoes) ?? []
+
+        tapFollowups           = try c.decodeIfPresent(NPCTapFollowups.self, forKey: .tapFollowups)
+        chatter                = try c.decodeIfPresent(NPCChatter.self, forKey: .chatter)
     }
 
     /// Convenience initializer used by tests + fallback paths in BaseNPC.
@@ -70,7 +81,9 @@ struct NPCData: Codable {
         personality: NPCPersonality? = nil,
         opinionStances: [String: OpinionStance] = [:],
         explicitRelationships: [ExplicitRelationship] = [],
-        pastLifeEchoes: [PastLifeEcho] = []
+        pastLifeEchoes: [PastLifeEcho] = [],
+        tapFollowups: NPCTapFollowups? = nil,
+        chatter: NPCChatter? = nil
     ) {
         self.id = id
         self.name = name
@@ -83,10 +96,36 @@ struct NPCData: Codable {
         self.opinionStances = opinionStances
         self.explicitRelationships = explicitRelationships
         self.pastLifeEchoes = pastLifeEchoes
+        self.tapFollowups = tapFollowups
+        self.chatter = chatter
     }
 }
 
 struct NPCDialogue: Codable {
+    let day: [String]
+    let night: [String]
+}
+
+// MARK: - Player Tap Followups
+
+/// Per-NPC "player response" pools used when the LLM is unavailable
+/// (iPad without Apple Intelligence, cold-start, error fallback). Each
+/// pool is voice-matched to the NPC archetype so the satisfaction loop
+/// still feels personal in JSON-only mode. Mirrors the kind/blunt pill
+/// pair the LLM path generates.
+struct NPCTapFollowups: Codable {
+    let kind: [String]
+    let blunt: [String]
+}
+
+// MARK: - NPC Ambient Chatter
+
+/// Per-NPC ambient conversation pool used for NPC↔NPC chatter when the
+/// LLM is unavailable. Keeps the same day/night split as `dialogue` so
+/// the existential-tone shift still lands. Lines are written as full
+/// conversation moves (questions, observations, redirects) so a 3–line
+/// fallback conversation reads naturally without LLM stitching.
+struct NPCChatter: Codable {
     let day: [String]
     let night: [String]
 }
@@ -144,6 +183,43 @@ extension NPCData {
     func getRandomDialogue(isNight: Bool) -> String {
         let lines = isNight ? dialogue.night : dialogue.day
         return lines.randomElement() ?? "..."
+    }
+
+    // MARK: - JSON Fallback Helpers
+
+    /// Get a random kind player-response line. Used by the player-tap
+    /// fallback when LLM dialogue is unavailable (iPad without Apple
+    /// Intelligence, cold-start, error). Returns a generic warm reply
+    /// when the JSON pool is missing or empty so the satisfaction loop
+    /// still works on data older than schema v2.1.
+    func getRandomKindFollowup() -> String {
+        if let pool = tapFollowups?.kind, let line = pool.randomElement() {
+            return line
+        }
+        return "That's nice to hear."
+    }
+
+    /// Get a random blunt player-response line. Mirrors `getRandomKindFollowup`
+    /// but for the dismissive register — still safe to call on partial JSON.
+    func getRandomBluntFollowup() -> String {
+        if let pool = tapFollowups?.blunt, let line = pool.randomElement() {
+            return line
+        }
+        return "Mm. Sure."
+    }
+
+    /// Get a random chatter line for the given time context. Used by the
+    /// NPC↔NPC ambient conversation fallback when the LLM stream is nil.
+    /// Falls back to the regular `dialogue` pool when chatter is missing,
+    /// so behaviour degrades gracefully rather than silently going empty.
+    func getRandomChatter(isNight: Bool) -> String {
+        if let chatter = chatter {
+            let pool = isNight ? chatter.night : chatter.day
+            if let line = pool.randomElement() {
+                return line
+            }
+        }
+        return getRandomDialogue(isNight: isNight)
     }
     
     /// Resolve the AnimalType enum for this NPC data

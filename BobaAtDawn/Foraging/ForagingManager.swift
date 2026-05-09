@@ -22,6 +22,7 @@
 
 import CoreGraphics
 import Foundation
+import QuartzCore
 
 // MARK: - Spawn Record
 
@@ -33,6 +34,24 @@ struct ForageSpawn {
     let location: SpawnLocation
     let position: CGPoint
     var isCollected: Bool
+}
+
+// MARK: - Pending Spawn
+
+/// A spawn the manager has reserved but not yet released into the
+/// world. Used by `.scatteredPerLocationOverDay` to stagger spawning
+/// throughout the day. Each pending entry has a target time — once
+/// `now >= scheduledTime` AND the location has room (under its
+/// concurrent cap), it gets promoted into a real `ForageSpawn`.
+struct PendingSpawn {
+    let spawnID: String
+    let ingredient: ForageableIngredient
+    let location: SpawnLocation
+    let position: CGPoint
+    /// Absolute CACurrentMediaTime at which this should attempt to spawn.
+    var scheduledTime: TimeInterval
+    /// Per-room concurrent cap to respect when promoting.
+    let maxConcurrent: Int
 }
 
 // MARK: - Manager
@@ -59,18 +78,32 @@ final class ForagingManager {
 
     static var defaultProfiles: [SpawnProfile] {
         [
-            // Matcha — 5 leaves scattered across the 5 forest rooms each day.
+            // Matcha — staggered throughout the day, 3-7 per forest room,
+            // capped at 8 concurrent uncollected per room. Per design,
+            // the forest economy gates how many items NPCs can find
+            // and trade with the broker.
             SpawnProfile(
                 ingredient: .matchaLeaf,
                 locations: SpawnLocation.allForestRooms,
-                rule: .scatteredTotal(count: 5)
+                rule: .scatteredPerLocationOverDay(
+                    minPerDay: 3,
+                    maxPerDay: 7,
+                    maxConcurrent: 8
+                )
             ),
 
-            // Strawberries — one in 3 of the 5 forest rooms each day.
+            // Strawberries — same staggered behavior as matcha. The
+            // 8-concurrent cap is shared per ingredient, not across
+            // ingredients, so a room can hold up to 8 matcha AND 8
+            // strawberries simultaneously — plenty of supply.
             SpawnProfile(
                 ingredient: .strawberry,
                 locations: SpawnLocation.allForestRooms,
-                rule: .oneInRandomSubset(count: 3)
+                rule: .scatteredPerLocationOverDay(
+                    minPerDay: 3,
+                    maxPerDay: 7,
+                    maxConcurrent: 8
+                )
             ),
 
             // Mushrooms — one in every cave room every day.
@@ -101,9 +134,20 @@ final class ForagingManager {
     /// and lookup-by-id are trivial.
     private(set) var spawns: [ForageSpawn] = []
 
+    /// Spawns scheduled to appear later in the day. Drained by `tick`.
+    /// Each entry has an absolute target time and a per-room concurrent
+    /// cap. When promoted, the entry is removed and a corresponding
+    /// `ForageSpawn` is appended to `spawns`.
+    private(set) var pendingSpawns: [PendingSpawn] = []
+
     /// Fired after a regeneration. Lets subscribers (GnomeManager) react
     /// to a new day's rock layout.
     var onRegenerated: ((Int) -> Void)?
+
+    /// Fired when a pending spawn is promoted mid-day. Lets the active
+    /// scene render the new ForageNode without waiting for a room
+    /// re-entry. Argument is the freshly-promoted spawn.
+    var onSpawnPromoted: ((ForageSpawn) -> Void)?
 
     private init() {}
 
@@ -111,7 +155,21 @@ final class ForagingManager {
 
     /// Call when entering the forest or cave. If the day has advanced,
     /// wipe all spawns and regenerate from profiles.
+    ///
+    /// Host-authoritative: on the guest, this is a no-op. The guest's
+    /// spawn state is delivered via `applySnapshot` from the host's
+    /// `worldSync` exchange, and stays in sync with the host as long
+    /// as that exchange happens at least once per day. (Mid-day day
+    /// rollovers without a fresh worldSync will leave the guest on
+    /// the previous day's spawns until reconnect — documented gap,
+    /// see WorldSyncMessage.forageSpawnsJSON.)
     func refreshIfNeeded(dayCount: Int) {
+        guard !MultiplayerService.shared.isGuest else {
+            if dayCount != spawnDay {
+                Log.debug(.forest, "Guest skipping foraging refresh for day \(dayCount) (waiting for host sync)")
+            }
+            return
+        }
         guard dayCount != spawnDay else { return }
         spawnDay = dayCount
         regenerate()
@@ -127,6 +185,7 @@ final class ForagingManager {
 
     private func regenerate() {
         spawns.removeAll()
+        pendingSpawns.removeAll()
         for (profileIndex, profile) in profiles.enumerated() {
             generate(profile: profile, profileIndex: profileIndex)
         }
@@ -194,6 +253,53 @@ final class ForagingManager {
                     location: location
                 )
                 spawns.append(spawn)
+            }
+
+        case let .scatteredPerLocationOverDay(minPerDay, maxPerDay, maxConcurrent):
+            // Staggered spawning. For each location, roll a per-day
+            // count and queue that many pending spawns at random times
+            // throughout the day. The first ~25% of the day's worth of
+            // spawns lands at dawn so the world doesn't feel barren
+            // when the player wakes up; the rest stagger through.
+            let now = CACurrentMediaTime()
+            let dayDuration = TimeInterval(GameConfig.Time.dayDuration)
+            // Front-load ¼ of the count so dawn isn't empty. The other
+            // ¾ space out evenly across the rest of the day.
+            for (locIndex, location) in profile.locations.enumerated() {
+                let perDay = Int.random(in: max(0, minPerDay)...max(minPerDay, maxPerDay))
+                guard perDay > 0 else { continue }
+                let frontLoaded = max(1, perDay / 4)
+                for i in 0..<perDay {
+                    let id = "\(profile.ingredient.rawValue)_d\(spawnDay)_p\(profileIndex)_\(locIndex)_\(i)"
+                    let position = randomPosition(
+                        in: location,
+                        ingredient: profile.ingredient,
+                        index: i
+                    )
+                    let scheduledTime: TimeInterval
+                    if i < frontLoaded {
+                        // Spawn within the first ~5 seconds of the
+                        // day, with a small random jitter so multiple
+                        // items don't pop simultaneously.
+                        scheduledTime = now + TimeInterval.random(in: 0...5)
+                    } else {
+                        // Distribute the rest across the day. Add a
+                        // small gap from "now" so the front-loaded
+                        // batch finishes first, plus jitter.
+                        let lateBudget = dayDuration * 0.85
+                        let slot = Double(i - frontLoaded) / Double(max(1, perDay - frontLoaded))
+                        let jitter = TimeInterval.random(in: -lateBudget * 0.05...lateBudget * 0.05)
+                        scheduledTime = now + 6.0 + (slot * lateBudget) + jitter
+                    }
+                    pendingSpawns.append(PendingSpawn(
+                        spawnID: id,
+                        ingredient: profile.ingredient,
+                        location: location,
+                        position: position,
+                        scheduledTime: scheduledTime,
+                        maxConcurrent: maxConcurrent
+                    ))
+                }
             }
         }
     }
@@ -293,6 +399,69 @@ final class ForagingManager {
         return true
     }
 
+    // MARK: - Tick (Pending → Live)
+
+    /// Promote any pending spawns whose time has come, respecting the
+    /// per-room concurrent caps. Call from the active scene's update
+    /// loop. Cheap when there's nothing to do (early return on empty).
+    ///
+    /// Host-authoritative: only the host (or solo) drives the schedule.
+    /// On the guest side, pending spawns sit dormant and the host's
+    /// world sync delivers the realized spawn list directly. This
+    /// avoids both clients independently rolling and broadcasting
+    /// near-simultaneous duplicates.
+    func tick() {
+        guard !MultiplayerService.shared.isGuest else { return }
+        guard !pendingSpawns.isEmpty else { return }
+
+        let now = CACurrentMediaTime()
+        var promotedAny = false
+        var index = 0
+
+        while index < pendingSpawns.count {
+            let pending = pendingSpawns[index]
+            if now < pending.scheduledTime {
+                index += 1
+                continue
+            }
+
+            // Time has come — check the room's concurrent cap.
+            let live = spawns.filter {
+                $0.location == pending.location
+                    && $0.ingredient == pending.ingredient
+                    && !$0.isCollected
+            }.count
+
+            if live >= pending.maxConcurrent {
+                // Room is full. Push this spawn's scheduled time out
+                // a bit so we re-check it later instead of spinning.
+                pendingSpawns[index].scheduledTime = now + TimeInterval.random(in: 8...20)
+                index += 1
+                continue
+            }
+
+            // Promote.
+            let spawn = ForageSpawn(
+                spawnID: pending.spawnID,
+                ingredient: pending.ingredient,
+                location: pending.location,
+                position: pending.position,
+                isCollected: false
+            )
+            spawns.append(spawn)
+            pendingSpawns.remove(at: index)
+            promotedAny = true
+            onSpawnPromoted?(spawn)
+            Log.debug(.forest, "Promoted pending \(spawn.ingredient.displayName) at \(spawn.location.stringKey)")
+            // Don't advance index — the array shrunk, the next pending
+            // moved into this slot.
+        }
+
+        if promotedAny {
+            Log.debug(.forest, "Tick: \(pendingSpawns.count) pending remain")
+        }
+    }
+
     // MARK: - Gnome Convenience
 
     /// Pick the nearest uncollected rock spawn in any rock-bearing cave
@@ -308,5 +477,97 @@ final class ForagingManager {
             if let pick = inPreferred.randomElement() { return pick }
         }
         return allRocks.randomElement()
+    }
+
+    // MARK: - Snapshot Export / Apply (Multiplayer Join Sync)
+
+    /// Export the full forage state as a JSON envelope. Used by
+    /// SaveService.exportWorldSync at join time so the guest can
+    /// adopt the host's exact spawn layout for the day. Returns
+    /// `"{}"` if encoding fails so callers always get a writable
+    /// string.
+    ///
+    /// Pending-spawn `scheduledTime` values are translated to
+    /// host-relative offsets here — the guest rebases to its own
+    /// clock when applying. This keeps stagger timing approximately
+    /// preserved across the network without requiring synchronized
+    /// machine clocks.
+    func exportSnapshot() -> String {
+        let now = CACurrentMediaTime()
+        let realized = spawns.map { spawn in
+            ForageSpawnEntry(
+                spawnID: spawn.spawnID,
+                ingredient: spawn.ingredient.rawValue,
+                locationKey: spawn.location.stringKey,
+                position: CodablePoint(spawn.position),
+                isCollected: spawn.isCollected
+            )
+        }
+        let pending = pendingSpawns.map { p in
+            PendingSpawnEntry(
+                spawnID: p.spawnID,
+                ingredient: p.ingredient.rawValue,
+                locationKey: p.location.stringKey,
+                position: CodablePoint(p.position),
+                scheduledOffsetSeconds: max(0, p.scheduledTime - now),
+                maxConcurrent: p.maxConcurrent
+            )
+        }
+        let snapshot = ForageSpawnsSnapshot(
+            spawnDay: spawnDay,
+            spawns: realized,
+            pendingSpawns: pending
+        )
+        guard let data = try? JSONEncoder().encode(snapshot),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
+    }
+
+    /// Apply a previously-exported snapshot, replacing local state.
+    /// Called from worldSync apply on the guest. No-op on empty or
+    /// unparseable input — we never wipe local spawns because of a
+    /// corrupt sync.
+    ///
+    /// Pending-spawn `scheduledOffsetSeconds` values are rebased to
+    /// the local clock at apply time so stagger timing carries over
+    /// without machine-clock skew.
+    func applySnapshot(_ json: String) {
+        guard !json.isEmpty, json != "{}",
+              let data = json.data(using: .utf8),
+              let snapshot = try? JSONDecoder().decode(ForageSpawnsSnapshot.self, from: data) else {
+            return
+        }
+        let now = CACurrentMediaTime()
+        spawnDay = snapshot.spawnDay
+        spawns = snapshot.spawns.compactMap { entry in
+            guard let ingredient = ForageableIngredient(rawValue: entry.ingredient),
+                  let location = SpawnLocation(stringKey: entry.locationKey) else {
+                return nil
+            }
+            return ForageSpawn(
+                spawnID: entry.spawnID,
+                ingredient: ingredient,
+                location: location,
+                position: entry.position.cgPoint,
+                isCollected: entry.isCollected
+            )
+        }
+        pendingSpawns = snapshot.pendingSpawns.compactMap { entry in
+            guard let ingredient = ForageableIngredient(rawValue: entry.ingredient),
+                  let location = SpawnLocation(stringKey: entry.locationKey) else {
+                return nil
+            }
+            return PendingSpawn(
+                spawnID: entry.spawnID,
+                ingredient: ingredient,
+                location: location,
+                position: entry.position.cgPoint,
+                scheduledTime: now + entry.scheduledOffsetSeconds,
+                maxConcurrent: entry.maxConcurrent
+            )
+        }
+        Log.info(.forest, "Foraging snapshot applied: day \(spawnDay), \(spawns.count) live, \(pendingSpawns.count) pending")
     }
 }

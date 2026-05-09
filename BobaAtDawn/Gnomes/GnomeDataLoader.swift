@@ -35,6 +35,10 @@ final class GnomeDataLoader {
     /// Convenience: opinion topics in JSON order.
     var topics: [GnomeOpinionTopic] { database.opinionTopics }
 
+    /// Convenience: hardcoded line pools (boss, miner_cave, etc.) used by
+    /// `GnomeConversationService` when the LLM is unavailable.
+    var poolLines: GnomePoolLinesData { database.poolLines }
+
     private init() {
         // Initialize to empty so failure paths still leave the loader
         // usable. We then attempt the actual load and overwrite on success.
@@ -85,7 +89,7 @@ final class GnomeDataLoader {
     private static func empty() -> GnomeDatabase {
         // Decode an empty JSON shell so we have a valid (if vacuous)
         // database object even before/without a successful load.
-        let shell = #"{"schema_version":1,"gnome_opinion_topics":[],"gnomes":[]}"#
+        let shell = #"{"schema_version":1,"gnome_opinion_topics":[],"gnome_pool_lines":{},"gnomes":[]}"#
         let data = Data(shell.utf8)
         // Force-try is safe here: the literal above is hand-authored
         // and known-valid. If decoding the literal ever starts failing,

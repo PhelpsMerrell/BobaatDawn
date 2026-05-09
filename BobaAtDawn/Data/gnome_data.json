@@ -15,6 +15,123 @@
     { "id": "the_cart",    "label": "The Mine Cart",          "axis": "habit"  }
   ],
 
+  "gnome_pool_lines": {
+    "boss": [
+      "Pick up the pace, you lot.",
+      "Good rock today. Real good rock.",
+      "Don't drop it. Don't you DARE drop it.",
+      "Machine's in a mood. Be patient.",
+      "I want fifty by sundown. Or close.",
+      "Whoever found that one — solid work.",
+      "Easy on the new ones. Show 'em the technique.",
+      "Reds happen. Don't take it personal.",
+      "You earn your gem, the gem earns you.",
+      "Keep your head down and your hands moving."
+    ],
+    "miner_cave": [
+      "This one's heavy. Heavy means good, sometimes.",
+      "Smell that? That's wet stone. Best smell.",
+      "I named this one. Don't tell Thork.",
+      "Three reds in a row. THREE.",
+      "I love a rock with character.",
+      "The deeper floors hum, you ever notice?",
+      "Pip dropped one again. Bless him.",
+      "Foreman watched me on that last green. Saw me.",
+      "Going up. My back's going up too.",
+      "Quiet down there today. Almost peaceful.",
+      "Fenn keeps counting them. He counts EVERYTHING.",
+      "Nice and round, this one. Round ones go green more, you'll see.",
+      "Gritty floor today. Mind your boots.",
+      "I've got a feeling about the next rock.",
+      "Hold this for a sec — I dropped my pick.",
+      "There's a vein on the third floor. Real proper vein."
+    ],
+    "miner_at_home": [
+      "Bones are tired. Bones are happy.",
+      "That stew tonight was something else.",
+      "Long shift. Worth it. I think.",
+      "I keep gem dust in my beard. On purpose.",
+      "Tomorrow I'm aiming for ten greens.",
+      "Couch is good. Couch is real good.",
+      "Boss looked at me twice today. Means something.",
+      "I dreamed of a giant rock last night.",
+      "Hearth's warm. Anyone got a blanket?",
+      "Pip's already asleep, snoring like a saw.",
+      "Cook saved me a heel of bread. Don't tell.",
+      "Rest day tomorrow? I forget."
+    ],
+    "miner_in_transit": [
+      "Almost to the oak. Smell the smoke?",
+      "This path's longer when you're carrying.",
+      "Watch the roots. Watch the roots.",
+      "Every day, this same walk. Every day.",
+      "I like this stretch. Birds.",
+      "Rain coming. I can feel it.",
+      "One foot. Other foot. Repeat.",
+      "Boss said don't dawdle. So I'm not.",
+      "Treasury, here we come.",
+      "Hand cramping. Worth it though."
+    ],
+    "housekeeper_day": [
+      "Fresh polish on the lobby floor — mind your boots.",
+      "Bread's rising. Don't slam the door.",
+      "I swept this morning. Twice.",
+      "Greeter's at the door again. Always at the door.",
+      "Stew's on for whoever's home tonight.",
+      "Treasury's looking healthy this week.",
+      "Whose mug is this? Always whose mug.",
+      "I patched the curtain in the middle bedroom.",
+      "Hearth needs another log. Always another log.",
+      "Quiet morning. Suspicious."
+    ],
+    "housekeeper_night": [
+      "Miners back. Stew warm. Good night.",
+      "I'll bank the fire low.",
+      "Lock the door. Yes, properly. Yes, both bolts.",
+      "Pip's already snoring. Bless him.",
+      "Gems up there glow funny in the dark.",
+      "Heard something outside. Probably the wind.",
+      "Rest is rest. Don't waste it talking.",
+      "Boss is up late again. Counting things."
+    ],
+    "broker_day": [
+      "Fair trade. Fair trade for all.",
+      "What've they brought me today, I wonder.",
+      "Box is filling up. Cook'll be pleased.",
+      "Forest folk come and go. Quiet ones today.",
+      "A gem for a leaf, a gem for a stem.",
+      "Mushrooms again. Cook'll grumble.",
+      "That one had sad eyes. They mostly do.",
+      "Treasurer owes me a refill.",
+      "Slow morning. The forest must be busy.",
+      "They never haggle. Never. Strange folk."
+    ],
+    "broker_night": [
+      "Desk's closed. Box is stocked. Day's done.",
+      "They wander past at night. Don't trade. Just wander.",
+      "Tally was even. Even is good.",
+      "Some nights they look right through me.",
+      "Counted the gems out. All accounted."
+    ],
+    "treasurer_day": [
+      "Counted twice already. Once more, just to be sure.",
+      "Pile's smaller than yesterday. Mining's slow.",
+      "Broker'll be back any minute now.",
+      "Ten gems out, ten gems out, that's the rule.",
+      "I do not LOSE gems. I will not LOSE gems.",
+      "Fenn writes them down. I just feel them.",
+      "A good day shows in the pile. Today's middling.",
+      "If the cart comes empty, the broker waits. Simple."
+    ],
+    "treasurer_night": [
+      "All accounted. All accounted.",
+      "Pile's quiet at night. Easier to count.",
+      "Broker turned in clean. Good day, that.",
+      "I trust the pile. I trust the pile.",
+      "Tomorrow I'll start fresh. New day, new tally."
+    ]
+  },
+
   "gnomes": [
 
     {

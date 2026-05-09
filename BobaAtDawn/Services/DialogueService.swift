@@ -341,12 +341,18 @@ class DialogueService {
         }
 
         guard let stream = stream else {
-            // No LLM available — fall back to one JSON line, no followups.
+            // No LLM available — fall back to one JSON line WITH followup
+            // pills so the satisfaction loop still works on iPad without
+            // Apple Intelligence. Renders the same kind/blunt pair the
+            // LLM path would have produced, sourced from `tap_followups`
+            // in the NPC JSON.
             let text = npcData.getRandomDialogue(isNight: timeContext.isNight)
             bubble.setText(text)
-            bubble.enterTerminalMode()
             broadcastLineDelta(npcID: npcID, partialText: text, mood: nil)
-            Log.info(.dialogue, "[Fallback JSON] \(npcData.name): \(text)")
+            self.installJSONFallbackFollowups(
+                bubble: bubble, npcID: npcID, npcData: npcData
+            )
+            Log.info(.dialogue, "[Fallback JSON+pills] \(npcData.name): \(text)")
             return
         }
 
@@ -415,12 +421,15 @@ class DialogueService {
                 }
                 Log.info(.dialogue, "[LLM] \(npcData.name): \(lastBroadcastText)")
             } catch {
-                // Stream failed mid-flight — fall back to JSON line.
+                // Stream failed mid-flight — fall back to JSON line + pills
+                // so the player still gets a usable satisfaction loop.
                 let text = npcData.getRandomDialogue(isNight: timeContext.isNight)
                 bubble.setText(text)
-                bubble.enterTerminalMode()
                 self.broadcastLineDelta(npcID: npcID, partialText: text, mood: nil)
-                Log.warn(.dialogue, "[LLM failed → JSON] \(npcData.name): \(text)")
+                self.installJSONFallbackFollowups(
+                    bubble: bubble, npcID: npcID, npcData: npcData
+                )
+                Log.warn(.dialogue, "[LLM failed → JSON+pills] \(npcData.name): \(text)")
             }
         }
     }
@@ -478,6 +487,44 @@ class DialogueService {
             )
         }
         pendingFollowups.removeValue(forKey: npcID)
+    }
+
+    // MARK: - JSON Fallback Pills
+
+    /// Install kind/blunt followup pills sourced from the NPC's JSON
+    /// `tap_followups` block, used when the LLM is unavailable
+    /// (iPad without Apple Intelligence, model cold-start, mid-stream
+    /// error). Mirrors the path the LLM stream would take when it emits
+    /// `update.followups`: stash for routing, broadcast to guest,
+    /// install the same pill-tap callback that records satisfaction
+    /// and runs turn-2 reply.
+    private func installJSONFallbackFollowups(
+        bubble: DialogueBubble,
+        npcID: String,
+        npcData: NPCData
+    ) {
+        let kindLine  = npcData.getRandomKindFollowup()
+        let bluntLine = npcData.getRandomBluntFollowup()
+        let followups: [DialogueFollowup] = [
+            DialogueFollowup(text: kindLine,  tone: .kind),
+            DialogueFollowup(text: bluntLine, tone: .blunt)
+        ]
+        let npcName = npcData.name
+        bubble.setFollowups(followups) { [weak self] tone, text in
+            self?.handleFollowupTapLocal(
+                tone: tone, playerSaid: text,
+                npcID: npcID, npcName: npcName
+            )
+        }
+        pendingFollowups[npcID] = followups
+        if MultiplayerService.shared.isConnected {
+            MultiplayerService.shared.send(
+                type: .dialogueFollowupsReady,
+                payload: DialogueFollowupsReadyMessage(
+                    npcID: npcID, kindText: kindLine, bluntText: bluntLine
+                )
+            )
+        }
     }
 
     /// Host-side handler for `dialogueFollowupChosen` arriving from the

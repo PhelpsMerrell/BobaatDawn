@@ -107,6 +107,7 @@ final class SaveService {
             worldState.carryStateJSON      = encodeCarryState()
             worldState.storageJSON         = encodeStorage()
             worldState.gnomeStateJSON      = encodeGnomeState()
+            worldState.brokerEconomyJSON   = GnomeManager.shared.exportBrokerEconomyJSON()
             worldState.movableObjectsJSON  = encodeMovableObjects()
             worldState.treasuryGemCount    = GnomeManager.shared.treasuryGemCount
             
@@ -781,6 +782,7 @@ final class SaveService {
             || worldState.carryStateJSON != "{}"
             || worldState.storageJSON != "{}"
             || worldState.gnomeStateJSON != "[]"
+            || worldState.brokerEconomyJSON != "{}"
             || worldState.movableObjectsJSON != "[]"
             || !worldState.worldFlags.isEmpty
     }
@@ -820,6 +822,7 @@ final class SaveService {
         worldState.stationStatesJSON = "{}"
         worldState.storageJSON = "{}"
         worldState.gnomeStateJSON = "[]"
+        worldState.brokerEconomyJSON = "{}"
         worldState.treasuryGemCount = 0
         worldState.movableObjectsJSON = "[]"
         worldState.worldFlags = [:]
@@ -853,7 +856,12 @@ final class SaveService {
                 entry["status"] = "atHome"
                 entry["statusRoom"] = room
             case .inShop:    entry["status"] = "inShop"
-            case .traveling: entry["status"] = "traveling"
+            case .traveling,
+                 .inForestRoom,
+                 .inOakLobby,
+                 .inCaveRoom,
+                 .atFriendHouse:
+                entry["status"] = "traveling"
             }
             npcStates.append(entry)
         }
@@ -948,7 +956,9 @@ final class SaveService {
             cartLocation: GnomeManager.shared.cartLocation.stringKey,
             cartState: GnomeManager.shared.cartState.rawValue,
             recentSummaries: loadAllDailySummaryEntries(),
-            movableObjects: MovableObjectRegistry.shared.allEntries()
+            movableObjects: MovableObjectRegistry.shared.allEntries(),
+            brokerEconomyJSON: GnomeManager.shared.exportBrokerEconomyJSON(),
+            forageSpawnsJSON: ForagingManager.shared.exportSnapshot()
         )
     }
     
@@ -1016,6 +1026,22 @@ final class SaveService {
             if let json = msg.gnomeSnapshotsJSON, !json.isEmpty {
                 worldState.gnomeStateJSON = json
                 applyGnomeStateJSON(json)
+            }
+            // Import broker economy state. Apply AFTER gnome state so any
+            // task/carry on the broker/treasurer agents has been restored
+            // first — the broker economy then layers the desk-level
+            // bookkeeping (box contents, gem reserve, transient errand
+            // flags) on top.
+            if let json = msg.brokerEconomyJSON, !json.isEmpty, json != "{}" {
+                worldState.brokerEconomyJSON = json
+                GnomeManager.shared.applyBrokerEconomyJSON(json)
+            }
+            // Import forage spawn snapshot. Replaces the receiver's
+            // local spawn state for today wholesale, so the guest's
+            // forest looks the same as the host's. Not persisted to
+            // disk — spawns regenerate at next dawn rollover.
+            if let json = msg.forageSpawnsJSON, !json.isEmpty, json != "{}" {
+                ForagingManager.shared.applySnapshot(json)
             }
             if let count = msg.treasuryGemCount {
                 worldState.treasuryGemCount = count
@@ -1085,6 +1111,7 @@ final class SaveService {
         worldState.carryStateJSON      = encodeCarryState()
         worldState.storageJSON         = encodeStorage()
         worldState.gnomeStateJSON      = encodeGnomeState()
+        worldState.brokerEconomyJSON   = GnomeManager.shared.exportBrokerEconomyJSON()
         worldState.movableObjectsJSON  = encodeMovableObjects()
         worldState.treasuryGemCount    = GnomeManager.shared.treasuryGemCount
         
@@ -1141,6 +1168,11 @@ final class SaveService {
         
         // Gnome state — restore agents and treasury count.
         applyGnomeStateJSON(worldState.gnomeStateJSON)
+        // Broker economy — restore broker box contents, gem reserve,
+        // and transient errand flags. Applied after gnome state so the
+        // broker/treasurer agents already have their tasks/carries
+        // restored before we layer desk-level bookkeeping on top.
+        GnomeManager.shared.applyBrokerEconomyJSON(worldState.brokerEconomyJSON)
         GnomeManager.shared.applyRemoteTreasury(
             newCount: worldState.treasuryGemCount,
             didReset: false
@@ -1205,6 +1237,7 @@ final class SaveService {
         let worldState = getOrCreateWorldState()
         worldState.hasStartedGame = true
         worldState.gnomeStateJSON = encodeGnomeState()
+        worldState.brokerEconomyJSON = GnomeManager.shared.exportBrokerEconomyJSON()
         worldState.treasuryGemCount = GnomeManager.shared.treasuryGemCount
         worldState.lastSaved = Date()
         try? modelContext?.save()

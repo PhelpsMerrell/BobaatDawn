@@ -111,6 +111,26 @@ struct GeneratedNPCReply {
     @Guide(.anyOf(["delighted", "happy", "neutral", "wistful", "anxious", "upset", "weary"]))
     let mood: String
 }
+
+@available(iOS 26.0, *)
+@Generable
+struct GeneratedTrashReactionLine {
+    @Guide(description: """
+    What this forest-villager animal mutters when they walk up to their own \
+    cabin and find that someone has dumped trash at their door. ONE short \
+    sentence — annoyed, exasperated, sometimes sardonic. NOT furious; not \
+    a tirade. They're tired, they're putting up with this again, they have \
+    a guess about who did it but they're not naming names. Reference the \
+    trash, their door, the path, their mood, or the perpetrator obliquely. \
+    Never mention specific neighbors by name (the system handles attribution \
+    elsewhere). Never break the fourth wall — no "ghost", "dead", "soul", \
+    "purgatory", "afterlife".
+    """)
+    let line: String
+
+    @Guide(.anyOf(["upset", "weary", "anxious", "neutral"]))
+    let mood: String
+}
 #endif
 
 // MARK: - Service
@@ -218,8 +238,11 @@ final class LLMDialogueService {
     func registerResident(_ resident: NPCResident) {
         registeredResidents[resident.npcData.id] = resident
         guard isAvailable else { return }
-        // Stagger 0.5–2.5s so we don't spike the model on shop entry.
-        let jitter = Double.random(in: 0.5...2.5)
+        // Stagger 0.2–1.0s so we don't spike the model on shop entry.
+        // Tightened from 0.5–2.5 — longer windows meant the last NPC of
+        // five wasn't prewarmed for 10–15s and the player would see the
+        // live-stream lag if they tapped that NPC first.
+        let jitter = Double.random(in: 0.2...1.0)
         DispatchQueue.main.asyncAfter(deadline: .now() + jitter) { [weak self] in
             self?.requestPrewarm(forNPCID: resident.npcData.id)
         }
@@ -298,7 +321,7 @@ final class LLMDialogueService {
     private func drainPrewarmQueueIfIdle() {
         guard !isPrewarmDraining else { return }
         guard let next = pendingPrewarmQueue.first else { return }
-        guard prewarmInFlight.isEmpty else { return }    // serial cap of 1
+        guard prewarmInFlight.count < 2 else { return }    // serial cap of 2
 
         pendingPrewarmQueue.removeFirst()
         prewarmInFlight.insert(next)
@@ -328,6 +351,13 @@ final class LLMDialogueService {
                 isNight: isNight
             )
         }
+
+        // Reset the re-entry guard immediately so a second invocation can
+        // start a parallel prewarm (up to the in-flight cap above). The
+        // guard exists only to prevent recursion within one synchronous
+        // call chain — not to serialize the actual model work.
+        isPrewarmDraining = false
+        DispatchQueue.main.async { [weak self] in self?.drainPrewarmQueueIfIdle() }
     }
 
     /// Internal: run the prewarm stream to completion and stash the result.
@@ -343,7 +373,10 @@ final class LLMDialogueService {
     ) async {
         defer {
             prewarmInFlight.remove(npcID)
-            isPrewarmDraining = false
+            // `isPrewarmDraining` is reset by `drainPrewarmQueueIfIdle`
+            // immediately after launching this task, so we don't touch it
+            // here. Just re-trigger drain so any queued NPC can take the
+            // freshly-vacated slot.
             DispatchQueue.main.async { [weak self] in self?.drainPrewarmQueueIfIdle() }
         }
 
@@ -910,6 +943,25 @@ extension LLMDialogueService {
         #endif
         return nil
     }
+
+    /// Stream a single annoyed line for an NPC reacting to trash dumped
+    /// at their own house. Used by `ForestTrashReactionService`. The
+    /// service falls back to a static line pool on nil/error.
+    func streamTrashReactionLine(
+        for resident: NPCResident,
+        timeContext: TimeContext
+    ) -> AsyncThrowingStream<DialogueStreamUpdate, Error>? {
+        guard isAvailable else { return nil }
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            return _streamTrashReactionLine(
+                resident: resident,
+                timeContext: timeContext
+            )
+        }
+        #endif
+        return nil
+    }
 }
 
 #if canImport(FoundationModels)
@@ -1182,6 +1234,145 @@ private extension LLMDialogueService {
 
         Tag the line with the most accurate `interaction` value for the \
         social move you're making toward \(addresseeName).
+        """
+    }
+
+    // MARK: - Trash Reaction
+
+    /// Stream the annoyed line for an NPC who just found trash on
+    /// their own doorstep. Self-contained — builds prompt from the
+    /// resident's personality + cause-of-death (oblique at night) +
+    /// time context, runs the model to completion, yields a final
+    /// DialogueStreamUpdate so the calling service can render it.
+    func _streamTrashReactionLine(
+        resident: NPCResident,
+        timeContext: TimeContext
+    ) -> AsyncThrowingStream<DialogueStreamUpdate, Error> {
+        let instructions = trashReactionSystemInstructions()
+        let prompt = buildTrashReactionPrompt(
+            resident: resident,
+            timeContext: timeContext
+        )
+        let session = LanguageModelSession(instructions: instructions)
+
+        return AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    let stream = session.streamResponse(generating: GeneratedTrashReactionLine.self) {
+                        prompt
+                    }
+                    for try await snapshot in stream {
+                        let partial = snapshot.content
+                        let update = DialogueStreamUpdate(
+                            line: partial.line,
+                            mood: partial.mood,
+                            followups: nil,
+                            isComplete: false
+                        )
+                        continuation.yield(update)
+                    }
+                    continuation.yield(DialogueStreamUpdate(
+                        line: nil, mood: nil, followups: nil, isComplete: true
+                    ))
+                    continuation.finish()
+                } catch {
+                    Log.error(.dialogue, "LLM trash-reaction stream failed: \(error)")
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    func trashReactionSystemInstructions() -> String {
+        """
+        You are writing one short, annoyed line for a forest-villager animal \
+        in an iOS game called "Boba at Dawn". The setting and rules below \
+        are non-negotiable.
+
+        WHO IS SPEAKING
+        The speaker is a forest villager — an animal who lives in a small \
+        wooden cabin in a looping forest. They have just walked up to their \
+        own door and found trash someone has dumped there. Again. They have \
+        a guess about who did it but they're not naming names.
+
+        TONE
+        Annoyed, exasperated, weary. Sometimes sardonic. NOT furious; not \
+        a tirade. They are putting up with this. Cozy game register — \
+        gentle exasperation, not anger. Mildly funny is good. "Honestly." \
+        "Right." "Of course." One muttered breath of irritation.
+
+        WHAT THE LINE MAY REFERENCE
+        - The trash itself (an old cup, debris, mess on the path)
+        - Their door, their porch, their step
+        - The fact that this has happened before
+        - A vague guess about the perpetrator ("some people", "a certain \
+          neighbor", "someone with a lot of free time") — NEVER a name.
+        - Their own resignation (cleaning it up themselves)
+
+        ABSOLUTE RULES
+        - ONE short sentence. Two only if the second is a single word \
+          ("Honestly.", "Wonderful.").
+        - NEVER name a specific neighbor. The system handles attribution.
+        - NEVER break the fourth wall. No "ghost", "dead", "soul", \
+          "purgatory", "afterlife", "spirit", "passed on".
+        - NEVER threaten violence or revenge.
+        - NO meta-talk about the game or about being an NPC.
+        - Pick a `mood` from: upset, weary, anxious, neutral.
+        """
+    }
+
+    func buildTrashReactionPrompt(
+        resident: NPCResident,
+        timeContext: TimeContext
+    ) -> String {
+        let npc = resident.npcData
+        let isNight = timeContext.isNight
+
+        let personalityBlock: String = {
+            guard let p = npc.personality else { return "" }
+            return """
+
+            PERSONALITY
+            - archetype: \(p.archetype)
+            - traits: \(p.traits.joined(separator: ", "))
+            """
+        }()
+
+        // Sample one of their existing lines so the model matches voice.
+        let referenceLine = (isNight ? npc.dialogue.night : npc.dialogue.day)
+            .randomElement() ?? ""
+
+        let referenceBlock = referenceLine.isEmpty
+            ? ""
+            : "\n\nVOICE REFERENCE (one of this character's existing lines — match the cadence):\n  - \"\(referenceLine)\""
+
+        // At night, slip in the cause of death as oblique pressure.
+        // The trash reaction shouldn't directly reveal it, but the
+        // mood under the irritation may shade toward the death's tone.
+        let memoryBlock: String = isNight
+            ? """
+              
+              Hidden mood (the speaker may carry a faint echo of this in \
+              their tone, never naming it directly): \(npc.causeOfDeath)
+              """
+            : ""
+
+        return """
+        SPEAKER PROFILE
+        - Name: \(npc.name)
+        - Animal: \(npc.animal.lowercased())
+        - Lives in: a small cabin in the forest (Room \(npc.homeRoom))\(personalityBlock)\(referenceBlock)
+
+        CURRENT MOMENT
+        - Time: \(isNight ? "night — woods are dim, lanterns lit" : "day — sunlight, calm air")
+        - They've just walked up to their cabin and found trash dumped \
+          on the doorstep. AGAIN. Someone keeps doing this.\(memoryBlock)
+
+        TASK
+        Write ONE short annoyed line that this character would mutter \
+        as they bend down to pick the trash up. Match their voice. Match \
+        their personality. Pick a fitting mood.
         """
     }
 }

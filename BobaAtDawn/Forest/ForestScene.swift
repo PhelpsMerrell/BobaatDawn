@@ -77,6 +77,22 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         // Ensure foraged spawns are generated for today
         let timeService = serviceContainer.resolve(TimeService.self)
         ForagingManager.shared.refreshIfNeeded(dayCount: timeService.dayCount)
+
+        // Mid-day promotions: when a pending forest item is finally
+        // released, render it immediately if it lands in the room the
+        // player is currently looking at. Otherwise it'll be picked up
+        // on the next room transition by `spawnForageNodesForRoom`.
+        ForagingManager.shared.onSpawnPromoted = { [weak self] spawn in
+            guard let self = self else { return }
+            guard case let .forestRoom(n) = spawn.location, n == self.currentRoom else { return }
+            // Avoid duplicates if the room re-renders between promote
+            // and tick.
+            let alreadyVisible = self.children.contains { ($0 as? ForageNode)?.spawnID == spawn.spawnID }
+            guard !alreadyVisible else { return }
+            let node = ForageNode(spawn: spawn)
+            self.addChild(node)
+            Log.debug(.forest, "Live-rendered promoted \(spawn.ingredient.displayName) in room \(n)")
+        }
         
         setupCurrentRoom()
         
@@ -480,6 +496,13 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         // Drive ambient gnome ↔ gnome chatter for any gnomes transiting
         // through this forest room.
         tickForestGnomeConversation()  // → ForestScene+Gnomes.swift
+
+        // Promote any pending forage spawns whose time has come.
+        // Host-authoritative; no-op on guest.
+        ForagingManager.shared.tick()
+
+        // Drive reactive trash pickup for forest NPCs at their own house.
+        ForestTrashReactionService.shared.tick(in: self, room: currentRoom)
         
         // HOST: Broadcast forest NPC positions to guest every ~0.5s
         if MultiplayerService.shared.isHost && MultiplayerService.shared.isConnected {
@@ -778,5 +801,11 @@ class ForestScene: BaseGameScene, SKPhysicsContactDelegate {
         if let observer = snailContactObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        // Note: ForagingManager.onSpawnPromoted is intentionally NOT
+        // nulled here. The next ForestScene's setupSpecificContent
+        // will overwrite it with its own [weak self] capture, and
+        // nulling it here would race with that during a transition
+        // where two scenes briefly coexist. The dead-scene's weak
+        // self capture goes nil naturally, so leaks are not a concern.
     }
 }

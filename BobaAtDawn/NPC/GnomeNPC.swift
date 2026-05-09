@@ -124,10 +124,26 @@ class GnomeNPC: SKNode {
         refreshVisualBadges()
 
         Log.info(.npc, "Gnome visual spawned: \(agent.identity.displayName) at \(position)")
+
+        // Register with the gnome LLM prewarmer so a dialogue can be
+        // cached ahead of time. Mirrors the BaseNPC ↔ LLMDialogueService
+        // pattern. The gnome service ignores the call when Apple
+        // Intelligence isn't available, so this is safe everywhere.
+        LLMGnomeDialogueService.shared.registerAgent(agent)
     }
 
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented — GnomeNPC is spawned in code")
+    }
+
+    // MARK: - Scene Lifecycle (Prewarm Hookup)
+
+    /// Unregister from the gnome LLM prewarmer when this visual leaves
+    /// its scene. Pairs with the init-time `registerAgent` call so the
+    /// prewarm cache stays scoped to gnomes the player can actually see.
+    override func removeFromParent() {
+        LLMGnomeDialogueService.shared.unregisterAgent(gnomeID: agent.identity.id)
+        super.removeFromParent()
     }
 
     // MARK: - Public API for GnomeManager
@@ -138,7 +154,12 @@ class GnomeNPC: SKNode {
     func refreshVisualBadges() {
         // Carried badge
         if let carried = agent.carried {
-            carriedBadge.text = carried == .rock ? "\u{1FAA8}" : "\u{1F48E}" // 🪨 or 💎
+            switch carried {
+            case .rock:        carriedBadge.text = "\u{1FAA8}" // 🪨
+            case .gem:         carriedBadge.text = "\u{1F48E}" // 💎
+            case .brokerBox:   carriedBadge.text = "\u{1F4E6}" // 📦
+            case .gemHandful:  carriedBadge.text = "\u{1F48E}" // 💎
+            }
             carriedBadge.run(SKAction.fadeAlpha(to: 1.0, duration: 0.2))
         } else {
             carriedBadge.run(SKAction.fadeAlpha(to: 0.0, duration: 0.2))
@@ -147,13 +168,13 @@ class GnomeNPC: SKNode {
         // Rank badge — only for boss/miners
         switch agent.identity.role {
         case .boss:
-            rankBadge.text = "★"
+            rankBadge.text = "\u{2605}"
         case .miner:
             switch agent.rank {
             case .junior:   rankBadge.text = ""
-            case .standard: rankBadge.text = "·"
-            case .senior:   rankBadge.text = "··"
-            case .foreman:  rankBadge.text = "★"
+            case .standard: rankBadge.text = "\u{00B7}"
+            case .senior:   rankBadge.text = "\u{00B7}\u{00B7}"
+            case .foreman:  rankBadge.text = "\u{2605}"
             }
         case .housekeeper, .npcBroker, .treasurer:
             rankBadge.text = ""

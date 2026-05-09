@@ -86,6 +86,48 @@ final class NPCConversationService {
     /// conversation.
     private var currentLineTask: Task<Void, Never>?
 
+    // MARK: - First-Line / Gather Synchronization
+    //
+    // To hide LLM latency, the first conversation line streams in parallel
+    // with the gather walk (~3-4s). The Task that consumes the stream
+    // awaits `awaitGatherIfNeeded()` before any visual render so the
+    // bubble doesn't appear over wandering NPCs. Subsequent lines (where
+    // gather is already done) skip the wait entirely.
+    //
+    // All access happens on @MainActor methods so no locking is needed.
+
+    private var gatherIsComplete: Bool = false
+    private var gatherCompletion: CheckedContinuation<Void, Never>?
+
+    /// Suspend until `notifyGatherComplete()` fires, or return immediately
+    /// if gather already completed. Not @MainActor: every call site runs
+    /// on the main queue (the gather callback below + @MainActor Tasks
+    /// inside `runNextLine`), so the property accesses don't race.
+    private func awaitGatherIfNeeded() async {
+        if gatherIsComplete { return }
+        await withCheckedContinuation { cont in
+            // Race-safe: re-check inside the closure since gather could
+            // have completed between the outer guard and the suspend.
+            // We're on main in practice so no parallel mutation between checks.
+            if gatherIsComplete {
+                cont.resume()
+            } else {
+                gatherCompletion = cont
+            }
+        }
+    }
+
+    /// Called from `startConversation`'s gather callback (and the
+    /// interrupt-during-gather guard). Resumes any awaiting first-line
+    /// Task. Always called on the main queue.
+    private func notifyGatherComplete() {
+        gatherIsComplete = true
+        if let cont = gatherCompletion {
+            gatherCompletion = nil
+            cont.resume()
+        }
+    }
+
     private init() {}
 
     // MARK: - Public Entry Points
@@ -344,11 +386,25 @@ final class NPCConversationService {
             linesPlayed: 0
         )
 
+        // Reset gather sync state for this conversation. The first-line
+        // Task (kicked off below) will await `awaitGatherIfNeeded()`
+        // before rendering its bubble.
+        gatherIsComplete = false
+        gatherCompletion = nil
+
         let names = participantData.map { $0.name }.joined(separator: ", ")
         let topicLabel = topic?.label ?? "(open small talk)"
         Log.info(.dialogue, "[NPC convo \(currentConversationID)] starting: \(names) on '\(topicLabel)' — gathering")
 
-        // Gather everyone into a huddle, THEN freeze and start lines.
+        // Fire the first-line LLM stream IMMEDIATELY so its ~3-5s round
+        // trip overlaps with the ~3-4s gather walk. The Task awaits
+        // `awaitGatherIfNeeded()` before any visual render, so the bubble
+        // appears only after participants have huddled and frozen.
+        runNextLine(timeContext: timeContext)
+
+        // Walk participants into a huddle in parallel. When done, freeze
+        // them, face the center, and signal the first-line Task to
+        // commit its line.
         gatherParticipants(participants) { [weak self] in
             guard let self = self else { return }
             // Mid-conversation might have been interrupted while we were
@@ -356,6 +412,10 @@ final class NPCConversationService {
             // zero lines played.
             guard case .running(_, _, _, let lineCount) = self.state, lineCount == 0 else {
                 Log.debug(.dialogue, "[NPC convo \(self.currentConversationID)] gather completed but state moved on — skipping freeze/start")
+                // Still resolve the gather signal so any awaiting first-line
+                // Task doesn't hang. commitLine on the awaiter side will
+                // see state != .running and no-op.
+                self.notifyGatherComplete()
                 return
             }
 
@@ -370,7 +430,10 @@ final class NPCConversationService {
                 self?.faceParticipantsTowardCenter(participants)
             }
 
-            self.runNextLine(timeContext: timeContext)
+            // Signal the first-line Task to render. If it's still streaming
+            // we keep waiting; if it's already streamed and is awaiting
+            // this signal, it will commit immediately.
+            self.notifyGatherComplete()
         }
     }
 
@@ -498,6 +561,12 @@ final class NPCConversationService {
             return
         }
 
+        // First line of a conversation overlaps with the gather walk so
+        // any visual render needs to wait for `notifyGatherComplete()`
+        // before showing a bubble. Lines 2+ have gather already done so
+        // the await resolves immediately.
+        let isFirstLine = lineCount == 0
+
         // ---- Deterministic speaker selection (no LLM involvement) ----
         //
         // The previous design let the LLM pick the speakerID, which led to
@@ -535,8 +604,14 @@ final class NPCConversationService {
             timeContext: timeContext
         ) else {
             // No LLM available — fall back to a single canned line and stop.
-            playFallbackLine(speaker: speaker, timeContext: timeContext)
-            finalizeConversation(interruptedByPlayer: false, extraInteractions: [])
+            // Gate the visual render on gather completion so the fallback
+            // bubble doesn't appear over still-walking NPCs on the first line.
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if isFirstLine { await self.awaitGatherIfNeeded() }
+                self.playFallbackLine(speaker: speaker, timeContext: timeContext)
+                self.finalizeConversation(interruptedByPlayer: false, extraInteractions: [])
+            }
             return
         }
 
@@ -557,6 +632,7 @@ final class NPCConversationService {
                 }
             } catch {
                 Log.warn(.dialogue, "[NPC convo] line stream failed: \(error). Falling back.")
+                if isFirstLine { await self.awaitGatherIfNeeded() }
                 self.playFallbackLine(speaker: speaker, timeContext: timeContext)
                 self.finalizeConversation(interruptedByPlayer: false, extraInteractions: [])
                 return
@@ -594,6 +670,11 @@ final class NPCConversationService {
                 interactionToUse = finalInteractionRaw
                 moodToUse = finalMood
             }
+
+            // Wait for gather to complete before showing the bubble on
+            // the first line. On subsequent lines this is a no-op since
+            // `gatherIsComplete` is already true.
+            if isFirstLine { await self.awaitGatherIfNeeded() }
 
             self.commitLine(
                 speaker: speaker,
@@ -819,7 +900,10 @@ final class NPCConversationService {
     /// the chosen speaker and end. Better than nothing.
     private func playFallbackLine(speaker: NPCData, timeContext: TimeContext) {
         guard let scene = currentScene else { return }
-        let text = speaker.getRandomDialogue(isNight: timeContext.isNight)
+        // Prefer the NPC's `chatter` pool (written specifically for ambient
+        // NPC↔NPC moves). Falls back to the regular dialogue pool when
+        // chatter isn't authored, so older JSONs still work.
+        let text = speaker.getRandomChatter(isNight: timeContext.isNight)
         if let speakerNode = findShopNPCNode(npcID: speaker.id, in: scene)
             ?? findForestNPCNode(npcID: speaker.id, in: scene) {
             DialogueService.shared.showConversationLine(

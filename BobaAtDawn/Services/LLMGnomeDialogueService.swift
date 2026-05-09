@@ -124,6 +124,201 @@ final class LLMGnomeDialogueService {
     /// in lock-step.
     var isAvailable: Bool { LLMDialogueService.shared.isAvailable }
 
+    // MARK: - Prewarm State
+
+    /// One ready-to-replay line per gnome. Hit on tap = instant bubble.
+    /// Keyed by gnome identity id. Cleared on consume / unregister /
+    /// scene flush. Mirrors `LLMDialogueService.prewarmCache` but simpler
+    /// because gnomes have no followups and no turn-2.
+    private var prewarmCache: [String: GnomePrewarmEntry] = [:]
+
+    /// Per-agent registration so prewarm can rebuild prompts by id alone.
+    /// Wired by `GnomeNPC.init` / `removeFromParent` (Step 3i).
+    private var registeredAgents: [String: GnomeAgent] = [:]
+
+    /// In-flight set + queue, mirroring NPC service. Cap of 2 parallel
+    /// runs is enough for older iPads while keeping the prewarm queue
+    /// draining at a reasonable rate.
+    private var prewarmInFlight: Set<String> = []
+    private var pendingPrewarmQueue: [String] = []
+    private var isPrewarmDraining: Bool = false
+
+    // MARK: - Prewarm Public API
+
+    /// Called by `GnomeNPC.init` when the visual node lands in a scene.
+    /// Caches the agent for prompt rebuilding and schedules a prewarm
+    /// with a small jitter so 8 gnomes spawning simultaneously don't all
+    /// fire model calls in the same frame.
+    func registerAgent(_ agent: GnomeAgent) {
+        registeredAgents[agent.identity.id] = agent
+        guard isAvailable else { return }
+        let jitter = Double.random(in: 0.2...1.0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + jitter) { [weak self] in
+            self?.requestPrewarm(forGnomeID: agent.identity.id)
+        }
+    }
+
+    /// Called by `GnomeNPC.removeFromParent` when the visual node leaves.
+    /// Drops the cache entry and queue position so the cache stays scoped
+    /// to gnomes the player can actually see.
+    func unregisterAgent(gnomeID: String) {
+        registeredAgents.removeValue(forKey: gnomeID)
+        prewarmCache.removeValue(forKey: gnomeID)
+        prewarmInFlight.remove(gnomeID)
+        pendingPrewarmQueue.removeAll { $0 == gnomeID }
+    }
+
+    /// Flush every cached entry. Called on scene transitions — stale
+    /// shop entries shouldn't sit in memory while the player is in the
+    /// cave or oak.
+    func flushPrewarmCache() {
+        prewarmCache.removeAll()
+        pendingPrewarmQueue.removeAll()
+    }
+
+    /// Invalidate cached entries whose night-flag no longer matches the
+    /// current phase. Called by the day↔night transition.
+    func invalidatePrewarmCache(forIsNight currentlyNight: Bool) {
+        let stale = prewarmCache.filter { $0.value.isNight != currentlyNight }.map(\.key)
+        for id in stale { prewarmCache.removeValue(forKey: id) }
+    }
+
+    /// Idempotent prewarm request. No-op if already cached or running.
+    func requestPrewarm(forGnomeID gnomeID: String) {
+        guard isAvailable else { return }
+        guard registeredAgents[gnomeID] != nil else { return }
+        guard prewarmCache[gnomeID] == nil else { return }
+        guard !prewarmInFlight.contains(gnomeID) else { return }
+        if !pendingPrewarmQueue.contains(gnomeID) {
+            pendingPrewarmQueue.append(gnomeID)
+        }
+        drainPrewarmQueueIfIdle()
+    }
+
+    /// Consume a cached prewarmed line. Returns nil on miss or phase
+    /// mismatch. On hit, returns a typewriter stream that replays the
+    /// cached line with the same UX as a live LLM stream.
+    func consumePrewarmed(
+        forGnomeID gnomeID: String,
+        isNight: Bool
+    ) -> AsyncThrowingStream<GnomeDialogueStreamUpdate, Error>? {
+        guard let entry = prewarmCache[gnomeID], entry.isNight == isNight else {
+            return nil
+        }
+        prewarmCache.removeValue(forKey: gnomeID)
+        return Self.typewriterStream(line: entry.line, mood: entry.mood)
+    }
+
+    // MARK: - Prewarm Internals
+
+    private func drainPrewarmQueueIfIdle() {
+        guard !isPrewarmDraining else { return }
+        guard let next = pendingPrewarmQueue.first else { return }
+        guard prewarmInFlight.count < 2 else { return }
+
+        pendingPrewarmQueue.removeFirst()
+        prewarmInFlight.insert(next)
+        isPrewarmDraining = true
+
+        guard let agent = registeredAgents[next] else {
+            prewarmInFlight.remove(next)
+            isPrewarmDraining = false
+            DispatchQueue.main.async { [weak self] in self?.drainPrewarmQueueIfIdle() }
+            return
+        }
+
+        let isNight = TimeManager.shared.currentPhase == .night
+        let timeContext: TimeContext = isNight ? .night : .day
+
+        Task { [weak self] in
+            await self?._performGnomePrewarm(
+                gnomeID: next, agent: agent,
+                timeContext: timeContext, isNight: isNight
+            )
+        }
+
+        // Reset the re-entry guard immediately so a second invocation
+        // can start a parallel prewarm. Mirrors the NPC service.
+        isPrewarmDraining = false
+        DispatchQueue.main.async { [weak self] in self?.drainPrewarmQueueIfIdle() }
+    }
+
+    /// Internal: run the model to completion and cache the result.
+    /// Uses the same single-player-line generator as a live tap so the
+    /// cached line is real model output, not a synthetic placeholder.
+    @MainActor
+    private func _performGnomePrewarm(
+        gnomeID: String,
+        agent: GnomeAgent,
+        timeContext: TimeContext,
+        isNight: Bool
+    ) async {
+        defer {
+            prewarmInFlight.remove(gnomeID)
+            DispatchQueue.main.async { [weak self] in self?.drainPrewarmQueueIfIdle() }
+        }
+
+        guard let stream = streamSinglePlayerLine(for: agent, timeContext: timeContext) else {
+            return
+        }
+        var finalLine = ""
+        var finalMood = "neutral"
+        do {
+            for try await update in stream {
+                if let l = update.line { finalLine = l }
+                if let m = update.mood { finalMood = m }
+                if update.isComplete { break }
+            }
+        } catch {
+            Log.debug(.dialogue, "[Gnome prewarm] failed for \(agent.identity.displayName): \(error)")
+            return
+        }
+        let cleaned = finalLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
+        guard registeredAgents[gnomeID] != nil else { return }
+        prewarmCache[gnomeID] = GnomePrewarmEntry(
+            line: cleaned,
+            mood: finalMood.isEmpty ? "neutral" : finalMood,
+            isNight: isNight,
+            generatedAt: Date().timeIntervalSinceReferenceDate
+        )
+        Log.debug(.dialogue, "[Gnome prewarm] ready for \(agent.identity.displayName)")
+    }
+
+    /// Build a synthetic typewriter stream so a prewarmed line plays
+    /// back with the same word-by-word UX as a live model stream. Same
+    /// pacing as the NPC service (~80ms/word).
+    static func typewriterStream(
+        line: String,
+        mood: String
+    ) -> AsyncThrowingStream<GnomeDialogueStreamUpdate, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                let words = line.split(separator: " ", omittingEmptySubsequences: false)
+                var built = ""
+                for (i, word) in words.enumerated() {
+                    if Task.isCancelled { break }
+                    if i > 0 { built += " " }
+                    built += String(word)
+                    continuation.yield(GnomeDialogueStreamUpdate(
+                        line: built, mood: nil, isComplete: false
+                    ))
+                    try? await Task.sleep(nanoseconds: 80_000_000)
+                }
+                if !Task.isCancelled {
+                    continuation.yield(GnomeDialogueStreamUpdate(
+                        line: nil, mood: mood, isComplete: false
+                    ))
+                    continuation.yield(GnomeDialogueStreamUpdate(
+                        line: nil, mood: nil, isComplete: true
+                    ))
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
     // MARK: - Player → Gnome Single Line
 
     /// Stream the gnome's line for a player tap. Returns nil if Apple
@@ -199,6 +394,18 @@ final class LLMGnomeDialogueService {
         #endif
         return []
     }
+}
+
+// MARK: - GnomePrewarmEntry
+
+/// One cached gnome line ready to be replayed instantly on tap. Sister
+/// to `LLMDialogueService.PrewarmEntry` but simpler — no followups, no
+/// session continuity (gnome dialogue is one-shot).
+private struct GnomePrewarmEntry {
+    let line: String
+    let mood: String
+    let isNight: Bool
+    let generatedAt: TimeInterval
 }
 
 // MARK: - iOS 26 Implementation
@@ -635,6 +842,19 @@ private extension LLMGnomeDialogueService {
         case .cookDeliveringToTable:   return "walking a fresh plate over to a table"
         case .cookCheckingOnTable:     return "checking in at a table, asking how the food is"
         case .tidyingTables:           return "clearing dishes and putting tables away after the meal"
+        case .brokerIdleAtDesk:        return "standing at the broker desk, ready to trade gems for forest wares"
+        case .brokerWalkingToKitchen:  return "carrying a full broker box toward the kitchen pantry"
+        case .brokerDumpingAtKitchen:  return "emptying the broker box into the kitchen pantry"
+        case .brokerWalkingToTreasurer:return "walking over to the treasurer to ask for more gems"
+        case .brokerCollectingGems:    return "waiting at the treasurer's desk for a gem refill"
+        case .brokerWalkingToDesk:     return "walking back to the broker desk to reopen for trades"
+        case .treasurerIdleAtDesk:     return "standing at the treasurer desk, minding the gem reserve"
+        case .treasurerWalkingToPile:  return "walking to the treasury pile to gather gems"
+        case .treasurerCollectingFromPile:
+            return "collecting a handful of gems from the treasury pile"
+        case .treasurerWalkingToBroker:return "carrying gems over to refill the broker's desk"
+        case .treasurerHandingGems:    return "handing a fresh gem refill over to the broker"
+        case .treasurerWalkingToDesk:  return "walking back to the treasurer desk to resume watch"
         }
     }
 

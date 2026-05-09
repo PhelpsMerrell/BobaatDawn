@@ -287,6 +287,40 @@ extension BigOakTreeScene {
         return anchor.positionInSceneCoordinates()
     }
 
+    /// World-space position of the broker desk anchor, or nil if not
+    /// authored. Broker idles here and accepts NPC trades.
+    func brokerDeskPosition() -> CGPoint? {
+        guard let lobby = lobbyContainer,
+              let anchor = lobby.sceneNode(named: "gnome_anchor_broker_desk", as: SKNode.self) else {
+            return nil
+        }
+        return anchor.positionInSceneCoordinates()
+    }
+
+    /// World-space position of the treasurer desk anchor, or nil if not
+    /// authored. Treasurer idles here and dispatches gem refills to
+    /// the broker on request.
+    func treasurerDeskPosition() -> CGPoint? {
+        guard let lobby = lobbyContainer,
+              let anchor = lobby.sceneNode(named: "gnome_anchor_treasurer_desk", as: SKNode.self) else {
+            return nil
+        }
+        return anchor.positionInSceneCoordinates()
+    }
+
+    /// World-space position the broker dumps the daily wares box at —
+    /// the kitchen pantry/fridge. Falls back to the cook station
+    /// position if the dedicated anchor isn't authored, since the
+    /// pantry will sit near the cook's workstation.
+    func kitchenDumpPosition() -> CGPoint? {
+        guard let lobby = lobbyContainer else { return nil }
+        if let anchor = lobby.sceneNode(named: "gnome_anchor_kitchen_dump", as: SKNode.self) {
+            return anchor.positionInSceneCoordinates()
+        }
+        // Fall back to the cook station — the pantry lives near it.
+        return cookStationPosition()
+    }
+
     /// All seat anchors that exist in the SKS, returned as
     /// (anchorName, worldPosition) tuples in (table, seat) order. Used
     /// by GnomeSeating to assign seats. Empty when the SKS has no

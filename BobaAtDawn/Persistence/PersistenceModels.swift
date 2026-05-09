@@ -46,6 +46,13 @@ final class WorldState {
     // JSON array of GnomeSnapshot — drives the persistent gnome simulation.
     // Defaults to empty array on fresh worlds. See GnomeManager.
     var gnomeStateJSON: String = "[]"
+
+    // JSON blob of the broker economy state — box contents, broker gem
+    // reserve, and transient flags (broker-away-from-desk,
+    // treasurer-dispatched, treasurer-carrying-gems). See BrokerEconomyState
+    // in GnomeManager. Defaults to "{}" which the apply path treats as
+    // "keep current live state".
+    var brokerEconomyJSON: String = "{}"
     
     // Treasury gem count (resets to 0 once it crosses TreasuryPile.resetThreshold).
     var treasuryGemCount: Int = 0

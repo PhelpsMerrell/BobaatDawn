@@ -151,6 +151,65 @@ final class StorageRegistry {
         containers.removeAll()
         onDidMutate?()
     }
+
+    /// Consume up to `count` units from a container, picking the
+    /// ingredient with the highest current stack first. Returns the
+    /// list of (ingredient, amount) tuples actually consumed. Used by
+    /// the cook at breakfast/dinner to drain the pantry.
+    ///
+    /// Greedy by highest count to keep the pantry balanced — the
+    /// alternative (round-robin or oldest-first) tends to leave one
+    /// ingredient stuck at a single unit forever, blocking that slot.
+    /// Greedy drains down the tall stack until something else is
+    /// taller.
+    @discardableResult
+    func consume(
+        upTo count: Int,
+        from containerName: String
+    ) -> [(ingredient: String, amount: Int)] {
+        guard count > 0 else { return [] }
+        var contents = contents(of: containerName)
+        guard !contents.isEmpty else { return [] }
+
+        var consumed: [String: Int] = [:]
+        var remaining = count
+        while remaining > 0 {
+            // Pick the ingredient with the highest current count.
+            // Ties broken by slotOrder (insertion order) for stability.
+            let candidate = contents.slotOrder.max { lhs, rhs in
+                let lc = contents.counts[lhs] ?? 0
+                let rc = contents.counts[rhs] ?? 0
+                if lc != rc { return lc < rc }
+                let li = contents.slotOrder.firstIndex(of: lhs) ?? 0
+                let ri = contents.slotOrder.firstIndex(of: rhs) ?? 0
+                return li > ri
+            }
+            guard let pick = candidate, let stack = contents.counts[pick], stack > 0 else { break }
+            // Consume one unit from the picked ingredient.
+            if stack == 1 {
+                contents.counts.removeValue(forKey: pick)
+                contents.slotOrder.removeAll { $0 == pick }
+            } else {
+                contents.counts[pick] = stack - 1
+            }
+            consumed[pick, default: 0] += 1
+            remaining -= 1
+            if contents.isEmpty { break }
+        }
+
+        if !consumed.isEmpty {
+            containers[containerName] = contents
+            onDidMutate?()
+            for (ingredient, amount) in consumed {
+                for _ in 0..<amount {
+                    DailyChronicleLedger.shared.recordIngredientRetrieved(
+                        name: ingredient, container: containerName
+                    )
+                }
+            }
+        }
+        return consumed.map { (ingredient: $0.key, amount: $0.value) }
+    }
     
     // MARK: - Loading / Snapshot (for WorldSync + disk persistence)
     

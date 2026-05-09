@@ -392,6 +392,40 @@ struct ItemForagedMessage: Codable {
     let locationKey: String
 }
 
+/// One realized forage spawn for cross-machine snapshot. Mirrors
+/// `ForageSpawn` in ForagingManager but flattens the enums to wire-
+/// safe strings.
+struct ForageSpawnEntry: Codable {
+    let spawnID: String
+    let ingredient: String   // ForageableIngredient.rawValue
+    let locationKey: String  // SpawnLocation.stringKey
+    let position: CodablePoint
+    let isCollected: Bool
+}
+
+/// One pending (not-yet-released) forage spawn. Mirrors `PendingSpawn`
+/// in ForagingManager. `scheduledOffsetSeconds` is host-relative — the
+/// host computes `(scheduledTime - hostNow)` at export, the guest
+/// rebases to its own clock at apply: `scheduledTime = guestNow + offset`.
+struct PendingSpawnEntry: Codable {
+    let spawnID: String
+    let ingredient: String
+    let locationKey: String
+    let position: CodablePoint
+    let scheduledOffsetSeconds: Double
+    let maxConcurrent: Int
+}
+
+/// Full forage state envelope for join-time sync. Sent inside
+/// `WorldSyncMessage.forageSpawnsJSON`. Includes the day stamp so the
+/// guest doesn't apply a stale snapshot if its own day counter has
+/// already advanced for some reason.
+struct ForageSpawnsSnapshot: Codable {
+    let spawnDay: Int
+    let spawns: [ForageSpawnEntry]
+    let pendingSpawns: [PendingSpawnEntry]
+}
+
 struct StorageDepositedMessage: Codable {
     let containerName: String
     let ingredient: String
@@ -448,6 +482,17 @@ struct WorldSyncMessage: Codable {
     /// their .sks default positions. Optional for back-compat with
     /// pre-rearrangement saves. nil/empty = everything at editor default.
     let movableObjects: [MovableObjectEntry]?
+    /// Broker economy state (box contents, broker gem reserve, transient
+    /// errand flags). Optional for back-compat with pre-3b saves. nil or
+    /// "{}" leaves the receiver's live state untouched.
+    let brokerEconomyJSON: String?
+    /// Forage spawn snapshot (current realized spawns + pending spawns
+    /// scheduled for later in the day). Optional for back-compat with
+    /// older worldSync exchanges. Sent only at join time — mid-day
+    /// spawn promotions and dawn rollovers are NOT yet broadcast and
+    /// the guest will diverge until the next worldSync. Future:
+    /// emit a `forageSpawnsSync` message at host dawn rollover.
+    let forageSpawnsJSON: String?
 }
 
 // MARK: - Gnome ↔ Gnome Conversation Sync

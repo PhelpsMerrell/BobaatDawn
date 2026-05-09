@@ -125,17 +125,76 @@ struct GnomeData: Codable, Equatable {
     }
 }
 
+// MARK: - Pool Lines
+
+/// Hardcoded NPC line pools relocated from the old private
+/// `GnomePoolLines` enum in `GnomeConversationService.swift`. Putting
+/// them in JSON lets the user edit voice without recompiling.
+///
+/// All buckets default to empty arrays so a missing `gnome_pool_lines`
+/// block (older JSON, partial authoring) doesn't break decode — the
+/// conversation service falls back to a generic line in that case.
+struct GnomePoolLinesData: Codable, Equatable {
+    let boss: [String]
+    let minerCave: [String]
+    let minerAtHome: [String]
+    let minerInTransit: [String]
+    let housekeeperDay: [String]
+    let housekeeperNight: [String]
+    let brokerDay: [String]
+    let brokerNight: [String]
+    let treasurerDay: [String]
+    let treasurerNight: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case boss
+        case minerCave        = "miner_cave"
+        case minerAtHome      = "miner_at_home"
+        case minerInTransit   = "miner_in_transit"
+        case housekeeperDay   = "housekeeper_day"
+        case housekeeperNight = "housekeeper_night"
+        case brokerDay        = "broker_day"
+        case brokerNight      = "broker_night"
+        case treasurerDay     = "treasurer_day"
+        case treasurerNight   = "treasurer_night"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        boss              = try c.decodeIfPresent([String].self, forKey: .boss) ?? []
+        minerCave         = try c.decodeIfPresent([String].self, forKey: .minerCave) ?? []
+        minerAtHome       = try c.decodeIfPresent([String].self, forKey: .minerAtHome) ?? []
+        minerInTransit    = try c.decodeIfPresent([String].self, forKey: .minerInTransit) ?? []
+        housekeeperDay    = try c.decodeIfPresent([String].self, forKey: .housekeeperDay) ?? []
+        housekeeperNight  = try c.decodeIfPresent([String].self, forKey: .housekeeperNight) ?? []
+        brokerDay         = try c.decodeIfPresent([String].self, forKey: .brokerDay) ?? []
+        brokerNight       = try c.decodeIfPresent([String].self, forKey: .brokerNight) ?? []
+        treasurerDay      = try c.decodeIfPresent([String].self, forKey: .treasurerDay) ?? []
+        treasurerNight    = try c.decodeIfPresent([String].self, forKey: .treasurerNight) ?? []
+    }
+
+    /// Hand-rolled empty initializer for the empty-database fallback path.
+    init() {
+        boss = []; minerCave = []; minerAtHome = []; minerInTransit = []
+        housekeeperDay = []; housekeeperNight = []
+        brokerDay = []; brokerNight = []
+        treasurerDay = []; treasurerNight = []
+    }
+}
+
 // MARK: - GnomeDatabase
 
 /// Top-level wrapper for the JSON file. Parallels `NPCDatabase`.
 struct GnomeDatabase: Codable {
     let schemaVersion: Int
     let opinionTopics: [GnomeOpinionTopic]
+    let poolLines: GnomePoolLinesData
     let gnomes: [GnomeData]
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
         case opinionTopics = "gnome_opinion_topics"
+        case poolLines     = "gnome_pool_lines"
         case gnomes
     }
 
@@ -143,6 +202,7 @@ struct GnomeDatabase: Codable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
         opinionTopics = try c.decodeIfPresent([GnomeOpinionTopic].self, forKey: .opinionTopics) ?? []
+        poolLines     = try c.decodeIfPresent(GnomePoolLinesData.self, forKey: .poolLines) ?? GnomePoolLinesData()
         gnomes        = try c.decode([GnomeData].self, forKey: .gnomes)
     }
 }

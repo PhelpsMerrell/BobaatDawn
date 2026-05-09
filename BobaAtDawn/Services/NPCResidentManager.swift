@@ -10,16 +10,62 @@ import SpriteKit
 import Foundation
 
 // MARK: - Resident Status
+//
+// Coarse logical position of an NPC. The activity runner mutates
+// this through the day; visuals (`ForestNPCEntity`, `ShopNPC`) are
+// spawned/despawned by `NPCResidentManager` based on whether the
+// player's current scene matches the resident's status.
+//
+// Persistence: only `.atHome(_)`, `.inShop`, and `.traveling` are
+// serialized today (the existing schema). The newer in-transit
+// states are transient — they only survive within a single day.
+// At dawn the scheduler reroils plans and the runner resets every
+// resident to `.atHome` before picking the day's first activity.
 enum ResidentStatus: Equatable {
     case atHome(room: Int)
     case inShop
     case traveling
-    
+
+    /// Walking through (or actively foraging in) a forest room.
+    /// Used during `forageAndTrade` while the NPC is in the woods
+    /// before continuing on to the oak lobby.
+    case inForestRoom(Int)
+
+    /// Standing at the broker's desk in the big oak lobby for a
+    /// trade. Used during `forageAndTrade`.
+    case inOakLobby
+
+    /// Inside a cave room (room 2 or 3) gathering mushrooms.
+    /// Used during `gatherCaveMushrooms`.
+    case inCaveRoom(Int)
+
+    /// Visiting a friend at their cabin. The associated room is the
+    /// friend's home room. Used during `visitFriend`.
+    case atFriendHouse(npcID: String, room: Int)
+
     var displayName: String {
         switch self {
-        case .atHome(let room): return "At Home (Room \(room))"
-        case .inShop:           return "In Shop"
-        case .traveling:        return "Traveling"
+        case .atHome(let room):              return "At Home (Room \(room))"
+        case .inShop:                         return "In Shop"
+        case .traveling:                      return "Traveling"
+        case .inForestRoom(let r):           return "In Forest (Room \(r))"
+        case .inOakLobby:                     return "In Oak Lobby"
+        case .inCaveRoom(let r):             return "In Cave (Room \(r))"
+        case .atFriendHouse(_, let room):    return "Visiting Friend (Room \(room))"
+        }
+    }
+
+    /// Forest-room number this resident is currently visible in (or
+    /// nil if they are not in the forest). Used by
+    /// `NPCResidentManager.spawnRoomNPCs` to decide which residents
+    /// to render for the player.
+    var visibleForestRoom: Int? {
+        switch self {
+        case .atHome(let room):              return room
+        case .inForestRoom(let r):           return r
+        case .atFriendHouse(_, let room):    return room
+        case .inShop, .traveling, .inOakLobby, .inCaveRoom:
+            return nil
         }
     }
 }
@@ -38,6 +84,49 @@ class NPCResident {
     /// Empty plan on init — the scheduler fills it in on the first
     /// dawn after the world is loaded.
     var dailyPlan: NPCDailyPlan = .empty
+
+    // MARK: - Activity Runner Bookkeeping
+    //
+    // Mutated by `NPCActivityRunner`. Independent of `dailyPlan` so
+    // the runner can pause/resume an activity without rewriting the
+    // plan; the plan tracks WHAT to do, the runner tracks WHERE in
+    // the activity we are.
+
+    /// The activity the NPC is currently executing, or nil if idle
+    /// (between activities, or done for the day).
+    var currentActivity: NPCDailyActivity? = nil
+
+    /// Sub-state of the current activity. See `NPCActivityStep` for
+    /// the meaning of each case. Defaults to `.idle` when no
+    /// activity is in flight.
+    var currentStep: NPCActivityStep = .idle
+
+    /// Time (CACurrentMediaTime) the current step began. Used by
+    /// the runner to compute step elapsed without reaching for
+    /// per-step expiry timestamps.
+    var stepStartedAt: TimeInterval = 0
+
+    /// Which leg of a multi-leg activity is in flight. Most activities
+    /// have a single leg (currentLeg stays at 0). `.forageAndTrade`
+    /// uses leg 0 = forage in the woods, leg 1 = trade at the broker.
+    var currentLeg: Int = 0
+
+    /// Ingredient the NPC is currently carrying back from a forage
+    /// step, in flight to the broker. Cleared on trade or activity
+    /// abort. Used only during `.forageAndTrade`.
+    var carriedIngredient: ForageableIngredient? = nil
+
+    /// Spawn ID the NPC is heading toward (or has picked up) during
+    /// `.forageAndTrade` leg 0. Snapshotted at leg start so the NPC
+    /// stays committed to a specific spawn even if other NPCs
+    /// (or the player) collect nearby spawns concurrently.
+    var targetForageSpawnID: String? = nil
+
+    /// Cave room and spawn the NPC has committed to during
+    /// `.gatherCaveMushrooms`. Same locking semantics as
+    /// `targetForageSpawnID` but scoped to cave foraging.
+    var targetCaveSpawnID: String? = nil
+    var targetCaveRoom: Int? = nil
 
     init(npcData: NPCData) {
         self.npcData = npcData
@@ -86,6 +175,14 @@ class NPCResidentManager {
             resident.lastDrinkTime = nil
             resident.drinkCooldown = 0
             resident.dailyPlan = .empty
+            resident.currentActivity = nil
+            resident.currentStep = .idle
+            resident.stepStartedAt = 0
+            resident.currentLeg = 0
+            resident.carriedIngredient = nil
+            resident.targetForageSpawnID = nil
+            resident.targetCaveSpawnID = nil
+            resident.targetCaveRoom = nil
         }
         assignHouseNumbers()
         pendingForestTrash.removeAll()
@@ -189,8 +286,7 @@ class NPCResidentManager {
         guard let forest = forestScene else { return }
         let room = forest.currentRoom
         let roomResidents = residents.filter {
-            $0.npcData.homeRoom == room &&
-            $0.status == .atHome(room: room) &&
+            $0.status.visibleForestRoom == room &&
             !SaveService.shared.isNPCLiberated($0.npcData.id)
         }
         for r in roomResidents { spawnForestNPC(r, in: forest) }
@@ -216,6 +312,11 @@ class NPCResidentManager {
     // MARK: - Time Phase Management
     private var lastKnownTimePhase: TimePhase = .day
     private var currentRitualNPCId: String?
+
+    /// Current time phase as last received via `handleTimePhaseChange`.
+    /// Read-only for services that gate behavior on the phase
+    /// (e.g. NPCActivityRunner).
+    var currentTimePhase: TimePhase { lastKnownTimePhase }
     
     func handleTimePhaseChange(_ newPhase: TimePhase) {
         guard newPhase != lastKnownTimePhase else { return }
@@ -225,6 +326,10 @@ class NPCResidentManager {
         
         switch newPhase {
         case .dusk, .night, .dawn:
+            // Cancel any in-flight activities so half-finished
+            // walks don't leak across phases. The send-home pass
+            // below will normalize statuses.
+            NPCActivityRunner.shared.cancelAllActivities()
             sendAllShopNPCsHome(excludeRitualNPC: newPhase == .dawn)
             if newPhase == .dawn {
                 // Roll fresh activity plans for every resident at dawn.
@@ -234,6 +339,10 @@ class NPCResidentManager {
                 NPCDailyScheduler.shared.rollPlansForAllResidents(
                     dayCount: GnomeManager.shared.currentDayCount
                 )
+                // Reactive trash service — clear cooldowns and claimed
+                // trash so the new day's reactions aren't gated by
+                // yesterday's state.
+                ForestTrashReactionService.shared.resetForDawn()
             }
         case .day:
             maintainShopPopulation()
@@ -258,6 +367,8 @@ class NPCResidentManager {
         // Guest doesn't run spawn maintenance — NPCs come from host.
         if !MultiplayerService.shared.isGuest && lastKnownTimePhase == .day {
             maintainShopPopulation()
+            // Drive activity-runner state machines.
+            NPCActivityRunner.shared.tick(now: CACurrentMediaTime())
         }
     }
     
@@ -383,11 +494,36 @@ class NPCResidentManager {
     
     private func spawnRoomNPCs(room: Int, in scene: ForestScene) {
         let roomResidents = residents.filter {
-            $0.npcData.homeRoom == room &&
-            $0.status == .atHome(room: room) &&
+            $0.status.visibleForestRoom == room &&
             !SaveService.shared.isNPCLiberated($0.npcData.id)
         }
         for r in roomResidents { spawnForestNPC(r, in: scene) }
+    }
+
+    /// Spawn a forest visual for `resident` if (a) the player is in
+    /// their current visible forest room, and (b) they don't already
+    /// have a visual. Called by `NPCActivityRunner` after a status
+    /// transition so a freshly-arrived NPC pops into view if the
+    /// player is watching that room.
+    func refreshForestVisualIfPlayerInRoom(_ resident: NPCResident, room: Int) {
+        guard let forest = forestScene, forest.currentRoom == room else { return }
+        guard resident.forestNPC == nil else { return }
+        guard !SaveService.shared.isNPCLiberated(resident.npcData.id) else { return }
+        spawnForestNPC(resident, in: forest)
+    }
+
+    /// Remove the visible `ForageNode` for `spawnID` from the active
+    /// forest scene (if the player is in that room). Used by
+    /// `NPCActivityRunner` after an NPC collects a forageable so the
+    /// emoji disappears for the host. Guest visual cleanup happens
+    /// via the `.itemForaged` network message handler in
+    /// `ForestScene+Multiplayer`.
+    func removeForageNodeIfVisible(spawnID: String, in location: SpawnLocation) {
+        guard let forest = forestScene else { return }
+        guard case let .forestRoom(room) = location, room == forest.currentRoom else { return }
+        let nodes = forest.children.compactMap { $0 as? ForageNode }
+        guard let match = nodes.first(where: { $0.spawnID == spawnID }) else { return }
+        match.pickUp { Log.debug(.forest, "NPC-collected forage node removed locally") }
     }
     
     // MARK: - Status Queries
@@ -396,11 +532,11 @@ class NPCResidentManager {
     }
     
     func getForestNPCCount() -> Int {
-        residents.filter { if case .atHome = $0.status { return true }; return false }.count
+        residents.filter { $0.status.visibleForestRoom != nil }.count
     }
     
     func getResidentsInRoom(_ room: Int) -> [NPCResident] {
-        residents.filter { $0.npcData.homeRoom == room && $0.status == .atHome(room: room) }
+        residents.filter { $0.status.visibleForestRoom == room }
     }
     
     func getAllResidents() -> [NPCResident] { residents }
